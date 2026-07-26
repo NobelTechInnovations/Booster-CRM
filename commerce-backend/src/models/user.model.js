@@ -12,6 +12,8 @@ const userSchema = new mongoose.Schema(
       default: "Owner",
     },
     status: { type: String, enum: ["active", "disabled"], default: "active" },
+    invitedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
+    lastLoginAt: Date,
   },
   { timestamps: true },
 );

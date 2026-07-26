@@ -1,5 +1,6 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
+import { permissionsForRole } from "../modules/auth/permissions.js";
 import { HttpError } from "../utils/http-error.js";
 
 export function signAuthToken(user) {
@@ -12,6 +13,18 @@ export function signAuthToken(user) {
     env.jwtSecret,
     { expiresIn: "7d" },
   );
+}
+
+export function requirePermission(permission) {
+  return (req, _res, next) => {
+    const permissions = permissionsForRole(req.auth?.role);
+
+    if (permissions.includes("*") || permissions.includes(permission)) {
+      return next();
+    }
+
+    return next(new HttpError(403, "You do not have permission for this action"));
+  };
 }
 
 export function requireAuth(req, _res, next) {

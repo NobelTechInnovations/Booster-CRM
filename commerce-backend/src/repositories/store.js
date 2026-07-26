@@ -38,6 +38,47 @@ function withoutCredentials(channel) {
   return copy;
 }
 
+function publicUser(user) {
+  if (!user) return user;
+  const copy = clone(user);
+  copy.id = copy._id;
+  delete copy.passwordHash;
+  return copy;
+}
+
+function cleanCompanyPayload(payload) {
+  return {
+    name: String(payload.name || "").trim(),
+    legalName: String(payload.legalName || "").trim(),
+    email: String(payload.email || "").trim().toLowerCase(),
+    phone: String(payload.phone || "").trim(),
+    website: String(payload.website || "").trim(),
+    businessType: String(payload.businessType || "").trim(),
+    gstin: String(payload.gstin || "").trim().toUpperCase(),
+    pan: String(payload.pan || "").trim().toUpperCase(),
+    address: {
+      line1: String(payload.address?.line1 || "").trim(),
+      line2: String(payload.address?.line2 || "").trim(),
+      city: String(payload.address?.city || "").trim(),
+      state: String(payload.address?.state || "").trim(),
+      pincode: String(payload.address?.pincode || "").trim(),
+      country: String(payload.address?.country || "India").trim(),
+    },
+  };
+}
+
+function cleanKycPayload(payload) {
+  return {
+    legalName: String(payload.legalName || "").trim(),
+    gstin: String(payload.gstin || "").trim().toUpperCase(),
+    pan: String(payload.pan || "").trim().toUpperCase(),
+    registeredAddress: String(payload.registeredAddress || "").trim(),
+    bankAccountName: String(payload.bankAccountName || "").trim(),
+    bankAccountNumber: String(payload.bankAccountNumber || "").trim(),
+    ifsc: String(payload.ifsc || "").trim().toUpperCase(),
+  };
+}
+
 function ensureDevCompany() {
   const slug = "sukirti-naturals";
   const existing = [...memory.companies.values()].find((company) => company.slug === slug);
@@ -203,6 +244,142 @@ export async function getUserAndCompany({ userId, companyId }) {
     user: clone(memory.users.get(userId) || null),
     company: clone(memory.companies.get(companyId) || null),
   };
+}
+
+export async function getCompany(companyId) {
+  if (isMongoConnected()) {
+    return Company.findById(companyId).lean();
+  }
+
+  return clone(memory.companies.get(companyId) || null);
+}
+
+export async function updateCompanyProfile({ companyId, payload }) {
+  const update = cleanCompanyPayload(payload);
+
+  if (!update.name) {
+    return { error: "Company name is required" };
+  }
+
+  if (isMongoConnected()) {
+    const company = await Company.findByIdAndUpdate(
+      companyId,
+      { $set: update },
+      { new: true, runValidators: true },
+    ).lean();
+    return { company };
+  }
+
+  const company = memory.companies.get(companyId);
+  if (!company) return { error: "Company not found" };
+
+  Object.assign(company, update, { updatedAt: now() });
+  return { company: clone(company) };
+}
+
+export async function updateCompanyKyc({ companyId, payload }) {
+  const kyc = cleanKycPayload(payload);
+  const status = payload.submit ? "submitted" : "draft";
+  const submittedAt = payload.submit ? now() : undefined;
+
+  if (isMongoConnected()) {
+    const update = {
+      kyc: {
+        ...kyc,
+        status,
+        submittedAt: submittedAt ? new Date(submittedAt) : undefined,
+      },
+    };
+    const company = await Company.findByIdAndUpdate(companyId, { $set: update }, { new: true }).lean();
+    return { company };
+  }
+
+  const company = memory.companies.get(companyId);
+  if (!company) return { error: "Company not found" };
+
+  company.kyc = {
+    ...company.kyc,
+    ...kyc,
+    status,
+    submittedAt,
+  };
+  company.updatedAt = now();
+
+  return { company: clone(company) };
+}
+
+export async function listCompanyUsers(companyId) {
+  if (isMongoConnected()) {
+    const users = await User.find({ companyId }).sort({ createdAt: -1 }).lean();
+    return users.map(publicUser);
+  }
+
+  return [...memory.users.values()]
+    .filter((user) => String(user.companyId) === String(companyId))
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map(publicUser);
+}
+
+export async function createCompanyUser({ companyId, invitedBy, name, email, passwordHash, role }) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  if (isMongoConnected()) {
+    const existingUser = await User.findOne({ email: normalizedEmail }).lean();
+    if (existingUser) return { error: "Email is already registered" };
+
+    const user = await User.create({
+      companyId,
+      invitedBy,
+      name,
+      email: normalizedEmail,
+      passwordHash,
+      role,
+      status: "active",
+    });
+
+    return { user: publicUser(user.toObject()) };
+  }
+
+  const existingUser = [...memory.users.values()].find((user) => user.email === normalizedEmail);
+  if (existingUser) return { error: "Email is already registered" };
+
+  const user = {
+    _id: id(),
+    companyId,
+    invitedBy,
+    email: normalizedEmail,
+    name,
+    role,
+    passwordHash,
+    status: "active",
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  memory.users.set(user._id, user);
+
+  return { user: publicUser(user) };
+}
+
+export async function updateCompanyUser({ companyId, userId, role, status }) {
+  if (isMongoConnected()) {
+    const user = await User.findOneAndUpdate(
+      { _id: userId, companyId },
+      { $set: { role, status } },
+      { new: true, runValidators: true },
+    ).lean();
+    return { user: publicUser(user) };
+  }
+
+  const user = memory.users.get(userId);
+  if (!user || String(user.companyId) !== String(companyId)) {
+    return { user: null };
+  }
+
+  user.role = role;
+  user.status = status;
+  user.updatedAt = now();
+
+  return { user: publicUser(user) };
 }
 
 export async function listChannels(companyId) {

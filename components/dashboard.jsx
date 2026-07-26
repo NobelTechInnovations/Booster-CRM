@@ -23,6 +23,7 @@ import {
   ShoppingCart,
   Sparkles,
   Truck,
+  Users,
   UserRound,
   Workflow,
   X,
@@ -43,6 +44,8 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
+import { CompanyView } from "@/components/company-view";
+import { UsersView } from "@/components/users-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -65,6 +68,8 @@ import { cn } from "@/lib/utils";
 
 const menu = [
   { label: "Dashboard", icon: Gauge },
+  { label: "Company", icon: Building2 },
+  { label: "Users", icon: Users },
   { label: "Orders", icon: ShoppingCart },
   { label: "Products", icon: Package },
   { label: "Inventory", icon: Boxes },
@@ -768,6 +773,14 @@ export function Dashboard() {
         <Topbar setOpen={setOpen} session={session} />
         {activeView === "Channels" ? (
           <ChannelsView />
+        ) : activeView === "Company" ? (
+          <CompanyView
+            onCompanyUpdate={(company) => {
+              setSession((current) => (current ? { ...current, company } : current));
+            }}
+          />
+        ) : activeView === "Users" ? (
+          <UsersView />
         ) : (
         <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
           <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

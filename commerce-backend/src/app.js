@@ -6,6 +6,8 @@ import { env } from "./config/env.js";
 import { getStoreMode } from "./repositories/store.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { channelRoutes } from "./modules/channels/channel.routes.js";
+import { companyRoutes } from "./modules/company/company.routes.js";
+import { userRoutes } from "./modules/users/user.routes.js";
 
 export function createApp() {
   const app = express();
@@ -30,6 +32,8 @@ export function createApp() {
   });
 
   app.use("/api/auth", authRoutes);
+  app.use("/api/company", companyRoutes);
+  app.use("/api/users", userRoutes);
   app.use("/api/channels", channelRoutes);
 
   app.use((req, res) => {
