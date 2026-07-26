@@ -2,15 +2,18 @@
 
 Separate backend API for CommerceOS / Sukirti Commerce Hub.
 
-## Phase 1 Scope
+## Active Phase 1 Scope
 
 - Express API scaffold
 - MongoDB connection
 - Company, User, and Channel models
 - JWT middleware
-- Development login endpoint
-- Shopify-only channel connection flow
-- Shopify OAuth callback, status, disconnect, and sync placeholder
+- Company signup
+- Company login
+- Password hashing with bcrypt
+- Owner role assignment
+- Permissions map
+- Development memory store fallback when MongoDB is not running
 
 ## Run
 
@@ -44,6 +47,8 @@ For a public one-click install flow, set `SHOPIFY_APP_INSTALL_URL` to your Shopi
 ## Useful Endpoints
 
 - `GET /health`
+- `POST /api/auth/signup`
+- `POST /api/auth/login`
 - `POST /api/auth/dev-login`
 - `GET /api/auth/me`
 - `POST /api/channels/shopify/connect`

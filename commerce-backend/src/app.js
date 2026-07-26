@@ -24,7 +24,7 @@ export function createApp() {
     res.json({
       status: "ok",
       service: "commerce-backend",
-      phase: "phase-1-shopify-channel",
+      phase: "phase-1-authentication",
       store: getStoreMode(),
     });
   });

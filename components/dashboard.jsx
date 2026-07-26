@@ -27,7 +27,8 @@ import {
   Workflow,
   X,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   Area,
   AreaChart,
@@ -58,7 +59,7 @@ import {
   roles,
   salesTrend,
 } from "@/lib/data";
-import { createShopifyConnection } from "@/lib/api";
+import { clearSession, createShopifyConnection, getSession } from "@/lib/api";
 import { useCommerceStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
@@ -156,8 +157,15 @@ function Sidebar({ open, setOpen, activeView, setActiveView }) {
   );
 }
 
-function Topbar({ setOpen }) {
+function Topbar({ setOpen, session }) {
   const { company, period, setPeriod } = useCommerceStore();
+  const router = useRouter();
+  const companyName = session?.company?.name || company;
+
+  function logout() {
+    clearSession();
+    router.push("/login");
+  }
 
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-white/90 backdrop-blur">
@@ -167,7 +175,7 @@ function Topbar({ setOpen }) {
         </button>
         <div className="hidden min-w-0 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--panel-soft)] px-3 py-2 md:flex">
           <Building2 size={17} className="text-teal-700" />
-          <span className="truncate text-sm font-semibold">{company}</span>
+          <span className="truncate text-sm font-semibold">{companyName}</span>
           <ChevronDown size={16} className="text-slate-500" />
         </div>
         <div className="relative flex-1">
@@ -193,6 +201,13 @@ function Topbar({ setOpen }) {
         </Button>
         <button className="grid h-10 w-10 place-items-center rounded-md border border-[var(--line)] bg-white text-slate-600 hover:bg-slate-50" aria-label="Notifications">
           <Bell size={18} />
+        </button>
+        <button
+          className="grid h-10 w-10 place-items-center rounded-md border border-[var(--line)] bg-white text-slate-600 hover:bg-slate-50"
+          aria-label="Logout"
+          onClick={logout}
+        >
+          <LogOut size={18} />
         </button>
       </div>
     </header>
@@ -714,14 +729,43 @@ function Roadmap() {
 }
 
 export function Dashboard() {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [activeView, setActiveView] = useState("Dashboard");
+  const [session, setSession] = useState(null);
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  useEffect(() => {
+    const savedSession = getSession();
+
+    if (!savedSession?.token) {
+      router.replace("/login");
+      return;
+    }
+
+    setSession(savedSession);
+    setCheckingSession(false);
+  }, [router]);
+
+  if (checkingSession) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-[var(--background)] px-4 text-center">
+        <div>
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-md bg-teal-700 text-white">
+            <Layers3 size={24} />
+          </div>
+          <p className="mt-4 font-semibold">Opening secure panel</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Checking company session...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[288px_minmax(0,1fr)]">
       <Sidebar open={open} setOpen={setOpen} activeView={activeView} setActiveView={setActiveView} />
       <main className="min-w-0">
-        <Topbar setOpen={setOpen} />
+        <Topbar setOpen={setOpen} session={session} />
         {activeView === "Channels" ? (
           <ChannelsView />
         ) : (
