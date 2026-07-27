@@ -27,4 +27,7 @@ export const env = {
     apiVersion: process.env.SHOPIFY_API_VERSION || "2026-01",
     installUrl: process.env.SHOPIFY_APP_INSTALL_URL || "",
   },
+  amazon: {
+    appUrl: process.env.AMAZON_APP_URL || process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
+  },
 };

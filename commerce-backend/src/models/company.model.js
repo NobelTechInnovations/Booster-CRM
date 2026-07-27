@@ -46,6 +46,7 @@ const companySchema = new mongoose.Schema(
         sellerCentralUrl: { type: String, default: "https://sellercentral.amazon.in" },
         marketplaceId: { type: String, default: "A21TJRUUN4KGV" },
         spApiEndpoint: { type: String, default: "https://sellingpartnerapi-eu.amazon.com" },
+        syncDays: { type: Number, default: 30 },
         draftMode: { type: Boolean, default: true },
       },
     },

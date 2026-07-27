@@ -58,11 +58,16 @@ import {
 } from "@/lib/data";
 import {
   clearSession,
+  createAmazonConnection,
   createShopifyConnection,
   getChannelDashboard,
+  getProductMappingOptions,
   getSession,
   listChannels,
+  listProductMappings,
   listSyncedRecords,
+  saveAmazonSetup,
+  saveProductMapping,
   syncChannel,
   updateSyncedRecord,
 } from "@/lib/api";
@@ -75,6 +80,7 @@ const menu = [
   { label: "Users", icon: Users },
   { label: "Orders", icon: ShoppingCart },
   { label: "Products", icon: Package },
+  { label: "Product Mapping", icon: Workflow },
   { label: "Inventory", icon: Boxes },
   { label: "Channels", icon: PlugZap },
   { label: "Shipping", icon: Truck },
@@ -535,8 +541,123 @@ function ShopifyConnectForm({ compact = false }) {
   );
 }
 
+function AmazonConnectForm({ compact = false }) {
+  const [form, setForm] = useState({
+    applicationId: "",
+    clientId: "",
+    clientSecret: "",
+    sellerCentralUrl: "https://sellercentral.amazon.in",
+    marketplaceId: "A21TJRUUN4KGV",
+    spApiEndpoint: "https://sellingpartnerapi-eu.amazon.com",
+    syncDays: "30",
+    draftMode: true,
+  });
+  const [connectError, setConnectError] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
+
+  function setField(field, value) {
+    setForm((current) => ({ ...current, [field]: value }));
+  }
+
+  async function handleConnect(event) {
+    event.preventDefault();
+    setConnectError("");
+    setIsConnecting(true);
+
+    try {
+      await saveAmazonSetup(form);
+      const result = await createAmazonConnection();
+      window.location.href = result.installUrl;
+    } catch (error) {
+      setConnectError(error.message);
+      setIsConnecting(false);
+    }
+  }
+
+  const fieldClass = "h-10 rounded-md border border-amber-200 bg-white px-3 text-sm outline-none focus:border-amber-700 focus:ring-2 focus:ring-amber-100";
+
+  return (
+    <form onSubmit={handleConnect} className={cn("rounded-lg border border-amber-100 bg-amber-50 p-3", compact && "bg-white")}>
+      <div className="flex items-center justify-between gap-3">
+        <label className="text-sm font-semibold text-amber-950" htmlFor={compact ? "amazon-application-id-compact" : "amazon-application-id"}>
+          Amazon seller login
+        </label>
+        <Badge tone="amber">DB setup</Badge>
+      </div>
+      <div className="mt-3 grid gap-2">
+        <input
+          id={compact ? "amazon-application-id-compact" : "amazon-application-id"}
+          className={fieldClass}
+          placeholder="Amazon application ID"
+          value={form.applicationId}
+          onChange={(event) => setField("applicationId", event.target.value)}
+        />
+        <input
+          className={fieldClass}
+          placeholder="LWA client ID"
+          value={form.clientId}
+          onChange={(event) => setField("clientId", event.target.value)}
+        />
+        <input
+          className={fieldClass}
+          placeholder="LWA client secret"
+          type="password"
+          value={form.clientSecret}
+          onChange={(event) => setField("clientSecret", event.target.value)}
+        />
+        {!compact ? (
+          <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              className={fieldClass}
+              placeholder="Seller Central URL"
+              value={form.sellerCentralUrl}
+              onChange={(event) => setField("sellerCentralUrl", event.target.value)}
+            />
+            <input
+              className={fieldClass}
+              placeholder="Marketplace ID"
+              value={form.marketplaceId}
+              onChange={(event) => setField("marketplaceId", event.target.value)}
+            />
+            <input
+              className={cn(fieldClass, "sm:col-span-2")}
+              placeholder="SP-API endpoint"
+              value={form.spApiEndpoint}
+              onChange={(event) => setField("spApiEndpoint", event.target.value)}
+            />
+            <input
+              className={fieldClass}
+              placeholder="Sync days"
+              value={form.syncDays}
+              onChange={(event) => setField("syncDays", event.target.value)}
+            />
+          </div>
+        ) : null}
+        <label className="flex items-center gap-2 text-xs font-semibold text-amber-950">
+          <input
+            type="checkbox"
+            checked={form.draftMode}
+            onChange={(event) => setField("draftMode", event.target.checked)}
+            className="h-4 w-4 rounded border-amber-300 text-amber-700"
+          />
+          Draft app authorization
+        </label>
+      </div>
+      <Button type="submit" className="mt-3 w-full" disabled={isConnecting}>
+        <PlugZap size={16} />
+        {isConnecting ? "Opening Amazon" : "Save Setup & Connect"}
+      </Button>
+      {connectError ? <p className="mt-2 text-sm font-medium text-rose-700">{connectError}</p> : null}
+      <p className="mt-2 text-xs leading-5 text-amber-900">
+        LWA/OAuth2 setup stays in database. Seller login saves the refresh token in the Amazon channel record.
+      </p>
+    </form>
+  );
+}
+
 function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
   const isShopify = channel.provider === "shopify";
+  const isAmazon = channel.provider === "amazon";
   const isConnected = Boolean(connectedChannel);
   const badgeTone = isConnected ? "green" : channel.status === "Available" ? "green" : channel.status === "Next" ? "blue" : "slate";
   const [isReconnecting, setIsReconnecting] = useState(false);
@@ -585,7 +706,7 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
       </div>
 
       <div className="mt-auto pt-4">
-        {isShopify && isConnected ? (
+        {isConnected ? (
           <div className="space-y-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3">
             <div>
               <p className="text-sm font-semibold text-emerald-950">{connectedChannel.shop}</p>
@@ -593,7 +714,7 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
             </div>
             <Button className="w-full" onClick={() => onSyncChannel?.(connectedChannel._id || connectedChannel.id)}>
               <RefreshCw size={16} />
-              Sync Shopify Data
+              Sync {channel.name} Data
             </Button>
             {!canEditShopify ? (
               <>
@@ -608,6 +729,8 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
           </div>
         ) : isShopify ? (
           <ShopifyConnectForm compact />
+        ) : isAmazon ? (
+          <AmazonConnectForm compact />
         ) : (
           <Button variant="secondary" className="w-full" disabled>
             <PlugZap size={16} />
@@ -634,8 +757,6 @@ function ChannelsView({ connectedChannels, channelsError, isLoadingChannels, set
     }
   }
 
-  const connectedShopify = connectedChannels.find((entry) => entry.provider === "shopify" && entry.status === "connected");
-
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -643,7 +764,7 @@ function ChannelsView({ connectedChannels, channelsError, isLoadingChannels, set
           <Badge tone="teal">Phase 3 channel integrations</Badge>
           <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Channels</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
-            Connect marketplaces and stores company-wise. Shopify is active now; the remaining channel cards are ready for the next connectors.
+            Connect marketplaces and stores company-wise. Shopify sync is active, and Amazon seller login is ready for app-based OAuth setup.
           </p>
         </div>
         <Button onClick={onSyncAll} disabled={!connectedChannels.length}>
@@ -654,7 +775,12 @@ function ChannelsView({ connectedChannels, channelsError, isLoadingChannels, set
 
       <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
         {channelCatalog.map((channel) => (
-          <ChannelCard key={channel.provider} channel={channel} connectedChannel={channel.provider === "shopify" ? connectedShopify : null} onSyncChannel={syncOne} />
+          <ChannelCard
+            key={channel.provider}
+            channel={channel}
+            connectedChannel={connectedChannels.find((entry) => entry.provider === channel.provider && entry.status === "connected") || null}
+            onSyncChannel={syncOne}
+          />
         ))}
       </section>
 
@@ -675,9 +801,9 @@ function ChannelsView({ connectedChannels, channelsError, isLoadingChannels, set
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm leading-6 text-[var(--muted)]">
-            <p>Frontend creates a dev session, backend signs a JWT with `companyId`, and Shopify OAuth state carries that company into callback.</p>
-            <p>After merchant approval, the backend saves `{`{ companyId, provider: "shopify", shop, accessToken }`}` in the Channel collection or memory store.</p>
-            <Badge tone="green">Ready for Shopify</Badge>
+            <p>Frontend creates a dev session, backend signs a JWT with `companyId`, and each OAuth state carries that company into callback.</p>
+            <p>After seller approval, the backend saves the provider, shop or seller ID, tokens, and sync status in the Channel collection or memory store.</p>
+            <Badge tone="green">Shopify + Amazon OAuth</Badge>
           </CardContent>
         </Card>
       </section>
@@ -1584,7 +1710,242 @@ function RecordsModuleView({ name }) {
   );
 }
 
+function optionKey(option) {
+  return [option.provider, option.channelId, option.productId, option.sku || ""].join("::");
+}
+
+function mappingOptionPayload(option) {
+  return {
+    provider: option.provider,
+    channelId: option.channelId,
+    productId: option.productId,
+    productTitle: option.productTitle,
+    sku: option.sku || "",
+  };
+}
+
+function mappingName(option) {
+  return `${option.productTitle || "Product"}${option.sku ? ` / ${option.sku}` : ""}`;
+}
+
+function ProductMappingView() {
+  const [options, setOptions] = useState([]);
+  const [mappings, setMappings] = useState([]);
+  const [rowSelections, setRowSelections] = useState({});
+  const [query, setQuery] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [savingKey, setSavingKey] = useState("");
+  const [error, setError] = useState("");
+
+  const shopifyOptions = useMemo(
+    () => options.filter((option) => option.provider === "shopify" && (option.productTitle || option.sku)),
+    [options],
+  );
+  const amazonOptions = useMemo(
+    () => options.filter((option) => option.provider === "amazon" && (option.productTitle || option.sku)),
+    [options],
+  );
+  const optionByKey = useMemo(() => new Map(options.map((option) => [optionKey(option), option])), [options]);
+
+  async function loadMappingData() {
+    setError("");
+    setIsLoading(true);
+
+    try {
+      const [optionResult, mappingResult] = await Promise.all([getProductMappingOptions(), listProductMappings()]);
+      const nextOptions = optionResult.options || [];
+      const nextMappings = mappingResult.mappings || [];
+      const nextOptionByKey = new Map(nextOptions.map((option) => [optionKey(option), option]));
+      const nextSelections = {};
+
+      nextMappings.forEach((mapping) => {
+        const shopify = mapping.mappings?.find((entry) => entry.provider === "shopify");
+        const amazon = mapping.mappings?.find((entry) => entry.provider === "amazon");
+        if (!shopify || !amazon) return;
+
+        const shopifyKey = optionKey(shopify);
+        const amazonKey = optionKey(amazon);
+        if (nextOptionByKey.has(shopifyKey) && nextOptionByKey.has(amazonKey)) {
+          nextSelections[shopifyKey] = amazonKey;
+        }
+      });
+
+      setOptions(nextOptions);
+      setMappings(nextMappings);
+      setRowSelections(nextSelections);
+    } catch (loadError) {
+      setError(loadError.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    loadMappingData();
+  }, []);
+
+  async function saveMapping(shopifyOption) {
+    const shopifyKey = optionKey(shopifyOption);
+    const amazonOption = optionByKey.get(rowSelections[shopifyKey]);
+    if (!amazonOption) return;
+
+    setSavingKey(shopifyKey);
+    setError("");
+
+    try {
+      await saveProductMapping({
+        masterName: mappingName(shopifyOption),
+        mappings: [mappingOptionPayload(shopifyOption), mappingOptionPayload(amazonOption)],
+      });
+      await loadMappingData();
+    } catch (saveError) {
+      setError(saveError.message);
+    } finally {
+      setSavingKey("");
+    }
+  }
+
+  const visibleShopifyOptions = shopifyOptions.filter((option) =>
+    `${option.productTitle || ""} ${option.sku || ""} ${option.channelName || ""}`.toLowerCase().includes(query.toLowerCase()),
+  );
+  const mappedCount = mappings.filter((mapping) => mapping.mappings?.some((entry) => entry.provider === "shopify") && mapping.mappings?.some((entry) => entry.provider === "amazon")).length;
+
+  return (
+    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+      <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <Badge tone="amber">Product Mapping</Badge>
+          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Map Channel SKUs</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+            Match the same real products across Shopify and Amazon when channel SKUs are different.
+          </p>
+        </div>
+        <Button variant="secondary" onClick={loadMappingData} disabled={isLoading}>
+          <RefreshCw size={16} className={isLoading ? "animate-spin" : ""} />
+          Refresh
+        </Button>
+      </section>
+
+      <section className="grid gap-4 md:grid-cols-4">
+        <Card className="p-4">
+          <p className="text-sm font-medium text-[var(--muted)]">Shopify SKUs</p>
+          <p className="mt-2 text-2xl font-bold">{shopifyOptions.length.toLocaleString("en-IN")}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-sm font-medium text-[var(--muted)]">Amazon SKUs</p>
+          <p className="mt-2 text-2xl font-bold">{amazonOptions.length.toLocaleString("en-IN")}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-sm font-medium text-[var(--muted)]">Saved Maps</p>
+          <p className="mt-2 text-2xl font-bold">{mappedCount.toLocaleString("en-IN")}</p>
+        </Card>
+        <Card className="p-4">
+          <p className="text-sm font-medium text-[var(--muted)]">Source</p>
+          <p className="mt-2 text-2xl font-bold">Real sync</p>
+        </Card>
+      </section>
+
+      <Card className="mt-6 overflow-hidden">
+        <CardHeader>
+          <div>
+            <CardTitle>SKU Mapping Table</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              {isLoading ? "Loading synced products..." : `${visibleShopifyOptions.length.toLocaleString("en-IN")} Shopify rows shown.`}
+            </p>
+          </div>
+          <div className="relative min-w-[260px]">
+            <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
+            <input
+              className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-9 pr-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"
+              placeholder="Search Shopify product or SKU"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+            />
+          </div>
+        </CardHeader>
+        <CardContent>
+          {error ? <p className="mb-3 rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
+          {!amazonOptions.length ? (
+            <p className="mb-3 rounded-md bg-amber-50 px-3 py-2 text-sm font-medium text-amber-800">
+              Amazon products will appear here after Amazon OAuth and SP-API product sync are completed.
+            </p>
+          ) : null}
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] text-left text-sm">
+              <thead className="border-y border-[var(--line)] bg-[var(--panel-soft)] text-xs font-semibold uppercase text-slate-500">
+                <tr>
+                  <th className="px-4 py-3">Shopify Product</th>
+                  <th className="px-4 py-3">Shopify SKU</th>
+                  <th className="px-4 py-3">Amazon Product / SKU</th>
+                  <th className="px-4 py-3">Status</th>
+                  <th className="px-4 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-[var(--line)]">
+                {visibleShopifyOptions.map((shopifyOption) => {
+                  const shopifyKey = optionKey(shopifyOption);
+                  const selectedAmazonKey = rowSelections[shopifyKey] || "";
+                  const selectedAmazon = optionByKey.get(selectedAmazonKey);
+                  const isSaving = savingKey === shopifyKey;
+
+                  return (
+                    <tr key={shopifyKey} className="align-top">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-950">{shopifyOption.productTitle || "Untitled product"}</p>
+                        <p className="mt-1 text-xs text-[var(--muted)]">{shopifyOption.channelName || "Shopify"} · Product ID {shopifyOption.productId || "-"}</p>
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={shopifyOption.sku ? "blue" : "slate"}>{shopifyOption.sku || "No SKU"}</Badge>
+                      </td>
+                      <td className="px-4 py-3">
+                        <select
+                          className="h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"
+                          value={selectedAmazonKey}
+                          onChange={(event) =>
+                            setRowSelections((current) => ({
+                              ...current,
+                              [shopifyKey]: event.target.value,
+                            }))
+                          }
+                          disabled={!amazonOptions.length}
+                        >
+                          <option value="">Select Amazon product / SKU</option>
+                          {amazonOptions.map((amazonOption) => (
+                            <option key={optionKey(amazonOption)} value={optionKey(amazonOption)}>
+                              {amazonOption.sku || "No SKU"} / {amazonOption.productTitle || "Untitled product"}
+                            </option>
+                          ))}
+                        </select>
+                        {selectedAmazon ? (
+                          <p className="mt-1 text-xs text-[var(--muted)]">{selectedAmazon.channelName || "Amazon"} · Product ID {selectedAmazon.productId || "-"}</p>
+                        ) : null}
+                      </td>
+                      <td className="px-4 py-3">
+                        <Badge tone={selectedAmazon ? "green" : "slate"}>{selectedAmazon ? "Mapped" : "Not mapped"}</Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <Button variant="secondary" className="h-9" onClick={() => saveMapping(shopifyOption)} disabled={!selectedAmazon || isSaving}>
+                          <RefreshCw size={15} className={isSaving ? "animate-spin" : ""} />
+                          {isSaving ? "Saving" : "Save"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
 function ModuleView({ name, setActiveView }) {
+  if (name === "Product Mapping") {
+    return <ProductMappingView />;
+  }
+
   if (recordResourceByView[name]) {
     return <RecordsModuleView name={name} />;
   }
@@ -1733,7 +2094,7 @@ export function Dashboard() {
     if (typeof window !== "undefined") {
       const params = new URLSearchParams(window.location.search);
 
-      if (params.get("view") === "Channels" || params.get("provider") === "shopify") {
+      if (params.get("view") === "Channels" || ["shopify", "amazon"].includes(params.get("provider"))) {
         setActiveView("Channels");
         window.history.replaceState(null, "", "/panel");
       }

@@ -194,6 +194,118 @@ function normalizeCustomer({ companyId, channelId, provider, shop, customer }) {
   };
 }
 
+function normalizeAmazonOrder({ companyId, channelId, shop, order }) {
+  const buyer = order.BuyerInfo || {};
+  const shippingAddress = order.ShippingAddress || {};
+  const orderTotal = order.OrderTotal || {};
+  const purchaseDate = toDate(order.PurchaseDate);
+  const isCanceled = order.OrderStatus === "Canceled";
+  const isFulfilled = ["Shipped", "PartiallyShipped"].includes(order.OrderStatus);
+
+  return {
+    companyId,
+    channelId,
+    provider: "amazon",
+    shop,
+    externalId: String(order.AmazonOrderId),
+    name: order.AmazonOrderId,
+    email: buyer.BuyerEmail,
+    phone: shippingAddress.Phone,
+    customerExternalId: buyer.BuyerEmail || buyer.BuyerName || order.AmazonOrderId,
+    customerName: buyer.BuyerName || buyer.BuyerEmail || "Amazon customer",
+    financialStatus: isCanceled ? "voided" : order.OrderStatus === "Pending" ? "pending" : "paid",
+    fulfillmentStatus: isCanceled ? "cancelled" : isFulfilled ? "fulfilled" : "unfulfilled",
+    tags: [order.SalesChannel, order.FulfillmentChannel, order.OrderType].filter(Boolean),
+    currency: orderTotal.CurrencyCode || order.BuyerTaxInfo?.CurrencyCode,
+    totalPrice: toNumber(orderTotal.Amount),
+    subtotalPrice: toNumber(orderTotal.Amount),
+    totalTax: 0,
+    paymentGatewayNames: [order.PaymentMethod].filter(Boolean),
+    lineItems: [],
+    shippingAddress: {
+      name: shippingAddress.Name,
+      city: shippingAddress.City,
+      province: shippingAddress.StateOrRegion,
+      country: shippingAddress.CountryCode,
+      zip: shippingAddress.PostalCode,
+    },
+    shopifyCreatedAt: purchaseDate,
+    processedAt: purchaseDate,
+    cancelledAt: isCanceled ? toDate(order.LastUpdateDate) || purchaseDate : undefined,
+    raw: order,
+  };
+}
+
+function normalizeAmazonCustomer({ companyId, channelId, shop, order }) {
+  const buyer = order.BuyerInfo || {};
+  const shippingAddress = order.ShippingAddress || {};
+  const externalId = buyer.BuyerEmail || buyer.BuyerName || order.AmazonOrderId;
+
+  return {
+    companyId,
+    channelId,
+    provider: "amazon",
+    shop,
+    externalId: String(externalId),
+    email: buyer.BuyerEmail,
+    phone: shippingAddress.Phone,
+    name: buyer.BuyerName || buyer.BuyerEmail || "Amazon customer",
+    state: order.OrderStatus,
+    tags: [order.SalesChannel, order.FulfillmentChannel].filter(Boolean),
+    ordersCount: 1,
+    totalSpent: toNumber(order.OrderTotal?.Amount),
+    currency: order.OrderTotal?.CurrencyCode,
+    defaultAddress: {
+      city: shippingAddress.City,
+      province: shippingAddress.StateOrRegion,
+      country: shippingAddress.CountryCode,
+      zip: shippingAddress.PostalCode,
+    },
+    shopifyCreatedAt: toDate(order.PurchaseDate),
+    shopifyUpdatedAt: toDate(order.LastUpdateDate),
+    raw: order,
+  };
+}
+
+function normalizeAmazonProduct({ companyId, channelId, shop, listing }) {
+  const summary = listing.summaries?.[0] || {};
+  const offer = listing.offers?.[0] || {};
+  const availability = listing.fulfillmentAvailability?.[0] || {};
+  const price = offer.price?.amount ?? offer.listingPrice?.amount;
+  const sku = listing.sku || summary.sellerSku || listing.attributes?.merchant_suggested_asin?.[0]?.value;
+  const title = summary.itemName || listing.attributes?.item_name?.[0]?.value || sku || "Amazon listing";
+  const imageUrl = summary.mainImage?.link || summary.mainImage?.url;
+
+  return {
+    companyId,
+    channelId,
+    provider: "amazon",
+    shop,
+    externalId: String(sku || summary.asin || listing.asin),
+    title,
+    handle: summary.asin || listing.asin,
+    status: Array.isArray(summary.status) ? summary.status.join(", ") : summary.status,
+    vendor: summary.brandName || listing.attributes?.brand?.[0]?.value,
+    productType: summary.productType || listing.productType,
+    tags: [summary.asin || listing.asin, summary.fulfillmentChannelCode].filter(Boolean),
+    imageUrl,
+    totalInventory: toNumber(availability.quantity),
+    variants: [
+      {
+        externalId: String(sku || summary.asin || listing.asin),
+        title,
+        sku: sku || "",
+        price: toNumber(price),
+        inventoryQuantity: toNumber(availability.quantity),
+      },
+    ],
+    shopifyCreatedAt: toDate(summary.createdDate),
+    shopifyUpdatedAt: toDate(summary.lastUpdatedDate) || new Date(),
+    publishedAt: toDate(summary.createdDate),
+    raw: listing,
+  };
+}
+
 function cleanCompanyPayload(payload) {
   return {
     name: String(payload.name || "").trim(),
@@ -412,13 +524,15 @@ export async function getAmazonConfig(companyId, { includeSecret = false } = {})
 }
 
 export async function updateAmazonConfig({ companyId, payload }) {
+  const existing = await getAmazonConfig(companyId, { includeSecret: true });
   const amazon = {
     applicationId: String(payload.applicationId || "").trim(),
     clientId: String(payload.clientId || "").trim(),
-    clientSecret: String(payload.clientSecret || "").trim(),
+    clientSecret: String(payload.clientSecret || existing?.clientSecret || "").trim(),
     sellerCentralUrl: String(payload.sellerCentralUrl || "https://sellercentral.amazon.in").trim().replace(/\/$/, ""),
     marketplaceId: String(payload.marketplaceId || "A21TJRUUN4KGV").trim(),
     spApiEndpoint: String(payload.spApiEndpoint || "https://sellingpartnerapi-eu.amazon.com").trim().replace(/\/$/, ""),
+    syncDays: Math.max(1, Math.min(90, Number(payload.syncDays || existing?.syncDays || 30))),
     draftMode: payload.draftMode !== false,
   };
 
@@ -432,7 +546,12 @@ export async function updateAmazonConfig({ companyId, payload }) {
       { $set: { "integrations.amazon": amazon } },
       { returnDocument: "after" },
     ).lean();
-    return { config: { ...company.integrations.amazon, clientSecret: undefined } };
+    return {
+      config: {
+        ...company.integrations.amazon,
+        clientSecret: undefined,
+      },
+    };
   }
 
   const company = memory.companies.get(companyId);
@@ -444,7 +563,12 @@ export async function updateAmazonConfig({ companyId, payload }) {
   };
   company.updatedAt = now();
 
-  return { config: { ...amazon, clientSecret: undefined } };
+  return {
+    config: {
+      ...amazon,
+      clientSecret: undefined,
+    },
+  };
 }
 
 export async function updateCompanyProfile({ companyId, payload }) {
@@ -779,7 +903,7 @@ export async function queueChannelSync({ channelId, companyId }) {
 
 export async function getChannelForSync({ channelId, companyId }) {
   if (isMongoConnected()) {
-    return Channel.findOne({ _id: channelId, companyId }).select("+credentials.accessToken").lean();
+    return Channel.findOne({ _id: channelId, companyId }).select("+credentials.accessToken +credentials.refreshToken").lean();
   }
 
   const channel = memory.channels.get(channelId);
@@ -832,6 +956,65 @@ export async function saveSyncedShopifyData({ companyId, channelId, shop, orders
   const normalizedOrders = orders.map((order) => normalizeOrder({ companyId, channelId, provider, shop, order }));
   const normalizedProducts = products.map((product) => normalizeProduct({ companyId, channelId, provider, shop, product }));
   const normalizedCustomers = customers.map((customer) => normalizeCustomer({ companyId, channelId, provider, shop, customer }));
+
+  if (isMongoConnected()) {
+    await Promise.all([
+      bulkUpsert(SyncedOrder, normalizedOrders, (record) => ({
+        companyId: record.companyId,
+        channelId: record.channelId,
+        externalId: record.externalId,
+      })),
+      bulkUpsert(SyncedProduct, normalizedProducts, (record) => ({
+        companyId: record.companyId,
+        channelId: record.channelId,
+        externalId: record.externalId,
+      })),
+      bulkUpsert(SyncedCustomer, normalizedCustomers, (record) => ({
+        companyId: record.companyId,
+        channelId: record.channelId,
+        externalId: record.externalId,
+      })),
+    ]);
+  } else {
+    for (const order of normalizedOrders) {
+      order._id = order._id || order.externalId;
+      memory.orders.set(`${companyId}:${channelId}:${order.externalId}`, clone(order));
+    }
+    for (const product of normalizedProducts) {
+      product._id = product._id || product.externalId;
+      memory.products.set(`${companyId}:${channelId}:${product.externalId}`, clone(product));
+    }
+    for (const customer of normalizedCustomers) {
+      customer._id = customer._id || customer.externalId;
+      memory.customers.set(`${companyId}:${channelId}:${customer.externalId}`, clone(customer));
+    }
+  }
+
+  return {
+    orders: normalizedOrders,
+    products: normalizedProducts,
+    customers: normalizedCustomers,
+  };
+}
+
+export async function saveSyncedAmazonData({ companyId, channelId, shop, orders = [], products = [] }) {
+  const normalizedOrders = orders.map((order) => normalizeAmazonOrder({ companyId, channelId, shop, order }));
+  const customerByExternalId = new Map();
+  orders.forEach((order) => {
+    const customer = normalizeAmazonCustomer({ companyId, channelId, shop, order });
+    if (customer.externalId) {
+      const existing = customerByExternalId.get(customer.externalId);
+      customerByExternalId.set(customer.externalId, {
+        ...customer,
+        ordersCount: toNumber(existing?.ordersCount) + 1,
+        totalSpent: toNumber(existing?.totalSpent) + toNumber(customer.totalSpent),
+      });
+    }
+  });
+  const normalizedCustomers = [...customerByExternalId.values()];
+  const normalizedProducts = products
+    .map((product) => normalizeAmazonProduct({ companyId, channelId, shop, listing: product }))
+    .filter((product) => product.externalId && product.title);
 
   if (isMongoConnected()) {
     await Promise.all([

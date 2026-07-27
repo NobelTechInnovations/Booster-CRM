@@ -4,7 +4,7 @@ const syncedProductSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", required: true, index: true },
-    provider: { type: String, enum: ["shopify"], required: true, index: true },
+    provider: { type: String, enum: ["shopify", "amazon"], required: true, index: true },
     shop: { type: String, required: true, index: true },
     externalId: { type: String, required: true },
     title: String,
