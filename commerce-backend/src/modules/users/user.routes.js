@@ -25,7 +25,10 @@ userRoutes.get(
   requireAuth,
   requirePermission("users:read"),
   asyncHandler(async (req, res) => {
-    const users = await listCompanyUsers(req.auth.companyId);
+    const users = await listCompanyUsers({
+      companyId: req.auth.companyId,
+      actorUserId: req.auth.sub,
+    });
     res.json({ users, roles });
   }),
 );
@@ -82,9 +85,14 @@ userRoutes.patch(
     const result = await updateCompanyUser({
       companyId: req.auth.companyId,
       userId: req.params.userId,
+      actorUserId: req.auth.sub,
       role,
       status,
     });
+
+    if (result.error) {
+      throw new HttpError(403, result.error);
+    }
 
     if (!result.user) {
       throw new HttpError(404, "User not found");

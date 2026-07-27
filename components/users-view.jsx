@@ -149,12 +149,15 @@ function UserRow({ user, onChange, onSave, saving }) {
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-semibold">{user.name}</p>
           <Badge tone={user.status === "active" ? "green" : "slate"}>{user.status}</Badge>
+          {user.isPrimaryOwner ? <Badge tone="teal">Primary owner</Badge> : null}
+          {user.isSelf ? <Badge tone="blue">You</Badge> : null}
         </div>
         <p className="mt-1 text-sm text-[var(--muted)]">{user.email}</p>
+        {!user.canEdit ? <p className="mt-1 text-xs font-semibold text-slate-500">Role/status locked for this account.</p> : null}
       </div>
-      <Select label="Role" value={user.role} onChange={(role) => patchUser({ role })} options={roleOptions} compact />
-      <Select label="Status" value={user.status} onChange={(status) => patchUser({ status })} options={["active", "disabled"]} compact />
-      <Button variant="secondary" onClick={() => onSave(user)} disabled={saving}>
+      <Select label="Role" value={user.role} onChange={(role) => patchUser({ role })} options={roleOptions} compact disabled={!user.canEdit} />
+      <Select label="Status" value={user.status} onChange={(status) => patchUser({ status })} options={["active", "disabled"]} compact disabled={!user.canEdit} />
+      <Button variant="secondary" onClick={() => onSave(user)} disabled={saving || !user.canEdit}>
         <Save size={16} />
         Save
       </Button>
@@ -178,13 +181,14 @@ function Input({ label, value, onChange, type = "text", required = false }) {
   );
 }
 
-function Select({ label, value, onChange, options, compact = false }) {
+function Select({ label, value, onChange, options, compact = false, disabled = false }) {
   return (
     <label className="block">
       <span className={compact ? "sr-only" : "text-sm font-semibold"}>{label}</span>
       <select
         className={compact ? "h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-teal-700" : "mt-2 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"}
         value={value || ""}
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       >
         {options.map((option) => (

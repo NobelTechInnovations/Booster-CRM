@@ -20,7 +20,9 @@ export const env = {
   shopify: {
     apiKey: process.env.SHOPIFY_API_KEY || "",
     apiSecret: process.env.SHOPIFY_API_SECRET || "",
-    scopes: process.env.SHOPIFY_SCOPES || "read_products,read_orders,read_inventory,read_customers",
+    scopes:
+      process.env.SHOPIFY_SCOPES ||
+      "read_products,write_products,read_orders,write_orders,read_inventory,read_customers,write_customers",
     appUrl: process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
     apiVersion: process.env.SHOPIFY_API_VERSION || "2026-01",
     installUrl: process.env.SHOPIFY_APP_INSTALL_URL || "",

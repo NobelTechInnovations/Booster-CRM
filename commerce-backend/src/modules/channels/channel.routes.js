@@ -1,10 +1,10 @@
 import { Router } from "express";
 import { env } from "../../config/env.js";
 import { requireAuth } from "../../middleware/auth.js";
-import { disconnectChannel, getStoreMode, listChannels, queueChannelSync } from "../../repositories/store.js";
+import { disconnectChannel, getDashboardSummary, getStoreMode, listChannels, listCommerceRecords } from "../../repositories/store.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { buildShopifyInstallUrl, completeShopifyConnection } from "./shopify.service.js";
+import { buildShopifyInstallUrl, completeShopifyConnection, syncShopifyData, updateShopifyRecord } from "./shopify.service.js";
 
 export const channelRoutes = Router();
 
@@ -35,6 +35,51 @@ channelRoutes.get(
   }),
 );
 
+channelRoutes.get(
+  "/dashboard",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const dashboard = await getDashboardSummary(req.auth.companyId);
+
+    res.json({ dashboard, store: getStoreMode() });
+  }),
+);
+
+channelRoutes.get(
+  "/records/:resource",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const records = await listCommerceRecords({
+      companyId: req.auth.companyId,
+      resource: req.params.resource,
+    });
+
+    if (!records) {
+      throw new HttpError(400, "Unsupported synced record type");
+    }
+
+    res.json({ records, store: getStoreMode() });
+  }),
+);
+
+channelRoutes.patch(
+  "/records/:resource/:recordId",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await updateShopifyRecord({
+      companyId: req.auth.companyId,
+      resource: req.params.resource,
+      recordId: req.params.recordId,
+      payload: req.body || {},
+    });
+
+    res.json({
+      message: "Shopify record updated",
+      ...result,
+    });
+  }),
+);
+
 channelRoutes.post(
   "/shopify/connect",
   requireAuth,
@@ -53,7 +98,8 @@ channelRoutes.get(
   "/shopify/callback",
   asyncHandler(async (req, res) => {
     const channel = await completeShopifyConnection(req.query);
-    const successUrl = new URL("/channels", env.frontendUrl);
+    const successUrl = new URL("/panel", env.frontendUrl);
+    successUrl.searchParams.set("view", "Channels");
     successUrl.searchParams.set("provider", "shopify");
     successUrl.searchParams.set("status", "connected");
     successUrl.searchParams.set("channelId", String(channel._id));
@@ -66,7 +112,7 @@ channelRoutes.post(
   "/:channelId/sync",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const channel = await queueChannelSync({
+    const channel = await syncShopifyData({
       channelId: req.params.channelId,
       companyId: req.auth.companyId,
     });
@@ -75,25 +121,16 @@ channelRoutes.post(
       throw new HttpError(404, "Channel not found");
     }
 
-    channel.sync = {
-      products: "queued",
-      orders: "queued",
-      inventory: "queued",
-      customers: "queued",
-      lastSyncAt: new Date(),
-      lastError: undefined,
-    };
-
-    await channel.save();
-
     res.json({
-      message: "Shopify sync queued",
+      message: "Shopify data synced",
       channel: {
-        id: channel._id,
+        id: channel.id || channel._id,
         provider: channel.provider,
+        name: channel.name,
         shop: channel.shop,
         status: channel.status,
         sync: channel.sync,
+        metrics: channel.metrics,
       },
     });
   }),

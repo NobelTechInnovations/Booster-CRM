@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const channelSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
-    provider: { type: String, enum: ["shopify"], required: true, index: true },
+    provider: { type: String, enum: ["shopify", "amazon"], required: true, index: true },
     name: { type: String, required: true },
     shop: { type: String, required: true, lowercase: true, trim: true },
     status: {
@@ -15,9 +15,12 @@ const channelSchema = new mongoose.Schema(
     scopes: [{ type: String }],
     credentials: {
       accessToken: { type: String, select: false },
+      refreshToken: { type: String, select: false },
     },
     external: {
       shopId: String,
+      sellingPartnerId: String,
+      marketplaceId: String,
       email: String,
       domain: String,
       myshopifyDomain: String,
@@ -31,6 +34,15 @@ const channelSchema = new mongoose.Schema(
       customers: { type: String, enum: ["idle", "queued", "running", "failed"], default: "idle" },
       lastSyncAt: Date,
       lastError: String,
+    },
+    metrics: {
+      orderCount: { type: Number, default: 0 },
+      salesTotal: { type: Number, default: 0 },
+      productCount: { type: Number, default: 0 },
+      customerCount: { type: Number, default: 0 },
+      currency: String,
+      lastOrderName: String,
+      lastOrderAt: Date,
     },
     connectedBy: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     disconnectedAt: Date,

@@ -7,6 +7,7 @@ import {
   createCompanyOwner,
   findUserByEmailWithPassword,
   getOrCreateDevSession,
+  getCompany,
   getStoreMode,
   getUserAndCompany,
 } from "../../repositories/store.js";
@@ -74,14 +75,51 @@ authRoutes.post(
     requireField(email, "Email");
     requireField(password, "Password");
 
-    const user = await findUserByEmailWithPassword(email);
-    if (!user || user.status !== "active") {
+    const users = await findUserByEmailWithPassword(email);
+    const activeUsers = users.filter((user) => user.status === "active");
+
+    if (activeUsers.length === 0) {
       throw new HttpError(401, "Invalid email or password");
     }
 
-    const matches = await bcrypt.compare(String(password), user.passwordHash || "");
-    if (!matches) {
+    const matchingUsers = [];
+
+    for (const user of activeUsers) {
+      if (await bcrypt.compare(String(password), user.passwordHash || "")) {
+        matchingUsers.push(user);
+      }
+    }
+
+    if (matchingUsers.length === 0) {
       throw new HttpError(401, "Invalid email or password");
+    }
+
+    const requestedCompanyId = req.body.companyId ? String(req.body.companyId) : "";
+    const user = requestedCompanyId
+      ? matchingUsers.find((entry) => String(entry.companyId) === requestedCompanyId)
+      : matchingUsers[0];
+
+    if (matchingUsers.length > 1 && !requestedCompanyId) {
+      const companies = await Promise.all(
+        matchingUsers.map(async (entry) => {
+          const company = await getCompany(entry.companyId);
+          return {
+            companyId: entry.companyId,
+            companyName: company?.name,
+            role: entry.role,
+          };
+        }),
+      );
+
+      return res.json({
+        requiresCompanySelection: true,
+        message: "Select a company to continue",
+        companies,
+      });
+    }
+
+    if (!user) {
+      throw new HttpError(401, "Invalid company for this login");
     }
 
     const { company } = await getUserAndCompany({

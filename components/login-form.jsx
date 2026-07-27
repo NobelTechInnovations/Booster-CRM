@@ -13,8 +13,20 @@ import { loginCompany } from "@/lib/api";
 export function LoginForm() {
   const router = useRouter();
   const [form, setForm] = useState({ email: "", password: "" });
+  const [companyChoices, setCompanyChoices] = useState([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  async function submitLogin(payload) {
+    const result = await loginCompany(payload);
+
+    if (result.requiresCompanySelection) {
+      setCompanyChoices(result.companies || []);
+      return;
+    }
+
+    router.push("/panel");
+  }
 
   async function onSubmit(event) {
     event.preventDefault();
@@ -22,8 +34,20 @@ export function LoginForm() {
     setLoading(true);
 
     try {
-      await loginCompany(form);
-      router.push("/panel");
+      await submitLogin(form);
+    } catch (caught) {
+      setError(caught.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function chooseCompany(companyId) {
+    setError("");
+    setLoading(true);
+
+    try {
+      await submitLogin({ ...form, companyId });
     } catch (caught) {
       setError(caught.message);
     } finally {
@@ -49,6 +73,27 @@ export function LoginForm() {
             <Field icon={Mail} label="Email" type="email" value={form.email} onChange={(email) => setForm({ ...form, email })} />
             <Field icon={LockKeyhole} label="Password" type="password" value={form.password} onChange={(password) => setForm({ ...form, password })} />
             {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
+            {companyChoices.length > 0 ? (
+              <div className="rounded-lg border border-[var(--line)] bg-slate-50 p-3">
+                <p className="text-sm font-semibold">Select company</p>
+                <div className="mt-3 space-y-2">
+                  {companyChoices.map((company) => (
+                    <button
+                      className="flex w-full items-center justify-between rounded-md border border-[var(--line)] bg-white px-3 py-2 text-left text-sm hover:border-teal-600"
+                      key={company.companyId}
+                      type="button"
+                      onClick={() => chooseCompany(company.companyId)}
+                    >
+                      <span>
+                        <span className="block font-semibold">{company.companyName}</span>
+                        <span className="text-xs text-[var(--muted)]">{company.role}</span>
+                      </span>
+                      <span className="text-xs font-semibold text-teal-700">Open</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <Button className="w-full" disabled={loading}>
               {loading ? "Logging in" : "Login to Panel"}
             </Button>

@@ -4,6 +4,7 @@ const companySchema = new mongoose.Schema(
   {
     name: { type: String, required: true, trim: true },
     slug: { type: String, required: true, trim: true, lowercase: true, unique: true },
+    ownerUserId: { type: mongoose.Schema.Types.ObjectId, ref: "User" },
     status: { type: String, enum: ["active", "disabled"], default: "active" },
     legalName: { type: String, trim: true },
     email: { type: String, trim: true, lowercase: true },
@@ -36,6 +37,17 @@ const companySchema = new mongoose.Schema(
       submittedAt: Date,
       verifiedAt: Date,
       rejectionReason: String,
+    },
+    integrations: {
+      amazon: {
+        applicationId: String,
+        clientId: String,
+        clientSecret: { type: String, select: false },
+        sellerCentralUrl: { type: String, default: "https://sellercentral.amazon.in" },
+        marketplaceId: { type: String, default: "A21TJRUUN4KGV" },
+        spApiEndpoint: { type: String, default: "https://sellingpartnerapi-eu.amazon.com" },
+        draftMode: { type: Boolean, default: true },
+      },
     },
   },
   { timestamps: true },
