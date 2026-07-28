@@ -15,10 +15,53 @@ import {
 } from "../../repositories/store.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { buildAmazonAuthorizeUrl, completeAmazonConnection, syncAmazonData } from "./amazon.service.js";
+import {
+  buildAmazonAuthorizeUrl,
+  connectAmazonPrivateApp,
+  buildAmazonLoginRedirectUrl,
+  completeAmazonConnection,
+  createAmazonPendingState,
+  syncAmazonData,
+} from "./amazon.service.js";
 import { buildShopifyInstallUrl, completeShopifyConnection, syncShopifyData, updateShopifyRecord } from "./shopify.service.js";
 
 export const channelRoutes = Router();
+
+function readCookie(req, name) {
+  const cookieHeader = String(req.headers.cookie || "");
+  const cookies = cookieHeader
+    .split(";")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
+
+  for (const entry of cookies) {
+    const separatorIndex = entry.indexOf("=");
+    if (separatorIndex === -1) continue;
+    const key = entry.slice(0, separatorIndex);
+    const value = entry.slice(separatorIndex + 1);
+    if (key === name) {
+      return decodeURIComponent(value);
+    }
+  }
+
+  return "";
+}
+
+function setCookie(res, name, value, { maxAge = 600 } = {}) {
+  const parts = [
+    `${name}=${encodeURIComponent(value)}`,
+    "Path=/api/channels/amazon",
+    "HttpOnly",
+    "SameSite=Lax",
+    `Max-Age=${maxAge}`,
+  ];
+
+  if (env.nodeEnv === "production") {
+    parts.push("Secure");
+  }
+
+  res.setHeader("Set-Cookie", parts.join("; "));
+}
 
 const supportedChannels = [
   { provider: "shopify", name: "Shopify", status: "available", phase: "Phase 3" },
@@ -179,12 +222,56 @@ channelRoutes.post(
   "/amazon/connect",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const pendingState = createAmazonPendingState({
+      companyId: req.auth.companyId,
+      userId: req.auth.sub,
+      marketplaceId: req.body?.marketplaceId,
+      draftMode: req.body?.draftMode,
+    });
     const installUrl = await buildAmazonAuthorizeUrl({
       companyId: req.auth.companyId,
       userId: req.auth.sub,
     });
 
+    setCookie(res, "amazon_connect_state", pendingState);
     res.json({ provider: "amazon", installUrl });
+  }),
+);
+
+channelRoutes.post(
+  "/amazon/connect-private",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const channel = await connectAmazonPrivateApp({
+      companyId: req.auth.companyId,
+      userId: req.auth.sub,
+      refreshToken: req.body?.refreshToken,
+      sellerId: req.body?.sellerId,
+    });
+
+    res.json({
+      message: "Amazon private app connected",
+      channel: {
+        id: channel.id || channel._id,
+        provider: channel.provider,
+        name: channel.name,
+        shop: channel.shop,
+        status: channel.status,
+        sync: channel.sync,
+        metrics: channel.metrics,
+      },
+    });
+  }),
+);
+
+channelRoutes.get(
+  "/amazon/login",
+  asyncHandler(async (req, res) => {
+    const pendingState = readCookie(req, "amazon_connect_state");
+    const redirectUrl = buildAmazonLoginRedirectUrl(req.query, pendingState);
+
+    setCookie(res, "amazon_connect_state", "", { maxAge: 0 });
+    res.redirect(redirectUrl);
   }),
 );
 

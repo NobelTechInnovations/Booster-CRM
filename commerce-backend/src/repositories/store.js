@@ -524,9 +524,10 @@ export async function getAmazonConfig(companyId, { includeSecret = false } = {})
 }
 
 export async function updateAmazonConfig({ companyId, payload }) {
+  const applicationId = String(payload.applicationId || "").trim();
   const existing = await getAmazonConfig(companyId, { includeSecret: true });
   const amazon = {
-    applicationId: String(payload.applicationId || "").trim(),
+    applicationId,
     clientId: String(payload.clientId || "").trim(),
     clientSecret: String(payload.clientSecret || existing?.clientSecret || "").trim(),
     sellerCentralUrl: String(payload.sellerCentralUrl || "https://sellercentral.amazon.in").trim().replace(/\/$/, ""),
@@ -538,6 +539,12 @@ export async function updateAmazonConfig({ companyId, payload }) {
 
   if (!amazon.applicationId || !amazon.clientId || !amazon.clientSecret) {
     return { error: "Amazon application ID, LWA client ID, and LWA client secret are required" };
+  }
+
+  if (!/^amzn1\.(sellerapps\.app|sp\.solution)\.[a-z0-9-]+$/i.test(applicationId)) {
+    return {
+      error: "Amazon application ID must look like amzn1.sellerapps.app.xxxxx or amzn1.sp.solution.xxxxx. Do not use the LWA client ID.",
+    };
   }
 
   if (isMongoConnected()) {

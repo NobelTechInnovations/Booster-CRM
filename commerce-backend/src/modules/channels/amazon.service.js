@@ -4,26 +4,54 @@ import { getAmazonConfig, getChannelForSync, saveSyncedAmazonData, updateChannel
 import { HttpError } from "../../utils/http-error.js";
 import { createOauthState, readOauthState } from "../../utils/oauth-state.js";
 
+function normalizeAmazonApplicationId(value) {
+  return String(value || "").trim();
+}
+
+function isSellerAppId(value) {
+  return /^amzn1\.sellerapps\.app\.[a-z0-9-]+$/i.test(String(value || "").trim());
+}
+
+function isPrivateSolutionAppId(value) {
+  return /^amzn1\.sp\.solution\.[a-z0-9-]+$/i.test(String(value || "").trim());
+}
+
 function requireAmazonConfig(config) {
   if (!config?.applicationId || !config?.clientId || !config?.clientSecret) {
     throw new HttpError(400, "Save Amazon app setup first: application ID, LWA client ID, and LWA client secret.");
   }
+
+  if (!isSellerAppId(config.applicationId) && !isPrivateSolutionAppId(config.applicationId)) {
+    throw new HttpError(
+      400,
+      "Amazon application ID must look like amzn1.sellerapps.app.xxxxx or amzn1.sp.solution.xxxxx. Do not paste the LWA client ID.",
+    );
+  }
+}
+
+export function createAmazonPendingState({ companyId, userId, marketplaceId, draftMode }) {
+  return createOauthState({
+    type: "amazon-connect",
+    companyId,
+    userId,
+    marketplaceId,
+    draftMode: draftMode !== false,
+  });
 }
 
 export async function buildAmazonAuthorizeUrl({ companyId, userId }) {
   const config = await getAmazonConfig(companyId, { includeSecret: true });
   requireAmazonConfig(config);
 
-  const state = createOauthState({
-    provider: "amazon",
-    companyId,
-    userId,
-    marketplaceId: config.marketplaceId,
-  });
+  if (isPrivateSolutionAppId(config.applicationId)) {
+    throw new HttpError(
+      400,
+      "This Amazon app is a private Solution Provider app. Use refresh token connect instead of website OAuth redirect.",
+    );
+  }
 
   const params = new URLSearchParams({
-    application_id: config.applicationId,
-    state,
+    application_id: normalizeAmazonApplicationId(config.applicationId),
   });
 
   if (config.draftMode) {
@@ -31,6 +59,69 @@ export async function buildAmazonAuthorizeUrl({ companyId, userId }) {
   }
 
   return `${config.sellerCentralUrl || "https://sellercentral.amazon.in"}/apps/authorize/consent?${params.toString()}`;
+}
+
+export async function connectAmazonPrivateApp({ companyId, userId, refreshToken, sellerId }) {
+  const config = await getAmazonConfig(companyId, { includeSecret: true });
+  requireAmazonConfig(config);
+
+  if (!isPrivateSolutionAppId(config.applicationId)) {
+    throw new HttpError(
+      400,
+      "Direct refresh-token connect is for private SP-API apps with an application ID like amzn1.sp.solution.xxxxx.",
+    );
+  }
+
+  const cleanedRefreshToken = String(refreshToken || "").trim();
+  if (!cleanedRefreshToken) {
+    throw new HttpError(400, "Amazon refresh token is required for private app connect.");
+  }
+
+  const accessToken = await refreshAmazonAccessToken({ refreshToken: cleanedRefreshToken, config });
+
+  return upsertAmazonChannel({
+    companyId,
+    userId,
+    sellingPartnerId: String(sellerId || "self-authorized").trim(),
+    marketplaceId: config.marketplaceId,
+    refreshToken: cleanedRefreshToken,
+    accessToken,
+  });
+}
+
+export function buildAmazonLoginRedirectUrl(query, pendingState) {
+  const pending = readOauthState(pendingState);
+
+  if (pending.type !== "amazon-connect") {
+    throw new HttpError(400, "Amazon connect session is invalid. Start the Amazon connection again.");
+  }
+
+  const amazonCallbackUri = String(query.amazon_callback_uri || "").trim();
+  const amazonState = String(query.amazon_state || "").trim();
+  const sellingPartnerId = String(query.selling_partner_id || "").trim();
+
+  if (!amazonCallbackUri || !amazonState || !sellingPartnerId) {
+    throw new HttpError(400, "Amazon login handoff is missing amazon_callback_uri, amazon_state, or selling_partner_id.");
+  }
+
+  const state = createOauthState({
+    provider: "amazon",
+    companyId: pending.companyId,
+    userId: pending.userId,
+    marketplaceId: pending.marketplaceId,
+    sellingPartnerId,
+  });
+
+  const redirectUrl = new URL(amazonCallbackUri);
+  redirectUrl.searchParams.set("amazon_state", amazonState);
+  redirectUrl.searchParams.set("state", state);
+  redirectUrl.searchParams.set("redirect_uri", `${env.amazon.appUrl}/api/channels/amazon/callback`);
+
+  if (pending.draftMode || query.version === "beta") {
+    redirectUrl.searchParams.set("version", "beta");
+  }
+
+  return redirectUrl.toString();
 }
 
 async function exchangeAmazonCodeForToken({ code, redirectUri, config }) {
@@ -204,7 +295,7 @@ export async function completeAmazonConnection(query) {
   return upsertAmazonChannel({
     companyId: state.companyId,
     userId: state.userId,
-    sellingPartnerId,
+    sellingPartnerId: state.sellingPartnerId || sellingPartnerId,
     marketplaceId: state.marketplaceId || config.marketplaceId,
     refreshToken,
     accessToken,
@@ -246,9 +337,10 @@ export async function syncAmazonData({ channelId, companyId }) {
 
   try {
     const accessToken = await refreshAmazonAccessToken({ refreshToken, config });
+    const sellerId = channel.external?.sellingPartnerId && channel.external.sellingPartnerId !== "self-authorized" ? channel.external.sellingPartnerId : "";
     const [ordersResult, productsResult] = await Promise.allSettled([
       fetchAmazonOrders({ config, accessToken }),
-      fetchAmazonProducts({ config, accessToken, sellerId: channel.external?.sellingPartnerId || channel.shop.replace(/^amazon-/, "") }),
+      sellerId ? fetchAmazonProducts({ config, accessToken, sellerId }) : Promise.resolve([]),
     ]);
 
     const orders = ordersResult.status === "fulfilled" ? ordersResult.value : [];

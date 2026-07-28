@@ -59,6 +59,7 @@ import {
 import {
   clearSession,
   createAmazonConnection,
+  createAmazonPrivateConnection,
   createShopifyConnection,
   getChannelDashboard,
   getProductMappingOptions,
@@ -546,6 +547,8 @@ function AmazonConnectForm({ compact = false }) {
     applicationId: "",
     clientId: "",
     clientSecret: "",
+    refreshToken: "",
+    sellerId: "",
     sellerCentralUrl: "https://sellercentral.amazon.in",
     marketplaceId: "A21TJRUUN4KGV",
     spApiEndpoint: "https://sellingpartnerapi-eu.amazon.com",
@@ -566,6 +569,15 @@ function AmazonConnectForm({ compact = false }) {
 
     try {
       await saveAmazonSetup(form);
+      if (form.refreshToken.trim()) {
+        await createAmazonPrivateConnection({
+          refreshToken: form.refreshToken,
+          sellerId: form.sellerId,
+        });
+        window.location.href = "/panel?view=Channels&provider=amazon&status=connected";
+        return;
+      }
+
       const result = await createAmazonConnection();
       window.location.href = result.installUrl;
     } catch (error) {
@@ -588,7 +600,7 @@ function AmazonConnectForm({ compact = false }) {
         <input
           id={compact ? "amazon-application-id-compact" : "amazon-application-id"}
           className={fieldClass}
-          placeholder="Amazon application ID"
+          placeholder="Application ID: amzn1.sellerapps.app.xxxxx"
           value={form.applicationId}
           onChange={(event) => setField("applicationId", event.target.value)}
         />
@@ -605,8 +617,20 @@ function AmazonConnectForm({ compact = false }) {
           value={form.clientSecret}
           onChange={(event) => setField("clientSecret", event.target.value)}
         />
+        <input
+          className={fieldClass}
+          placeholder="Refresh token for private app (recommended)"
+          value={form.refreshToken}
+          onChange={(event) => setField("refreshToken", event.target.value)}
+        />
         {!compact ? (
           <div className="grid gap-2 sm:grid-cols-2">
+            <input
+              className={fieldClass}
+              placeholder="Seller ID for product sync (optional)"
+              value={form.sellerId}
+              onChange={(event) => setField("sellerId", event.target.value)}
+            />
             <input
               className={fieldClass}
               placeholder="Seller Central URL"
@@ -645,11 +669,17 @@ function AmazonConnectForm({ compact = false }) {
       </div>
       <Button type="submit" className="mt-3 w-full" disabled={isConnecting}>
         <PlugZap size={16} />
-        {isConnecting ? "Opening Amazon" : "Save Setup & Connect"}
+        {isConnecting ? "Connecting Amazon" : form.refreshToken.trim() ? "Save & Connect Private App" : "Save Setup & Connect"}
       </Button>
       {connectError ? <p className="mt-2 text-sm font-medium text-rose-700">{connectError}</p> : null}
       <p className="mt-2 text-xs leading-5 text-amber-900">
         LWA/OAuth2 setup stays in database. Seller login saves the refresh token in the Amazon channel record.
+      </p>
+      <p className="mt-1 text-xs leading-5 text-amber-900">
+        Private apps can use `amzn1.sp.solution...` plus refresh token. Website OAuth apps use `amzn1.sellerapps.app...`.
+      </p>
+      <p className="mt-1 text-xs leading-5 text-amber-900">
+        In Amazon app settings, set Login URI to `{`http://your-public-domain/api/channels/amazon/login`}` and Redirect URI to `{`http://your-public-domain/api/channels/amazon/callback`}`. Amazon does not accept localhost redirect URIs.
       </p>
     </form>
   );
