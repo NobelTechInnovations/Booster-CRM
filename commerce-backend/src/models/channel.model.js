@@ -3,7 +3,7 @@ import mongoose from "mongoose";
 const channelSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
-    provider: { type: String, enum: ["shopify", "amazon"], required: true, index: true },
+    provider: { type: String, enum: ["shopify", "amazon", "velocity"], required: true, index: true },
     name: { type: String, required: true },
     shop: { type: String, required: true, lowercase: true, trim: true },
     status: {
@@ -16,6 +16,10 @@ const channelSchema = new mongoose.Schema(
     credentials: {
       accessToken: { type: String, select: false },
       refreshToken: { type: String, select: false },
+      username: { type: String, select: false },
+      password: { type: String, select: false },
+      token: { type: String, select: false },
+      tokenExpiresAt: { type: Date, select: false },
     },
     external: {
       shopId: String,

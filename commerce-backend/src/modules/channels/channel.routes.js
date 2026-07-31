@@ -24,6 +24,18 @@ import {
   syncAmazonData,
 } from "./amazon.service.js";
 import { buildShopifyInstallUrl, completeShopifyConnection, syncShopifyData, updateShopifyRecord } from "./shopify.service.js";
+import {
+  cancelVelocityOrder,
+  checkVelocityServiceability,
+  connectVelocity,
+  createVelocityForwardOrder,
+  createVelocityReverseOrder,
+  createVelocityWarehouse,
+  fetchShipments,
+  fetchWarehouses,
+  getVelocityReports,
+  trackVelocityOrder,
+} from "./velocity.service.js";
 
 export const channelRoutes = Router();
 
@@ -67,6 +79,7 @@ const supportedChannels = [
   { provider: "shopify", name: "Shopify", status: "available", phase: "Phase 3" },
   { provider: "woocommerce", name: "WooCommerce", status: "planned", phase: "Phase 3" },
   { provider: "amazon", name: "Amazon", status: "available", phase: "Phase 3" },
+  { provider: "velocity", name: "Velocity Shipping", status: "available", phase: "Phase 10" },
   { provider: "flipkart", name: "Flipkart", status: "planned", phase: "Phase 3" },
   { provider: "meesho", name: "Meesho", status: "planned", phase: "Later" },
   { provider: "glowroad", name: "GlowRoad", status: "planned", phase: "Later" },
@@ -286,6 +299,140 @@ channelRoutes.get(
     successUrl.searchParams.set("channelId", String(channel._id));
 
     res.redirect(successUrl.toString());
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/connect",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const channel = await connectVelocity({
+      companyId: req.auth.companyId,
+      userId: req.auth.sub,
+      username: req.body?.username,
+      password: req.body?.password,
+    });
+
+    res.json({
+      message: "Velocity Shipping connected",
+      channel: {
+        id: channel._id,
+        provider: channel.provider,
+        name: channel.name,
+        status: channel.status,
+      },
+    });
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/warehouses",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const warehouse = await createVelocityWarehouse({
+      companyId: req.auth.companyId,
+      payload: req.body || {},
+    });
+
+    res.json({ message: "Warehouse created", warehouse });
+  }),
+);
+
+channelRoutes.get(
+  "/velocity/warehouses",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const warehouses = await fetchWarehouses(req.auth.companyId);
+
+    res.json({ warehouses });
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/serviceability",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await checkVelocityServiceability({
+      companyId: req.auth.companyId,
+      payload: req.body || {},
+    });
+
+    res.json(result);
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/orders/forward",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const shipment = await createVelocityForwardOrder({
+      companyId: req.auth.companyId,
+      payload: req.body || {},
+    });
+
+    res.json({ message: "Forward shipment created", shipment });
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/orders/reverse",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const shipment = await createVelocityReverseOrder({
+      companyId: req.auth.companyId,
+      payload: req.body || {},
+    });
+
+    res.json({ message: "Reverse pickup shipment created", shipment });
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/orders/cancel",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await cancelVelocityOrder({
+      companyId: req.auth.companyId,
+      awbs: req.body?.awbs || [],
+    });
+
+    res.json(result);
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/orders/track",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await trackVelocityOrder({
+      companyId: req.auth.companyId,
+      awbs: req.body?.awbs || [],
+    });
+
+    res.json(result);
+  }),
+);
+
+channelRoutes.post(
+  "/velocity/reports",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await getVelocityReports({
+      companyId: req.auth.companyId,
+      payload: req.body || {},
+    });
+
+    res.json(result);
+  }),
+);
+
+channelRoutes.get(
+  "/velocity/shipments",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const shipments = await fetchShipments(req.auth.companyId);
+
+    res.json({ shipments });
   }),
 );
 

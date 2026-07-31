@@ -7,6 +7,8 @@ import { SyncedCustomer } from "../models/synced-customer.model.js";
 import { SyncedOrder } from "../models/synced-order.model.js";
 import { SyncedProduct } from "../models/synced-product.model.js";
 import { User } from "../models/user.model.js";
+import { Shipment } from "../models/shipment.model.js";
+import { Warehouse } from "../models/warehouse.model.js";
 
 const memory = {
   companies: new Map(),
@@ -16,6 +18,8 @@ const memory = {
   products: new Map(),
   customers: new Map(),
   productMappings: new Map(),
+  warehouses: new Map(),
+  shipments: new Map(),
 };
 
 function id() {
@@ -1395,4 +1399,165 @@ export async function disconnectChannel({ channelId, companyId }) {
   delete channel.credentials?.accessToken;
 
   return withoutCredentials(channel);
+}
+
+export async function getVelocityChannel(companyId) {
+  if (isMongoConnected()) {
+    return Channel.findOne({ companyId, provider: "velocity" })
+      .select("+credentials.username +credentials.password +credentials.token +credentials.tokenExpiresAt")
+      .lean();
+  }
+
+  const channel = [...memory.channels.values()].find(
+    (entry) => String(entry.companyId) === String(companyId) && entry.provider === "velocity",
+  );
+
+  return channel ? clone(channel) : null;
+}
+
+export async function upsertVelocityChannel({ companyId, userId, username, password, token, tokenExpiresAt }) {
+  const shop = "velocity";
+
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate(
+      { companyId, provider: "velocity", shop },
+      {
+        $set: {
+          provider: "velocity",
+          companyId,
+          shop,
+          name: "Velocity Shipping",
+          status: "connected",
+          credentials: { username, password, token, tokenExpiresAt },
+          connectedBy: userId,
+          disconnectedAt: null,
+        },
+      },
+      { new: true, upsert: true },
+    ).lean();
+  }
+
+  const existing = [...memory.channels.values()].find(
+    (channel) => String(channel.companyId) === String(companyId) && channel.provider === "velocity" && channel.shop === shop,
+  );
+
+  const channel = {
+    _id: existing?._id || id(),
+    provider: "velocity",
+    companyId,
+    shop,
+    name: "Velocity Shipping",
+    status: "connected",
+    credentials: { username, password, token, tokenExpiresAt },
+    connectedBy: userId,
+    disconnectedAt: null,
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+
+  memory.channels.set(channel._id, channel);
+  return clone(channel);
+}
+
+export async function updateVelocityToken({ channelId, companyId, token, tokenExpiresAt }) {
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate(
+      { _id: channelId, companyId },
+      { $set: { "credentials.token": token, "credentials.tokenExpiresAt": tokenExpiresAt } },
+      { new: true },
+    )
+      .select("+credentials.username +credentials.password +credentials.token +credentials.tokenExpiresAt")
+      .lean();
+  }
+
+  const channel = memory.channels.get(channelId);
+  if (!channel || String(channel.companyId) !== String(companyId)) return null;
+
+  channel.credentials = { ...channel.credentials, token, tokenExpiresAt };
+  channel.updatedAt = now();
+
+  return clone(channel);
+}
+
+export async function createWarehouseRecord({ companyId, channelId, warehouseId, payload }) {
+  const record = {
+    companyId,
+    channelId,
+    provider: "velocity",
+    warehouseId,
+    name: payload.name,
+    phone: payload.phone_number,
+    email: payload.email,
+    gstNo: payload.gst_no,
+    contactPerson: payload.contact_person,
+    address: {
+      street: payload.address_attributes?.street_address,
+      zip: payload.address_attributes?.zip,
+      city: payload.address_attributes?.city,
+      state: payload.address_attributes?.state,
+      country: payload.address_attributes?.country,
+    },
+  };
+
+  if (isMongoConnected()) {
+    return Warehouse.findOneAndUpdate(
+      { companyId, provider: "velocity", warehouseId },
+      { $set: record },
+      { new: true, upsert: true },
+    ).lean();
+  }
+
+  const stored = { _id: id(), ...record, createdAt: now(), updatedAt: now() };
+  memory.warehouses.set(stored._id, stored);
+  return clone(stored);
+}
+
+export async function listWarehouses({ companyId, provider = "velocity" }) {
+  if (isMongoConnected()) {
+    return Warehouse.find({ companyId, provider }).sort({ createdAt: -1 }).lean();
+  }
+
+  return [...memory.warehouses.values()]
+    .filter((entry) => String(entry.companyId) === String(companyId) && entry.provider === provider)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map(clone);
+}
+
+export async function createShipmentRecord(fields) {
+  const record = { provider: "velocity", isReturn: false, status: "created", codAmount: 0, ...fields };
+
+  if (isMongoConnected()) {
+    return Shipment.create(record);
+  }
+
+  const stored = { _id: id(), ...record, createdAt: now(), updatedAt: now() };
+  memory.shipments.set(stored._id, stored);
+  return clone(stored);
+}
+
+export async function listShipments({ companyId, provider = "velocity" }) {
+  if (isMongoConnected()) {
+    return Shipment.find({ companyId, provider }).sort({ createdAt: -1 }).limit(500).lean();
+  }
+
+  return [...memory.shipments.values()]
+    .filter((entry) => String(entry.companyId) === String(companyId) && entry.provider === provider)
+    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+    .map(clone);
+}
+
+export async function updateShipmentsByAwb({ companyId, awbCodes, update }) {
+  if (isMongoConnected()) {
+    await Shipment.updateMany({ companyId, awbCode: { $in: awbCodes } }, { $set: update });
+    return Shipment.find({ companyId, awbCode: { $in: awbCodes } }).lean();
+  }
+
+  const updated = [];
+  for (const entry of memory.shipments.values()) {
+    if (String(entry.companyId) === String(companyId) && awbCodes.includes(entry.awbCode)) {
+      Object.assign(entry, update, { updatedAt: now() });
+      updated.push(clone(entry));
+    }
+  }
+  return updated;
 }

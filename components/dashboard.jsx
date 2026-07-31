@@ -46,6 +46,7 @@ import {
 } from "recharts";
 import { CompanyView } from "@/components/company-view";
 import { UsersView } from "@/components/users-view";
+import { ShippingView } from "@/components/shipping-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -1062,18 +1063,6 @@ const modulePages = {
       ["Reserved", "592", "Committed to open orders."],
       ["Low Stock", "14", "SKUs below reorder level."],
       ["Damaged/Lost", "37", "Needs audit and adjustment."],
-    ],
-  },
-  Shipping: {
-    eyebrow: "Phase 10",
-    title: "Shipping",
-    subtitle: "Create shipments, generate label, invoice, manifest, track, cancel, NDR, returns, exchange, pickup, and bulk ship.",
-    actions: ["Create Shipment", "Generate Label", "Generate Manifest", "Track", "Bulk Ship"],
-    cards: [
-      ["Ready to Ship", "312", "Packed and waiting for courier assignment."],
-      ["In Transit", "1,842", "Live tracking pending integration."],
-      ["NDR", "28", "Needs customer follow-up."],
-      ["RTO", "19", "Return to origin under review."],
     ],
   },
   CRM: {
@@ -2178,6 +2167,8 @@ export function Dashboard() {
           />
         ) : activeView === "Users" ? (
           <UsersView />
+        ) : activeView === "Shipping" ? (
+          <ShippingView />
         ) : activeView !== "Dashboard" ? (
           <ModuleView name={activeView} setActiveView={setActiveView} />
         ) : (
