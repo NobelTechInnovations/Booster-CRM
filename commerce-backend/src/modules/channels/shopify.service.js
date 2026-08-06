@@ -3,11 +3,11 @@ import { URLSearchParams } from "node:url";
 import { env } from "../../config/env.js";
 import {
   getChannelForSync,
-  getCommerceRecordForUpdate,
-  saveSyncedShopifyData,
   updateChannelSyncState,
   upsertShopifyChannel,
-} from "../../repositories/store.js";
+  addShopifyWebhookRecord,
+} from "../../repositories/channel.repo.js";
+import { saveSyncedShopifyData, getCommerceRecordForUpdate } from "../../repositories/order.repo.js";
 import { HttpError } from "../../utils/http-error.js";
 import { createOauthState, readOauthState } from "../../utils/oauth-state.js";
 
@@ -458,6 +458,42 @@ export async function syncShopifyData({ channelId, companyId }) {
   });
 }
 
+export async function registerShopifyWebhooks(shop, accessToken, channelId, companyId) {
+  const webhookTopics = [
+    { topic: "orders/create", path: "/api/webhooks/shopify/orders/create" },
+    { topic: "orders/updated", path: "/api/webhooks/shopify/orders/updated" },
+    { topic: "orders/cancelled", path: "/api/webhooks/shopify/orders/cancelled" },
+    { topic: "fulfillments/create", path: "/api/webhooks/shopify/fulfillments/create" },
+  ];
+
+  for (const { topic, path } of webhookTopics) {
+    try {
+      const address = `${env.shopify.appUrl}${path}`;
+      const body = await shopifyFetch(shop, "/webhooks.json", accessToken, {
+        method: "POST",
+        body: JSON.stringify({
+          webhook: {
+            topic,
+            address,
+            format: "json",
+          },
+        }),
+      });
+
+      if (body.webhook?.id) {
+        await addShopifyWebhookRecord({
+          channelId,
+          companyId,
+          topic,
+          webhookId: body.webhook.id,
+        });
+      }
+    } catch (err) {
+      console.warn(`[Shopify Webhook] Could not register webhook ${topic} for ${shop}:`, err.message);
+    }
+  }
+}
+
 export async function completeShopifyConnection(query) {
   verifyShopifyHmac(query);
 
@@ -471,7 +507,7 @@ export async function completeShopifyConnection(query) {
   const { accessToken, scopes } = await exchangeCodeForAccessToken(shop, query.code);
   const shopDetails = await fetchShopDetails(shop, accessToken);
 
-  return upsertShopifyChannel({
+  const channel = await upsertShopifyChannel({
     companyId: state.companyId,
     userId: state.userId,
     shop,
@@ -479,4 +515,9 @@ export async function completeShopifyConnection(query) {
     scopes,
     accessToken,
   });
+
+  // Automatically register real-time webhooks
+  registerShopifyWebhooks(shop, accessToken, channel._id || channel.id, state.companyId).catch(console.error);
+
+  return channel;
 }

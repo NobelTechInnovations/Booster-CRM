@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  PackageCheck,
   Activity,
   Bell,
   Boxes,
@@ -47,6 +48,7 @@ import {
 import { CompanyView } from "@/components/company-view";
 import { UsersView } from "@/components/users-view";
 import { ShippingView } from "@/components/shipping-view";
+import { FulfillmentView } from "@/components/fulfillment-view";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -78,6 +80,7 @@ import { cn } from "@/lib/utils";
 
 const menu = [
   { label: "Dashboard", icon: Gauge },
+  { label: "Fulfillment", icon: PackageCheck },
   { label: "Company", icon: Building2 },
   { label: "Users", icon: Users },
   { label: "Orders", icon: ShoppingCart },
@@ -2167,6 +2170,8 @@ export function Dashboard() {
           />
         ) : activeView === "Users" ? (
           <UsersView />
+        ) : activeView === "Fulfillment" ? (
+          <FulfillmentView />
         ) : activeView === "Shipping" ? (
           <ShippingView />
         ) : activeView !== "Dashboard" ? (

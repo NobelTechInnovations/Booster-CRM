@@ -3,11 +3,14 @@ import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { env } from "./config/env.js";
-import { getStoreMode } from "./repositories/store.js";
+import { getStoreMode } from "./repositories/channel.repo.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { channelRoutes } from "./modules/channels/channel.routes.js";
 import { companyRoutes } from "./modules/company/company.routes.js";
 import { userRoutes } from "./modules/users/user.routes.js";
+import { shippingRoutes } from "./modules/shipping/shipping.routes.js";
+import { shopifyWebhookRoutes } from "./modules/webhooks/shopify-webhook.routes.js";
+import { fulfillmentRoutes } from "./modules/fulfillment/fulfillment.routes.js";
 
 export function createApp() {
   const app = express();
@@ -26,7 +29,7 @@ export function createApp() {
     res.json({
       status: "ok",
       service: "commerce-backend",
-      phase: "phase-1-authentication",
+      phase: "production-oms-automated",
       store: getStoreMode(),
     });
   });
@@ -35,6 +38,9 @@ export function createApp() {
   app.use("/api/company", companyRoutes);
   app.use("/api/users", userRoutes);
   app.use("/api/channels", channelRoutes);
+  app.use("/api/shipping", shippingRoutes);
+  app.use("/api/webhooks/shopify", shopifyWebhookRoutes);
+  app.use("/api/fulfillment", fulfillmentRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });

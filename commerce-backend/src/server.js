@@ -1,6 +1,7 @@
 import { createApp } from "./app.js";
 import { connectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";
+import { startScheduler } from "./jobs/scheduler.js";
 
 async function start() {
   await connectDatabase();
@@ -10,6 +11,10 @@ async function start() {
   const server = app.listen(env.port, env.host, () => {
     console.log(`Commerce backend listening on http://${env.host}:${env.port}`);
   });
+
+  // Start background job scheduler
+  startScheduler();
+
   const keepAlive = setInterval(() => {}, 60 * 60 * 1000);
 
   function shutdown(signal) {
