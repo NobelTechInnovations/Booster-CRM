@@ -27,7 +27,10 @@ import {
   createAmazonPendingState,
   syncAmazonData,
 } from "./amazon.service.js";
-import { buildShopifyInstallUrl, completeShopifyConnection, syncShopifyData, updateShopifyRecord } from "./shopify.service.js";
+import { buildShopifyInstallUrl, completeShopifyConnection, syncShopifyData, updateShopifyRecord, createShopifyOrderDirect } from "./shopify.service.js";
+import { isMongoConnected } from "../../config/database.js";
+import { SyncedCustomer } from "../../models/synced-customer.model.js";
+import { upsertSingleOrder } from "../../repositories/order.repo.js";
 import {
   cancelVelocityOrder,
   checkVelocityServiceability,
@@ -148,6 +151,160 @@ channelRoutes.patch(
     res.json({
       message: "Shopify record updated",
       ...result,
+    });
+  }),
+);
+
+// ─── Customer Follow-Up CRM Routes ────────────────────────────────────────────
+
+// Add a follow-up log entry for a customer
+channelRoutes.post(
+  "/customers/:customerId/follow-up",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { companyId, displayName } = req.auth;
+    const { customerId } = req.params;
+    const {
+      calledAt,
+      note = "",
+      outcome = "called",
+      nextFollowUpAt,
+      followUpStatus,
+      // Optional shopify detail updates
+      firstName, lastName, email, phone,
+      address,
+    } = req.body || {};
+
+    if (!isMongoConnected()) {
+      throw new HttpError(503, "Follow-up CRM requires a MongoDB connection.");
+    }
+
+    const customer = await SyncedCustomer.findOne({ _id: customerId, companyId }).lean();
+    if (!customer) throw new HttpError(404, "Customer not found");
+
+    const followUpEntry = {
+      calledAt: calledAt ? new Date(calledAt) : new Date(),
+      note,
+      outcome,
+      nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt) : undefined,
+      createdByName: displayName || req.auth.email || "Agent",
+    };
+
+    const updateFields = {
+      $push: { followUps: { $each: [followUpEntry], $position: 0 } },
+      $set: {},
+    };
+
+    if (note) updateFields.$set.note = note;
+    if (followUpStatus) updateFields.$set.followUpStatus = followUpStatus;
+    if (nextFollowUpAt) updateFields.$set.nextFollowUpAt = new Date(nextFollowUpAt);
+    if (firstName !== undefined) updateFields.$set.firstName = firstName;
+    if (lastName !== undefined) updateFields.$set.lastName = lastName;
+    if (email !== undefined) updateFields.$set.email = email;
+    if (phone !== undefined) updateFields.$set.phone = phone;
+    if (address) updateFields.$set.defaultAddress = address;
+
+    // Derive display name from first+last if updated
+    if (firstName !== undefined || lastName !== undefined) {
+      const fn = firstName !== undefined ? firstName : customer.firstName;
+      const ln = lastName !== undefined ? lastName : customer.lastName;
+      updateFields.$set.name = [fn, ln].filter(Boolean).join(" ") || customer.name;
+    }
+
+    if (Object.keys(updateFields.$set).length === 0) delete updateFields.$set;
+
+    const updated = await SyncedCustomer.findOneAndUpdate(
+      { _id: customerId, companyId },
+      updateFields,
+      { new: true },
+    ).lean();
+
+    // Push the note change to Shopify (best-effort — do not fail the request if Shopify is unreachable)
+    if (note) {
+      updateShopifyRecord({
+        companyId,
+        resource: "customers",
+        recordId: String(updated.externalId),
+        payload: { note },
+      }).catch((err) => console.warn("[FollowUp] Shopify note sync failed:", err.message));
+    }
+
+    res.json({ message: "Follow-up logged", customer: updated });
+  }),
+);
+
+// Get customers with follow-ups due within the next 1 hour (or overdue)
+channelRoutes.get(
+  "/customers/upcoming-followups",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { companyId } = req.auth;
+
+    if (!isMongoConnected()) {
+      return res.json({ customers: [] });
+    }
+
+    const now = new Date();
+    const oneHourFromNow = new Date(now.getTime() + 60 * 60 * 1000);
+
+    const customers = await SyncedCustomer.find({
+      companyId,
+      nextFollowUpAt: { $lte: oneHourFromNow },
+      followUpStatus: { $in: ["new", "follow_up_scheduled"] },
+    })
+      .sort({ nextFollowUpAt: 1 })
+      .limit(20)
+      .lean();
+
+    res.json({ customers, now: now.toISOString() });
+  }),
+);
+
+// Create a Shopify order directly from the CRM and add to fulfillment queue
+channelRoutes.post(
+  "/customers/:customerId/create-order",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { companyId } = req.auth;
+    const { customerId } = req.params;
+    const { lineItems = [], shippingAddress, note, tags, isCOD = true } = req.body || {};
+
+    if (!lineItems.length) {
+      throw new HttpError(400, "At least one line item is required");
+    }
+
+    const { order: shopifyOrder, channel } = await createShopifyOrderDirect({
+      companyId,
+      customerId,
+      lineItems,
+      shippingAddress,
+      note,
+      tags,
+      isCOD,
+    });
+
+    // Save the new order in MongoDB so it appears in the fulfillment panel
+    const savedOrder = await upsertSingleOrder({
+      companyId,
+      channelId: channel._id,
+      provider: "shopify",
+      shop: channel.shop,
+      order: shopifyOrder,
+    });
+
+    // Mark customer as converted if not already
+    if (isMongoConnected()) {
+      await SyncedCustomer.updateOne(
+        { _id: customerId, companyId, followUpStatus: { $ne: "converted" } },
+        { $set: { followUpStatus: "converted", nextFollowUpAt: null } },
+      );
+    }
+
+    res.json({
+      message: "Order created on Shopify and added to fulfillment queue",
+      shopifyOrderId: shopifyOrder.id,
+      shopifyOrderName: shopifyOrder.name,
+      savedOrder,
     });
   }),
 );
@@ -464,6 +621,14 @@ channelRoutes.post(
         channelId: req.params.channelId,
         companyId: req.auth.companyId,
       });
+    } else if (["velocity", "shiprocket", "shipway", "shipmozo"].includes(channelForSync.provider)) {
+      try {
+        const provider = getShippingProvider(channelForSync.provider, { companyId: req.auth.companyId });
+        await provider.syncWarehouses();
+      } catch (err) {
+        console.warn(`[Sync] Shipping provider ${channelForSync.provider} warehouse sync notice:`, err.message);
+      }
+      channel = channelForSync;
     } else {
       throw new HttpError(400, "This channel provider cannot sync yet");
     }
@@ -473,7 +638,7 @@ channelRoutes.post(
     }
 
     res.json({
-      message: `${channel.provider === "amazon" ? "Amazon" : "Shopify"} data synced`,
+      message: `${channel.name || channel.provider} data synced`,
       channel: {
         id: channel.id || channel._id,
         provider: channel.provider,

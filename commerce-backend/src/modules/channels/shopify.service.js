@@ -79,6 +79,18 @@ export function verifyShopifyHmac(query) {
   }
 }
 
+function formatShopifyError(body) {
+  if (!body) return "Unknown error";
+  if (typeof body.errors === "string") return body.errors;
+  if (typeof body.errors === "object" && body.errors !== null) {
+    return Object.entries(body.errors)
+      .map(([key, val]) => `${key}: ${Array.isArray(val) ? val.join(", ") : typeof val === "object" ? JSON.stringify(val) : val}`)
+      .join("; ");
+  }
+  if (body.message) return body.message;
+  return JSON.stringify(body);
+}
+
 async function shopifyFetch(shop, path, accessToken, options = {}) {
   const response = await fetch(`https://${shop}/admin/api/${env.shopify.apiVersion}${path}`, {
     ...options,
@@ -92,7 +104,8 @@ async function shopifyFetch(shop, path, accessToken, options = {}) {
   const body = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new HttpError(response.status, "Shopify API request failed", body);
+    const errorDetails = formatShopifyError(body);
+    throw new HttpError(response.status, `Shopify API request failed: ${errorDetails}`, body);
   }
 
   return body;
@@ -111,7 +124,8 @@ async function shopifyFetchWithHeaders(shop, path, accessToken, options = {}) {
   const body = await response.json().catch(() => ({}));
 
   if (!response.ok) {
-    throw new HttpError(response.status, "Shopify API request failed", body);
+    const errorDetails = formatShopifyError(body);
+    throw new HttpError(response.status, `Shopify API request failed: ${errorDetails}`, body);
   }
 
   return { body, headers: response.headers };
@@ -360,6 +374,88 @@ export async function updateShopifyRecord({ companyId, resource, recordId, paylo
   }
 
   throw new HttpError(400, "Unsupported synced record type");
+}
+
+/**
+ * Create a new order directly on Shopify using the provided line items, customer, and shipping address.
+ * Returns the newly created Shopify order object.
+ */
+export async function createShopifyOrderDirect({ companyId, customerId, lineItems, shippingAddress, note, tags, isCOD }) {
+  const context = await getCommerceRecordForUpdate({ companyId, resource: "customers", recordId: customerId });
+
+  if (!context) {
+    throw new HttpError(404, "Customer not found");
+  }
+
+  const { record: customer, channel } = context;
+  const accessToken = channel.credentials?.accessToken;
+
+  if (!accessToken) {
+    throw new HttpError(400, "Shopify access token is missing. Reconnect the channel first.");
+  }
+
+  requireWriteScope(channel, "write_orders");
+
+  const shopifyLineItems = lineItems.map((item) => {
+    const li = {
+      quantity: Number(item.quantity) || 1,
+    };
+
+    const variantIdNum = Number(item.variantId);
+    if (!isNaN(variantIdNum) && variantIdNum > 0) {
+      li.variant_id = variantIdNum;
+    }
+
+    if (item.title || item.productTitle) {
+      li.title = item.title || item.productTitle;
+    }
+
+    if (item.price !== undefined && item.price !== null && item.price !== "") {
+      li.price = String(item.price);
+    }
+
+    return li;
+  });
+
+  const customerIdNum = Number(customer.externalId);
+  const customerPayloadObj = (!isNaN(customerIdNum) && customerIdNum > 0)
+    ? { id: customerIdNum }
+    : pickDefined({
+        email: customer.email || undefined,
+        first_name: customer.firstName || undefined,
+        last_name: customer.lastName || undefined,
+        phone: customer.phone || undefined,
+      });
+
+  const orderPayloadBody = pickDefined({
+    customer: Object.keys(customerPayloadObj).length ? customerPayloadObj : undefined,
+    line_items: shopifyLineItems,
+    shipping_address: shippingAddress
+      ? pickDefined({
+          first_name: shippingAddress.firstName || customer.firstName || undefined,
+          last_name: shippingAddress.lastName || customer.lastName || undefined,
+          address1: shippingAddress.address1 || undefined,
+          address2: shippingAddress.address2 || undefined,
+          city: shippingAddress.city || undefined,
+          province: shippingAddress.province || undefined,
+          country: shippingAddress.country || "India",
+          zip: shippingAddress.zip || undefined,
+          phone: shippingAddress.phone || customer.phone || undefined,
+        })
+      : undefined,
+    note: note || undefined,
+    tags: tags || undefined,
+    send_receipt: true,
+    send_fulfillment_receipt: true,
+    financial_status: isCOD ? "pending" : "paid",
+  });
+
+  const body = await shopifyFetch(channel.shop, "/orders.json", accessToken, {
+    method: "POST",
+    body: JSON.stringify({ order: orderPayloadBody }),
+  });
+
+  return { order: body.order, channel };
 }
 
 export async function syncShopifyData({ channelId, companyId }) {

@@ -28,6 +28,7 @@ import {
   UserRound,
   Workflow,
   X,
+  Ban,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -49,6 +50,8 @@ import { CompanyView } from "@/components/company-view";
 import { UsersView } from "@/components/users-view";
 import { ShippingView } from "@/components/shipping-view";
 import { FulfillmentView } from "@/components/fulfillment-view";
+import { CustomerFollowUpModal } from "@/components/customer-followup-modal";
+import { CreateOrderModal } from "@/components/create-order-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -74,6 +77,7 @@ import {
   saveProductMapping,
   syncChannel,
   updateSyncedRecord,
+  cancelFulfillmentOrder,
 } from "@/lib/api";
 import { useCommerceStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -776,7 +780,7 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
   );
 }
 
-function ChannelsView({ connectedChannels, channelsError, isLoadingChannels, setConnectedChannels, setChannelsError, onRefreshData, onSyncAll }) {
+export function ChannelsView({ connectedChannels, channelsError, isLoadingChannels, setConnectedChannels, setChannelsError, onRefreshData, onSyncAll }) {
   async function syncOne(channelId) {
     setChannelsError("");
 
@@ -1372,6 +1376,11 @@ function OrderCells({ record }) {
           ))}
           {(record.lineItems || []).length > 3 ? <p className="text-xs font-semibold text-teal-700">+{record.lineItems.length - 3} more</p> : null}
         </div>
+        {record.note && (
+          <p className="mt-1.5 max-w-[280px] rounded bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 border border-amber-200/70 truncate">
+            📝 {record.note}
+          </p>
+        )}
       </td>
       <td className="py-3 pr-4 align-top">
         <p className="font-bold">{recordMoney(record.totalPrice, record.currency)}</p>
@@ -1422,6 +1431,22 @@ function ProductCells({ record }) {
   );
 }
 
+const FOLLOWUP_STATUS_STYLES = {
+  new:                 "bg-slate-100 text-slate-600",
+  follow_up_scheduled: "bg-violet-100 text-violet-700",
+  converted:           "bg-green-100 text-green-700",
+  no_response:         "bg-amber-100 text-amber-700",
+  closed:              "bg-rose-100 text-rose-700",
+};
+
+const FOLLOWUP_STATUS_LABELS = {
+  new: "New",
+  follow_up_scheduled: "Follow Up",
+  converted: "Converted",
+  no_response: "No Response",
+  closed: "Closed",
+};
+
 function CustomerCells({ record }) {
   return (
     <>
@@ -1429,14 +1454,32 @@ function CustomerCells({ record }) {
         <p className="font-bold">{record.name || record.email || record.phone || record.externalId}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{record.email || "No email"}</p>
         <p className="mt-1 text-xs text-slate-500">{record.phone || "No phone"}</p>
+        {record.followUpStatus && (
+          <span className={cn("mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold", FOLLOWUP_STATUS_STYLES[record.followUpStatus] || "bg-slate-100 text-slate-500")}>
+            {FOLLOWUP_STATUS_LABELS[record.followUpStatus] || record.followUpStatus}
+          </span>
+        )}
       </td>
       <td className="py-3 pr-4 align-top">
         <p className="text-sm">{record.defaultAddress?.city || "No city"}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{record.defaultAddress?.province || "No state"}, {record.defaultAddress?.country || "No country"}</p>
+        {record.nextFollowUpAt && (
+          <p className="mt-1 text-[10px] text-violet-600">
+            Next: {new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(record.nextFollowUpAt))}
+          </p>
+        )}
+        {record.note && (
+          <p className="mt-1 max-w-[220px] rounded bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 border border-amber-200/70 truncate">
+            📝 {record.note}
+          </p>
+        )}
       </td>
       <td className="py-3 pr-4 align-top">
         <p className="font-bold">{recordMoney(record.totalSpent, record.currency)}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{Number(record.ordersCount || 0).toLocaleString("en-IN")} orders</p>
+        {record.followUps?.length > 0 && (
+          <p className="mt-1 text-[10px] text-[var(--muted)]">{record.followUps.length} call log{record.followUps.length > 1 ? "s" : ""}</p>
+        )}
       </td>
       <td className="py-3 pr-4 align-top">
         <Badge tone={record.ordersCount > 0 ? "green" : "slate"}>{record.state || "customer"}</Badge>
@@ -1446,7 +1489,7 @@ function CustomerCells({ record }) {
   );
 }
 
-function RecordTable({ resource, records, onEdit }) {
+function RecordTable({ resource, records, onEdit, onFollowUp, onCreateOrder }) {
   if (!records.length) {
     return (
       <div className="rounded-lg border border-dashed border-[var(--line)] bg-[var(--panel-soft)] p-5 text-sm text-[var(--muted)]">
@@ -1461,8 +1504,8 @@ function RecordTable({ resource, records, onEdit }) {
         <thead>
           <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
             <th className="py-3 pr-4 font-semibold">{resource === "products" ? "Product" : resource === "customers" ? "Customer" : "Order"}</th>
-            <th className="py-3 pr-4 font-semibold">{resource === "products" ? "Variants" : resource === "customers" ? "Address" : "Items"}</th>
-            <th className="py-3 pr-4 font-semibold">{resource === "products" ? "Inventory" : resource === "customers" ? "Value" : "Amount"}</th>
+            <th className="py-3 pr-4 font-semibold">{resource === "products" ? "Variants" : resource === "customers" ? "Address / Next Call" : "Items"}</th>
+            <th className="py-3 pr-4 font-semibold">{resource === "products" ? "Inventory" : resource === "customers" ? "Value / History" : "Amount"}</th>
             <th className="py-3 pr-4 font-semibold">{resource === "products" ? "Status / Tags" : resource === "customers" ? "State / Tags" : "Payment / Fulfillment"}</th>
             <th className="py-3 pr-4 font-semibold">Channel</th>
             <th className="py-3 pr-0 text-right font-semibold">Action</th>
@@ -1470,7 +1513,9 @@ function RecordTable({ resource, records, onEdit }) {
         </thead>
         <tbody>
           {records.map((record) => {
-            const recordId = record.id || record._id;
+            const recordId = record.externalId
+              ? `${record.channelId || record.provider}::${record.externalId}`
+              : String(record._id || record.id);
             return (
               <tr key={recordId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                 {resource === "orders" ? <OrderCells record={record} /> : null}
@@ -1481,10 +1526,44 @@ function RecordTable({ resource, records, onEdit }) {
                   <p className="mt-1 text-xs text-[var(--muted)]">{record.channelName || record.channelShop}</p>
                   <p className="mt-1 text-xs text-slate-500">{record.channelShop || record.shop}</p>
                 </td>
-                <td className="py-3 pr-0 text-right">
-                  <Button variant="secondary" className="h-9" onClick={() => onEdit(record)}>
-                    Edit
-                  </Button>
+                <td className="py-3 pr-0 text-right align-top">
+                  <div className="flex flex-col items-end gap-1">
+                    {resource === "customers" ? (
+                      <>
+                        <Button
+                          variant="secondary"
+                          className="h-7 px-2.5 text-xs"
+                          onClick={() => onFollowUp?.(record)}
+                        >
+                          📞 Follow Up
+                        </Button>
+                        <Button
+                          className="h-7 px-2.5 text-xs"
+                          onClick={() => onCreateOrder?.(record)}
+                        >
+                          + Order
+                        </Button>
+                      </>
+                    ) : resource === "orders" ? (
+                      <div className="flex flex-col items-end gap-1">
+                        <Button variant="secondary" className="h-7 px-2.5 text-xs" onClick={() => onEdit(record)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="outline"
+                          className="h-7 px-2 text-[11px] border-rose-200 text-rose-700 hover:bg-rose-50"
+                          onClick={() => onCancelOrder?.(record)}
+                        >
+                          <Ban size={11} className="mr-1" />
+                          Cancel
+                        </Button>
+                      </div>
+                    ) : (
+                      <Button variant="secondary" className="h-9" onClick={() => onEdit(record)}>
+                        Edit
+                      </Button>
+                    )}
+                  </div>
                 </td>
               </tr>
             );
@@ -1495,7 +1574,7 @@ function RecordTable({ resource, records, onEdit }) {
   );
 }
 
-function RecordEditor({ resource, record, value, setValue, onSave, onClose, isSaving, error }) {
+function RecordEditor({ resource, record, value, setValue, onSave, onCancelOrder, onClose, isSaving, error }) {
   if (!record) return null;
 
   function setField(field, nextValue) {
@@ -1531,8 +1610,8 @@ function RecordEditor({ resource, record, value, setValue, onSave, onClose, isSa
                 <FormField label="Email" value={value.email} onChange={(nextValue) => setField("email", nextValue)} />
                 <FormField label="Phone" value={value.phone} onChange={(nextValue) => setField("phone", nextValue)} />
               </div>
+              <FormField label="Order Note" value={value.note} onChange={(nextValue) => setField("note", nextValue)} as="textarea" />
               <FormField label="Tags" value={value.tags} onChange={(nextValue) => setField("tags", nextValue)} />
-              <FormField label="Note" value={value.note} onChange={(nextValue) => setField("note", nextValue)} as="textarea" />
             </>
           ) : null}
 
@@ -1577,14 +1656,27 @@ function RecordEditor({ resource, record, value, setValue, onSave, onClose, isSa
           ) : null}
 
           {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
-          <div className="flex flex-wrap justify-end gap-2 border-t border-[var(--line)] pt-4">
-            <Button variant="secondary" onClick={onClose} disabled={isSaving}>
-              Cancel
-            </Button>
-            <Button onClick={onSave} disabled={isSaving}>
-              <RefreshCw size={16} className={isSaving ? "animate-spin" : ""} />
-              {isSaving ? "Updating Shopify" : "Save to Shopify"}
-            </Button>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--line)] pt-4">
+            {resource === "orders" && record && !record.cancelledAt && record.fulfillmentStatus !== "cancelled" ? (
+              <Button
+                variant="outline"
+                className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                onClick={() => onCancelOrder?.(record)}
+                disabled={isSaving}
+              >
+                <Ban size={15} className="mr-1" />
+                Cancel Order on Shopify
+              </Button>
+            ) : <div />}
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={onClose} disabled={isSaving}>
+                Cancel
+              </Button>
+              <Button onClick={onSave} disabled={isSaving}>
+                <RefreshCw size={16} className={isSaving ? "animate-spin" : ""} />
+                {isSaving ? "Updating Shopify" : "Save to Shopify"}
+              </Button>
+            </div>
           </div>
         </div>
       </div>
@@ -1602,13 +1694,41 @@ function RecordsModuleView({ name }) {
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState("");
 
+  // CRM modals (customers only)
+  const [followUpCustomer, setFollowUpCustomer] = useState(null);
+  const [createOrderCustomer, setCreateOrderCustomer] = useState(null);
+
+  function openFollowUp(record) {
+    setFollowUpCustomer(record);
+  }
+
+  function openCreateOrder(record) {
+    setCreateOrderCustomer(record);
+  }
+
+  function handleCustomerUpdate(updatedCustomer) {
+    if (!updatedCustomer) return;
+    const updatedId = String(updatedCustomer._id || updatedCustomer.id);
+    setRecords((current) =>
+      current.map((r) => String(r._id || r.id) === updatedId ? { ...r, ...updatedCustomer, id: updatedId } : r)
+    );
+  }
+
   async function loadRecords({ keepSelection = true } = {}) {
     setError("");
     setIsLoading(true);
 
     try {
       const result = await listSyncedRecords(resource);
-      const nextRecords = result.records || [];
+      const rawRecords = result.records || [];
+      const seen = new Set();
+      const nextRecords = rawRecords.filter((r) => {
+        const key = String(r.externalId || r._id || r.id);
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
       setRecords(nextRecords);
 
       const selectedId = selected?.id || selected?._id;
@@ -1646,6 +1766,24 @@ function RecordsModuleView({ name }) {
       setFormValue({});
     } catch (saveError) {
       setError(saveError.message);
+    } finally {
+      setIsSaving(false);
+    }
+  }
+
+  async function handleCancelOrder(record) {
+    const orderIdToUse = record.externalId || record._id || record.id;
+    if (!confirm(`Are you sure you want to cancel order ${record.name || orderIdToUse} on Shopify?`)) return;
+
+    setIsSaving(true);
+    setError("");
+    try {
+      await cancelFulfillmentOrder(orderIdToUse);
+      await loadRecords();
+      setSelected(null);
+      setFormValue({});
+    } catch (err) {
+      setError(err.message);
     } finally {
       setIsSaving(false);
     }
@@ -1710,7 +1848,7 @@ function RecordsModuleView({ name }) {
           <RecordFilters resource={resource} records={records} filters={filters} setFilters={setFilters} />
           <CardContent>
             {error && !selected ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
-            <RecordTable resource={resource} records={filteredRecords} onEdit={selectRecord} />
+            <RecordTable resource={resource} records={filteredRecords} onEdit={selectRecord} onFollowUp={openFollowUp} onCreateOrder={openCreateOrder} onCancelOrder={handleCancelOrder} />
           </CardContent>
         </Card>
       </section>
@@ -1720,6 +1858,7 @@ function RecordsModuleView({ name }) {
         value={formValue}
         setValue={setFormValue}
         onSave={saveRecord}
+        onCancelOrder={handleCancelOrder}
         onClose={() => {
           setSelected(null);
           setFormValue({});
@@ -1728,6 +1867,32 @@ function RecordsModuleView({ name }) {
         isSaving={isSaving}
         error={error}
       />
+
+      {/* Customer CRM Modals */}
+      {followUpCustomer && (
+        <CustomerFollowUpModal
+          customer={followUpCustomer}
+          onClose={() => setFollowUpCustomer(null)}
+          onUpdate={(updated) => {
+            handleCustomerUpdate(updated);
+            setFollowUpCustomer((current) => current ? { ...current, ...updated } : null);
+          }}
+          onCreateOrder={() => {
+            setCreateOrderCustomer(followUpCustomer);
+            setFollowUpCustomer(null);
+          }}
+        />
+      )}
+      {createOrderCustomer && (
+        <CreateOrderModal
+          customer={createOrderCustomer}
+          onClose={() => setCreateOrderCustomer(null)}
+          onOrderCreated={() => {
+            setCreateOrderCustomer(null);
+            loadRecords();
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1759,14 +1924,26 @@ function ProductMappingView() {
   const [savingKey, setSavingKey] = useState("");
   const [error, setError] = useState("");
 
-  const shopifyOptions = useMemo(
-    () => options.filter((option) => option.provider === "shopify" && (option.productTitle || option.sku)),
-    [options],
-  );
-  const amazonOptions = useMemo(
-    () => options.filter((option) => option.provider === "amazon" && (option.productTitle || option.sku)),
-    [options],
-  );
+  const shopifyOptions = useMemo(() => {
+    const seen = new Set();
+    return options.filter((option) => {
+      if (option.provider !== "shopify" || (!option.productTitle && !option.sku)) return false;
+      const key = optionKey(option);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [options]);
+  const amazonOptions = useMemo(() => {
+    const seen = new Set();
+    return options.filter((option) => {
+      if (option.provider !== "amazon" || (!option.productTitle && !option.sku)) return false;
+      const key = optionKey(option);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  }, [options]);
   const optionByKey = useMemo(() => new Map(options.map((option) => [optionKey(option), option])), [options]);
 
   async function loadMappingData() {
@@ -1963,7 +2140,7 @@ function ProductMappingView() {
   );
 }
 
-function ModuleView({ name, setActiveView }) {
+export function ModuleView({ name, setActiveView }) {
   if (name === "Product Mapping") {
     return <ProductMappingView />;
   }
@@ -2045,16 +2222,8 @@ function ModuleView({ name, setActiveView }) {
   );
 }
 
-export function Dashboard() {
-  const router = useRouter();
-  const [open, setOpen] = useState(false);
-  const [activeView, setActiveView] = useState("Dashboard");
-  const [session, setSession] = useState(null);
-  const [checkingSession, setCheckingSession] = useState(true);
-  const [dashboardData, setDashboardData] = useState(null);
-  const [connectedChannels, setConnectedChannels] = useState([]);
-  const [channelsError, setChannelsError] = useState("");
-  const [isLoadingChannels, setIsLoadingChannels] = useState(true);
+export function DashboardView() {
+  const { dashboardData, connectedChannels, setConnectedChannels, channelsError, setChannelsError, isLoadingChannels } = useCommerceStore();
 
   const kpiItems = withKpiIcons(dashboardData?.kpis?.length ? dashboardData.kpis : zeroKpis);
   const chartSalesTrend = dashboardData?.salesTrend?.length ? dashboardData.salesTrend : zeroSalesTrend;
@@ -2062,187 +2231,70 @@ export function Dashboard() {
   const recentOrders = dashboardData?.recentOrders || [];
   const inventoryItems = dashboardData?.inventory || [];
 
-  async function refreshChannels() {
-    setChannelsError("");
-    setIsLoadingChannels(true);
-
-    try {
-      const result = await listChannels();
-      setConnectedChannels(result.channels || []);
-    } catch (error) {
-      setChannelsError(error.message);
-    } finally {
-      setIsLoadingChannels(false);
-    }
-  }
-
-  async function refreshDashboardData() {
-    try {
-      const result = await getChannelDashboard();
-      setDashboardData(result.dashboard || null);
-    } catch (error) {
-      setChannelsError(error.message);
-    }
-  }
-
-  async function syncAllChannels() {
-    const syncableChannels = connectedChannels.filter((channel) => channel.status === "connected");
-
-    setChannelsError("");
-
-    try {
-      for (const channel of syncableChannels) {
-        const channelId = channel._id || channel.id;
-        const result = await syncChannel(channelId);
-        setConnectedChannels((current) =>
-          current.map((entry) => (String(entry._id || entry.id) === String(channelId) ? { ...entry, ...result.channel, _id: entry._id || result.channel.id } : entry)),
-        );
-      }
-
-      await Promise.all([refreshChannels(), refreshDashboardData()]);
-    } catch (error) {
-      setChannelsError(error.message);
-    }
-  }
-
-  useEffect(() => {
-    const savedSession = getSession();
-
-    if (!savedSession?.token) {
-      router.replace("/login");
-      return;
-    }
-
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-
-      if (params.get("view") === "Channels" || ["shopify", "amazon"].includes(params.get("provider"))) {
-        setActiveView("Channels");
-        window.history.replaceState(null, "", "/panel");
-      }
-    }
-
-    setSession(savedSession);
-    setCheckingSession(false);
-  }, [router]);
-
-  useEffect(() => {
-    if (!session?.token) return;
-
-    refreshChannels();
-    refreshDashboardData();
-  }, [session]);
-
-  if (checkingSession) {
-    return (
-      <div className="grid min-h-screen place-items-center bg-[var(--background)] px-4 text-center">
-        <div>
-          <div className="mx-auto grid h-12 w-12 place-items-center rounded-md bg-teal-700 text-white">
-            <Layers3 size={24} />
-          </div>
-          <p className="mt-4 font-semibold">Opening secure panel</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">Checking company session...</p>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[288px_minmax(0,1fr)]">
-      <Sidebar open={open} setOpen={setOpen} activeView={activeView} setActiveView={setActiveView} />
-      <main className="min-w-0">
-        <Topbar setOpen={setOpen} session={session} onSyncAll={syncAllChannels} canSync={connectedChannels.some((channel) => channel.status === "connected")} />
-        {activeView === "Channels" ? (
-          <ChannelsView
-            connectedChannels={connectedChannels}
-            channelsError={channelsError}
-            isLoadingChannels={isLoadingChannels}
-            setConnectedChannels={setConnectedChannels}
-            setChannelsError={setChannelsError}
-            onRefreshData={() => Promise.all([refreshChannels(), refreshDashboardData()])}
-            onSyncAll={syncAllChannels}
-          />
-        ) : activeView === "Company" ? (
-          <CompanyView
-            onCompanyUpdate={(company) => {
-              setSession((current) => (current ? { ...current, company } : current));
-            }}
-          />
-        ) : activeView === "Users" ? (
-          <UsersView />
-        ) : activeView === "Fulfillment" ? (
-          <FulfillmentView />
-        ) : activeView === "Shipping" ? (
-          <ShippingView />
-        ) : activeView !== "Dashboard" ? (
-          <ModuleView name={activeView} setActiveView={setActiveView} />
-        ) : (
-        <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
-          <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge tone="teal">Unified commerce command center</Badge>
-                <Badge tone="blue">JWT-ready</Badge>
-                <Badge tone="slate">MongoDB service model</Badge>
-              </div>
-              <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Sukirti Commerce Hub</h1>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
-                One operational view for multi-channel sales, orders, inventory, raw materials, shipping, CRM, finance, ads, analytics, and automations.
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary">
-                <LifeBuoy size={16} />
-                Support Queue
-              </Button>
-              <Button>
-                <ShoppingCart size={16} />
-                Create Manual Order
-              </Button>
-            </div>
-          </section>
-
-          <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
-            {kpiItems.map((item) => (
-              <KpiCard key={item.label} item={item} />
-            ))}
-          </section>
-
-          <section className="mt-6">
-            <SalesCharts salesTrend={chartSalesTrend} channelMix={chartChannelMix} />
-          </section>
-
-          <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
-            <OrdersPanel orders={recentOrders} />
-            <ChannelsPanel
-              connectedChannels={connectedChannels}
-              setConnectedChannels={setConnectedChannels}
-              channelsError={channelsError}
-              setChannelsError={setChannelsError}
-              isLoadingChannels={isLoadingChannels}
-              onRefreshData={() => Promise.all([refreshChannels(), refreshDashboardData()])}
-            />
-          </section>
-
-          <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-            <InventoryPanel inventory={inventoryItems} />
-            <div className="grid gap-4">
-              <FinancePanel />
-              <AutomationPanel />
-            </div>
-          </section>
-
-          <section className="mt-6">
-            <Roadmap />
-          </section>
-
-          <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] py-5 text-sm text-[var(--muted)]">
-            <span>Architecture: Frontend &gt; Backend API &gt; Services &gt; MongoDB &gt; external APIs.</span>
-            <span>Socket.io-ready for live orders, stock, notifications, and sync logs.</span>
-          </footer>
+    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+      <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge tone="teal">Unified commerce command center</Badge>
+            <Badge tone="blue">JWT-ready</Badge>
+            <Badge tone="slate">MongoDB service model</Badge>
+          </div>
+          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Sukirti Commerce Hub</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+            One operational view for multi-channel sales, orders, inventory, raw materials, shipping, CRM, finance, ads, analytics, and automations.
+          </p>
         </div>
-        )}
-      </main>
+        <div className="flex flex-wrap gap-2">
+          <Button variant="secondary">
+            <LifeBuoy size={16} />
+            Support Queue
+          </Button>
+          <Button>
+            <ShoppingCart size={16} />
+            Create Manual Order
+          </Button>
+        </div>
+      </section>
+
+      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
+        {kpiItems.map((item) => (
+          <KpiCard key={item.label} item={item} />
+        ))}
+      </section>
+
+      <section className="mt-6">
+        <SalesCharts salesTrend={chartSalesTrend} channelMix={chartChannelMix} />
+      </section>
+
+      <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
+        <OrdersPanel orders={recentOrders} />
+        <ChannelsPanel
+          connectedChannels={connectedChannels}
+          setConnectedChannels={setConnectedChannels}
+          channelsError={channelsError}
+          setChannelsError={setChannelsError}
+          isLoadingChannels={isLoadingChannels}
+          onRefreshData={() => {}}
+        />
+      </section>
+
+      <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
+        <InventoryPanel inventory={inventoryItems} />
+        <div className="grid gap-4">
+          <FinancePanel />
+          <AutomationPanel />
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <Roadmap />
+      </section>
+
+      <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] py-5 text-sm text-[var(--muted)]">
+        <span>Architecture: Frontend &gt; Backend API &gt; Services &gt; MongoDB &gt; external APIs.</span>
+        <span>Socket.io-ready for live orders, stock, notifications, and sync logs.</span>
+      </footer>
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { SyncedProduct } from "../models/synced-product.model.js";
 import { User } from "../models/user.model.js";
 import { Shipment } from "../models/shipment.model.js";
 import { Warehouse } from "../models/warehouse.model.js";
+import { upsertWarehouseRecord, listWarehouses as listWarehousesRepo } from "./warehouse.repo.js";
 
 const memory = {
   companies: new Map(),
@@ -187,6 +188,8 @@ function normalizeCustomer({ companyId, channelId, provider, shop, customer }) {
     totalSpent: toNumber(customer.total_spent),
     currency: customer.currency,
     defaultAddress: {
+      address1: defaultAddress.address1,
+      address2: defaultAddress.address2,
       city: defaultAddress.city,
       province: defaultAddress.province,
       country: defaultAddress.country,
@@ -951,13 +954,20 @@ async function bulkUpsert(model, records, filterForRecord) {
   if (!records.length) return;
 
   await model.bulkWrite(
-    records.map((record) => ({
-      updateOne: {
-        filter: filterForRecord(record),
-        update: { $set: record },
-        upsert: true,
-      },
-    })),
+    records.map((record) => {
+      const filter = filterForRecord(record);
+      // Clean undefined keys from filter and handle $set record without overwriting non-empty fields with null
+      const updateDoc = { ...record };
+      delete updateDoc._id;
+
+      return {
+        updateOne: {
+          filter,
+          update: { $set: updateDoc },
+          upsert: true,
+        },
+      };
+    }),
     { ordered: false },
   );
 }
@@ -969,23 +979,28 @@ export async function saveSyncedShopifyData({ companyId, channelId, shop, orders
   const normalizedCustomers = customers.map((customer) => normalizeCustomer({ companyId, channelId, provider, shop, customer }));
 
   if (isMongoConnected()) {
+    const buildFilter = (record) => ({
+      companyId: { $in: [String(record.companyId), record.companyId] },
+      externalId: String(record.externalId),
+    });
+
     await Promise.all([
-      bulkUpsert(SyncedOrder, normalizedOrders, (record) => ({
-        companyId: record.companyId,
-        channelId: record.channelId,
-        externalId: record.externalId,
-      })),
-      bulkUpsert(SyncedProduct, normalizedProducts, (record) => ({
-        companyId: record.companyId,
-        channelId: record.channelId,
-        externalId: record.externalId,
-      })),
-      bulkUpsert(SyncedCustomer, normalizedCustomers, (record) => ({
-        companyId: record.companyId,
-        channelId: record.channelId,
-        externalId: record.externalId,
-      })),
+      bulkUpsert(SyncedOrder, normalizedOrders, buildFilter),
+      bulkUpsert(SyncedProduct, normalizedProducts, buildFilter),
+      bulkUpsert(SyncedCustomer, normalizedCustomers, buildFilter),
     ]);
+
+    const [dbOrders, dbProducts, dbCustomers] = await Promise.all([
+      normalizedOrders.length ? SyncedOrder.find({ companyId, externalId: { $in: normalizedOrders.map((o) => o.externalId) } }).lean() : [],
+      normalizedProducts.length ? SyncedProduct.find({ companyId, externalId: { $in: normalizedProducts.map((p) => p.externalId) } }).lean() : [],
+      normalizedCustomers.length ? SyncedCustomer.find({ companyId, externalId: { $in: normalizedCustomers.map((c) => c.externalId) } }).lean() : [],
+    ]);
+
+    return {
+      orders: dbOrders.length ? dbOrders : normalizedOrders,
+      products: dbProducts.length ? dbProducts : normalizedProducts,
+      customers: dbCustomers.length ? dbCustomers : normalizedCustomers,
+    };
   } else {
     for (const order of normalizedOrders) {
       order._id = order._id || order.externalId;
@@ -1480,47 +1495,17 @@ export async function updateVelocityToken({ channelId, companyId, token, tokenEx
 }
 
 export async function createWarehouseRecord({ companyId, channelId, warehouseId, payload }) {
-  const record = {
+  return upsertWarehouseRecord({
     companyId,
     channelId,
     provider: "velocity",
-    warehouseId,
-    name: payload.name,
-    phone: payload.phone_number,
-    email: payload.email,
-    gstNo: payload.gst_no,
-    contactPerson: payload.contact_person,
-    address: {
-      street: payload.address_attributes?.street_address,
-      zip: payload.address_attributes?.zip,
-      city: payload.address_attributes?.city,
-      state: payload.address_attributes?.state,
-      country: payload.address_attributes?.country,
-    },
-  };
-
-  if (isMongoConnected()) {
-    return Warehouse.findOneAndUpdate(
-      { companyId, provider: "velocity", warehouseId },
-      { $set: record },
-      { new: true, upsert: true },
-    ).lean();
-  }
-
-  const stored = { _id: id(), ...record, createdAt: now(), updatedAt: now() };
-  memory.warehouses.set(stored._id, stored);
-  return clone(stored);
+    externalWarehouseId: String(warehouseId || payload.warehouse_id || payload.id || ""),
+    data: payload,
+  });
 }
 
-export async function listWarehouses({ companyId, provider = "velocity" }) {
-  if (isMongoConnected()) {
-    return Warehouse.find({ companyId, provider }).sort({ createdAt: -1 }).lean();
-  }
-
-  return [...memory.warehouses.values()]
-    .filter((entry) => String(entry.companyId) === String(companyId) && entry.provider === provider)
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .map(clone);
+export async function listWarehouses({ companyId, provider }) {
+  return listWarehousesRepo({ companyId, provider });
 }
 
 export async function createShipmentRecord(fields) {

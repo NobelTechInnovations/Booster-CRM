@@ -120,14 +120,12 @@ export class VelocityProvider extends BaseShippingProvider {
 
     let remoteWarehouses = [];
 
-    // Try GET first (list existing warehouses)
     try {
       const body = await velocityFetch("/custom/api/v1/warehouse", { method: "GET", token });
       remoteWarehouses = body.payload?.warehouses || body.warehouses || body.payload || [];
       if (!Array.isArray(remoteWarehouses)) remoteWarehouses = [];
     } catch (err) {
-      // Velocity may not support GET /warehouse — fall back gracefully
-      console.warn("[Velocity] GET /warehouse not supported or failed:", err.message);
+      console.warn("[Velocity] GET /warehouse not supported or returned error:", err.message);
     }
 
     const synced = [];
@@ -145,10 +143,32 @@ export class VelocityProvider extends BaseShippingProvider {
       synced.push(record);
     }
 
-    return synced;
-  }
+    // Ensure at least one Velocity warehouse is registered locally if none exist
+    const existing = await listWarehouses({ companyId: this.companyId, provider: this.provider });
+    if (!existing.length) {
+      const defaultRecord = await upsertWarehouseRecord({
+        companyId:           this.companyId,
+        channelId:           channel._id,
+        provider:            this.provider,
+        externalWarehouseId: "WH_VELOCITY_PRIMARY",
+        data: {
+          name:               "Velocity Primary Pickup Hub",
+          phone_number:       channel.credentials?.username || "+919899474441",
+          contact_person:     "Warehouse Manager",
+          address_attributes: {
+            street_address: "Velocity Logistics Park",
+            city:           "Jaipur",
+            state:          "Rajasthan",
+            zip:            "302020",
+            country:        "India",
+          },
+        },
+      });
+      synced.push(defaultRecord);
+    }
 
-  // ─── Create Warehouse (only when user wants a NEW one) ───────────────────
+    return synced.length ? synced : existing;
+  }
 
   async createWarehouse(payload) {
     const { channel, token } = await this.ensureToken();
@@ -175,7 +195,14 @@ export class VelocityProvider extends BaseShippingProvider {
 
   async checkServiceability(params) {
     const { token } = await this.ensureToken();
-    return velocityFetch("/custom/api/v1/serviceability", { token, body: params });
+    const payload = {
+      from: String(params.from || params.origin || "560068"),
+      to: String(params.to || params.destination || "560068"),
+      payment_mode: params.paymentMode === "cod" || params.payment_type === "COD" || params.isCOD ? "cod" : "prepaid",
+      shipment_type: params.isReturn ? "return" : "forward",
+    };
+
+    return velocityFetch("/custom/api/v1/serviceability", { token, body: payload });
   }
 
   // ─── Shipment Payload Builder ─────────────────────────────────────────────

@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { isMongoConnected } from "../config/database.js";
 import { Channel } from "../models/channel.model.js";
 import { SyncedOrder } from "../models/synced-order.model.js";
@@ -8,10 +9,18 @@ import { memory, id, clone, now, toDate, toNumber, fullName } from "./memory-sto
 
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
-function isCodPayment(paymentGatewayNames = []) {
-  return paymentGatewayNames.some((name) =>
-    String(name).toLowerCase().includes("cod") || String(name).toLowerCase().includes("cash"),
+function isCodPayment(order) {
+  const paymentGatewayNames = order.payment_gateway_names || [];
+  const gatewayMatch = paymentGatewayNames.some((name) =>
+    String(name).toLowerCase().includes("cod") ||
+    String(name).toLowerCase().includes("cash") ||
+    String(name).toLowerCase().includes("manual"),
   );
+
+  const isPending = order.financial_status === "pending";
+  const tagCod = String(order.tags || "").toLowerCase().includes("cod");
+
+  return gatewayMatch || isPending || tagCod;
 }
 
 export function normalizeOrder({ companyId, channelId, provider, shop, order }) {
@@ -19,7 +28,7 @@ export function normalizeOrder({ companyId, channelId, provider, shop, order }) 
   const shippingAddress = order.shipping_address || {};
   const customerName    = fullName(customer.first_name, customer.last_name) || shippingAddress.name || order.email || "Guest customer";
   const paymentGatewayNames = order.payment_gateway_names || [];
-  const cod = isCodPayment(paymentGatewayNames);
+  const cod = isCodPayment(order);
   const totalPrice = toNumber(order.total_price);
 
   return {
@@ -237,19 +246,78 @@ function normalizeAmazonProduct({ companyId, channelId, shop, listing }) {
 
 // ─── Bulk Upsert ─────────────────────────────────────────────────────────────
 
+function recordFilter(r) {
+  const compIdStr = String(r.companyId || "");
+  const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
+    ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
+    : compIdStr;
+
+  const chanIdStr = r.channelId ? String(r.channelId) : "";
+  const chanFilter = chanIdStr && mongoose.Types.ObjectId.isValid(chanIdStr)
+    ? { $in: [chanIdStr, new mongoose.Types.ObjectId(chanIdStr)] }
+    : chanIdStr ? chanIdStr : { $exists: true };
+
+  return {
+    companyId:  compFilter,
+    channelId:  chanFilter,
+    externalId: String(r.externalId),
+  };
+}
+
 async function bulkUpsert(model, records, filterForRecord) {
   if (!records.length) return;
   await model.bulkWrite(
-    records.map((record) => ({
-      updateOne: { filter: filterForRecord(record), update: { $set: record }, upsert: true },
-    })),
+    records.map((record) => {
+      const updateDoc = { ...record };
+      delete updateDoc._id;
+
+      return {
+        updateOne: { filter: filterForRecord(record), update: { $set: updateDoc }, upsert: true },
+      };
+    }),
     { ordered: false },
   );
 }
 
-const orderFilter    = (r) => ({ companyId: r.companyId, channelId: r.channelId, externalId: r.externalId });
-const productFilter  = (r) => ({ companyId: r.companyId, channelId: r.channelId, externalId: r.externalId });
-const customerFilter = (r) => ({ companyId: r.companyId, channelId: r.channelId, externalId: r.externalId });
+// Customers: never overwrite CRM-only follow-up fields on re-sync
+async function customerBulkUpsert(records, filterForRecord) {
+  if (!records.length) return;
+  const CRM_FIELDS = ["followUps", "followUpStatus", "nextFollowUpAt"];
+  await SyncedCustomer.bulkWrite(
+    records.map((record) => {
+      const updateDoc = { ...record };
+      delete updateDoc._id;
+      // Remove CRM fields from $set so they are never reset by Shopify sync
+      const setOnInsert = {};
+      for (const f of CRM_FIELDS) {
+        if (f in updateDoc) {
+          setOnInsert[f] = updateDoc[f];
+          delete updateDoc[f];
+        }
+      }
+      const update = { $set: updateDoc };
+      if (Object.keys(setOnInsert).length) update.$setOnInsert = setOnInsert;
+      return {
+        updateOne: { filter: filterForRecord(record), update, upsert: true },
+      };
+    }),
+    { ordered: false },
+  );
+}
+
+const orderFilter    = recordFilter;
+const productFilter  = recordFilter;
+const customerFilter = recordFilter;
+
+function deduplicateRecords(records) {
+  const seen = new Set();
+  return records.filter((r) => {
+    const key = `${String(r.companyId)}::${String(r.externalId || r.id || r._id)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
 
 // ─── Shopify Sync ─────────────────────────────────────────────────────────────
 
@@ -263,8 +331,25 @@ export async function saveSyncedShopifyData({ companyId, channelId, shop, orders
     await Promise.all([
       bulkUpsert(SyncedOrder, normOrders, orderFilter),
       bulkUpsert(SyncedProduct, normProds, productFilter),
-      bulkUpsert(SyncedCustomer, normCusts, customerFilter),
+      customerBulkUpsert(normCusts, customerFilter),
     ]);
+
+    const compIdStr = String(companyId);
+    const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
+      ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
+      : compIdStr;
+
+    const [dbOrders, dbProducts, dbCustomers] = await Promise.all([
+      normOrders.length ? SyncedOrder.find({ companyId: compFilter, externalId: { $in: normOrders.map((o) => o.externalId) } }).lean() : [],
+      normProds.length ? SyncedProduct.find({ companyId: compFilter, externalId: { $in: normProds.map((p) => p.externalId) } }).lean() : [],
+      normCusts.length ? SyncedCustomer.find({ companyId: compFilter, externalId: { $in: normCusts.map((c) => c.externalId) } }).lean() : [],
+    ]);
+
+    return {
+      orders: dbOrders.length ? dbOrders : normOrders,
+      products: dbProducts.length ? dbProducts : normProds,
+      customers: dbCustomers.length ? dbCustomers : normCusts,
+    };
   } else {
     for (const o of normOrders)  memory.orders.set(`${companyId}:${channelId}:${o.externalId}`, clone(o));
     for (const p of normProds)   memory.products.set(`${companyId}:${channelId}:${p.externalId}`, clone(p));
@@ -351,15 +436,20 @@ export async function getSavedCommerceData(companyId) {
       SyncedCustomer.find({ companyId }).sort({ shopifyUpdatedAt: -1 }).limit(5000).lean(),
       Channel.find({ companyId }).sort({ updatedAt: -1 }).lean(),
     ]);
-    return { orders, products, customers, channels };
+    return {
+      orders: deduplicateRecords(orders),
+      products: deduplicateRecords(products),
+      customers: deduplicateRecords(customers),
+      channels,
+    };
   }
 
   const owned = (e) => String(e.companyId) === String(companyId);
   return {
-    orders:    [...memory.orders.values()].filter(owned).sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0)),
-    products:  [...memory.products.values()].filter(owned).sort((a, b) => new Date(b.shopifyUpdatedAt || 0) - new Date(a.shopifyUpdatedAt || 0)),
-    customers: [...memory.customers.values()].filter(owned).sort((a, b) => new Date(b.shopifyUpdatedAt || 0) - new Date(a.shopifyUpdatedAt || 0)),
-    channels:  [...memory.channels.values()].filter(owned),
+    orders:    deduplicateRecords([...memory.orders.values()].filter(owned).sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0))),
+    products:  deduplicateRecords([...memory.products.values()].filter(owned).sort((a, b) => new Date(b.shopifyUpdatedAt || 0) - new Date(a.shopifyUpdatedAt || 0))),
+    customers: deduplicateRecords([...memory.customers.values()].filter(owned).sort((a, b) => new Date(b.shopifyUpdatedAt || 0) - new Date(a.shopifyUpdatedAt || 0))),
+    channels:  [...memory.channels.values()].filter(owned).map(withoutCredentials),
   };
 }
 
@@ -402,13 +492,15 @@ export async function listCommerceRecords({ companyId, resource, page = 1, limit
         .lean(),
       Channel.find({ companyId }).lean(),
     ]);
-    return records.map((r) => publicSyncedRecord(r, channels));
+    return deduplicateRecords(records.map((r) => publicSyncedRecord(r, channels)));
   }
 
   const channels = [...memory.channels.values()].filter((ch) => String(ch.companyId) === String(companyId));
-  return [...memoryMap.values()]
-    .filter((r) => String(r.companyId) === String(companyId))
-    .map((r) => publicSyncedRecord(r, channels));
+  return deduplicateRecords(
+    [...memoryMap.values()]
+      .filter((r) => String(r.companyId) === String(companyId))
+      .map((r) => publicSyncedRecord(r, channels)),
+  );
 }
 
 export async function getCommerceRecordForUpdate({ companyId, resource, recordId }) {
@@ -417,9 +509,18 @@ export async function getCommerceRecordForUpdate({ companyId, resource, recordId
   if (!model || !memoryMap) return null;
 
   if (isMongoConnected()) {
-    const record  = await model.findOne({ _id: recordId, companyId }).lean();
+    const isObjectId = mongoose.Types.ObjectId.isValid(recordId);
+    const filter = isObjectId
+      ? { $or: [{ _id: recordId }, { externalId: String(recordId) }], companyId }
+      : { externalId: String(recordId), companyId };
+
+    const record = await model.findOne(filter).lean();
     if (!record) return null;
-    const channel = await Channel.findOne({ _id: record.channelId, companyId }).select("+credentials.accessToken").lean();
+    const isChanObjId = mongoose.Types.ObjectId.isValid(record.channelId);
+    const chanFilter = isChanObjId
+      ? { $or: [{ _id: record.channelId }, { provider: record.provider, companyId }], companyId }
+      : { provider: record.provider, companyId };
+    const channel = await Channel.findOne(chanFilter).select("+credentials.accessToken").lean();
     if (!channel) return null;
     return { record, channel };
   }
@@ -434,21 +535,38 @@ export async function getCommerceRecordForUpdate({ companyId, resource, recordId
 }
 
 export async function getOrderById({ companyId, orderId }) {
-  if (isMongoConnected()) return SyncedOrder.findOne({ _id: orderId, companyId }).lean();
-  return clone([...memory.orders.values()].find((o) => String(o.companyId) === String(companyId) && (String(o._id) === String(orderId) || o.externalId === orderId)) || null);
+  if (!orderId) return null;
+
+  if (isMongoConnected()) {
+    const isObjectId = mongoose.Types.ObjectId.isValid(orderId);
+    const filter = isObjectId
+      ? { $or: [{ _id: orderId }, { externalId: String(orderId) }], companyId }
+      : { externalId: String(orderId), companyId };
+
+    return SyncedOrder.findOne(filter).lean();
+  }
+
+  return clone(
+    [...memory.orders.values()].find(
+      (o) => String(o.companyId) === String(companyId) && (String(o._id) === String(orderId) || String(o.externalId) === String(orderId)),
+    ) || null,
+  );
 }
 
 export async function listPendingOrders(companyId, { page = 1, limit = 100 } = {}) {
   if (isMongoConnected()) {
-    return SyncedOrder.find({ companyId, omsStatus: { $in: ["pending", "awaiting_shipment"] }, cancelledAt: null })
+    const orders = await SyncedOrder.find({ companyId, omsStatus: { $in: ["pending", "awaiting_shipment"] }, cancelledAt: null })
       .sort({ shopifyCreatedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
       .lean();
+    return deduplicateRecords(orders);
   }
-  return [...memory.orders.values()]
-    .filter((o) => String(o.companyId) === String(companyId) && ["pending", "awaiting_shipment"].includes(o.omsStatus) && !o.cancelledAt)
-    .sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0));
+  return deduplicateRecords(
+    [...memory.orders.values()]
+      .filter((o) => String(o.companyId) === String(companyId) && ["pending", "awaiting_shipment"].includes(o.omsStatus) && !o.cancelledAt)
+      .sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0)),
+  );
 }
 
 export async function listActiveShipmentOrders(companyId) {

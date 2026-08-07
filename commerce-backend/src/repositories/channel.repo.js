@@ -231,22 +231,43 @@ export async function upsertAmazonChannel({ companyId, userId, sellingPartnerId,
 // ─── Shipping Provider Channels ──────────────────────────────────────────────
 
 export async function getShippingChannel({ companyId, provider }) {
+  const selectFields = "+credentials.username +credentials.password +credentials.token +credentials.tokenExpiresAt +credentials.apiKey +credentials.apiSecret +credentials.licenseKey";
+
   if (isMongoConnected()) {
-    return Channel.findOne({ companyId, provider, channelType: "shipping" })
-      .select("+credentials.username +credentials.password +credentials.token +credentials.tokenExpiresAt +credentials.apiKey +credentials.apiSecret")
+    // Try new-style first (channelType: "shipping"), then fall back to old-style (no channelType)
+    const channel = await Channel.findOne({ companyId, provider, channelType: "shipping" })
+      .select(selectFields)
+      .lean();
+
+    if (channel) return channel;
+
+    // Backward-compat: old velocity channels had no channelType
+    return Channel.findOne({ companyId, provider })
+      .select(selectFields)
       .lean();
   }
 
   const channel = [...memory.channels.values()].find(
-    (ch) => String(ch.companyId) === String(companyId) && ch.provider === provider && ch.channelType === "shipping",
+    (ch) => String(ch.companyId) === String(companyId) && ch.provider === provider && (ch.channelType === "shipping" || !ch.channelType),
   );
   return channel ? clone(channel) : null;
 }
 
 export async function upsertShippingChannel({ companyId, userId, provider, name, shop, credentials, external = {} }) {
   if (isMongoConnected()) {
+    // Match existing channel regardless of whether it was created with the old or new code path
+    const existing = await Channel.findOne({
+      companyId,
+      provider,
+      $or: [{ shop }, { shop: provider }],
+    }).lean();
+
+    const filter = existing
+      ? { _id: existing._id }
+      : { companyId, provider, shop, channelType: "shipping" };
+
     return Channel.findOneAndUpdate(
-      { companyId, provider, shop, channelType: "shipping" },
+      filter,
       {
         $set: {
           channelType: "shipping",
@@ -309,7 +330,29 @@ export async function updateShippingChannelToken({ channelId, companyId, token, 
 }
 
 export async function listShippingChannels(companyId) {
-  return listChannels(companyId, { channelType: "shipping" });
+  const SHIPPING_PROVIDERS = ["velocity", "shiprocket", "shipway", "shipmozo"];
+
+  if (isMongoConnected()) {
+    // Return channels that are explicitly typed as shipping OR have a known shipping provider
+    const channels = await Channel.find({
+      companyId,
+      $or: [
+        { channelType: "shipping" },
+        { provider: { $in: SHIPPING_PROVIDERS }, channelType: { $exists: false } },
+      ],
+    })
+      .sort({ updatedAt: -1 })
+      .lean();
+    return channels.map(withoutCredentials);
+  }
+
+  return [...memory.channels.values()]
+    .filter((ch) => {
+      if (String(ch.companyId) !== String(companyId)) return false;
+      return ch.channelType === "shipping" || (!ch.channelType && SHIPPING_PROVIDERS.includes(ch.provider));
+    })
+    .sort((a, b) => new Date(b.updatedAt) - new Date(a.updatedAt))
+    .map(withoutCredentials);
 }
 
 export async function listSalesChannels(companyId) {

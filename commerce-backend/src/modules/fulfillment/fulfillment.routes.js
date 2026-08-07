@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, shipOrder } from "./fulfillment.service.js";
+import { getFulfillmentOrders, shipOrder, cancelOrderFulfillment } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -15,6 +15,18 @@ fulfillmentRoutes.get(
     const limit = Number(req.query.limit || 100);
 
     const result = await getFulfillmentOrders(req.auth.companyId, { page, limit });
+    res.json(result);
+  }),
+);
+
+// Cancel an unfulfilled order
+fulfillmentRoutes.post(
+  "/orders/:orderId/cancel",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const { reason } = req.body || {};
+    const result = await cancelOrderFulfillment({ companyId: req.auth.companyId, orderId, reason });
     res.json(result);
   }),
 );

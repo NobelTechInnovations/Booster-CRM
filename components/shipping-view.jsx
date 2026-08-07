@@ -89,34 +89,40 @@ function ConnectProviderModal({ provider, onConnected, onClose }) {
             {provider.provider === "shiprocket" ? (
               <>
                 <Field
-                  label="Shiprocket Account Email"
-                  value={form.email}
-                  onChange={(email) => setForm({ ...form, email })}
+                  label="Shiprocket API User Email"
+                  value={form.email || form.username}
+                  onChange={(val) => setForm({ ...form, email: val, username: val })}
                   required
                 />
                 <Field
-                  label="Password"
+                  label="API Password"
                   type="password"
                   value={form.password}
                   onChange={(password) => setForm({ ...form, password })}
                   required
                 />
+                <p className="text-[11px] text-amber-800 bg-amber-50 p-2.5 rounded border border-amber-200 leading-snug">
+                  <strong>💡 OTP-Free Connection:</strong> Create an <strong>API User</strong> in Shiprocket Panel (<strong>Settings &rarr; API &rarr; Configure &rarr; Add New User</strong>) and enter its email &amp; password above.
+                </p>
               </>
             ) : provider.provider === "shipway" ? (
               <>
                 <Field
-                  label="Shipway API Key"
-                  value={form.apiKey}
-                  onChange={(apiKey) => setForm({ ...form, apiKey })}
+                  label="Shipway Account Email"
+                  value={form.email || form.apiKey}
+                  onChange={(val) => setForm({ ...form, email: val, apiKey: val })}
                   required
                 />
                 <Field
-                  label="Shipway Secret Key"
+                  label="Shipway License Key"
                   type="password"
-                  value={form.secretKey}
-                  onChange={(secretKey) => setForm({ ...form, secretKey })}
+                  value={form.password || form.secretKey}
+                  onChange={(val) => setForm({ ...form, password: val, secretKey: val })}
                   required
                 />
+                <p className="text-[11px] text-teal-800 bg-teal-50 p-2.5 rounded border border-teal-200 leading-snug">
+                  <strong>🔑 Finding License Key:</strong> In your Shipway Portal, go to <strong>Profile &rarr; Manage Profile</strong> to copy your License Key.
+                </p>
               </>
             ) : provider.provider === "shipmozo" ? (
               <>
@@ -177,6 +183,7 @@ export function ShippingView() {
 
   const [activeProviderModal, setActiveProviderModal] = useState(null);
   const [selectedProviderFilter, setSelectedProviderFilter] = useState("");
+  const [targetCarrier, setTargetCarrier] = useState("");
   const [isSyncingWh, setIsSyncingWh] = useState(false);
 
   const [warehouseForm, setWarehouseForm] = useState(emptyWarehouseForm);
@@ -224,11 +231,7 @@ export function ShippingView() {
 
   async function handleCreateWarehouse(e) {
     e.preventDefault();
-    if (!selectedProviderFilter && channels.length > 0) {
-      setSelectedProviderFilter(channels[0].provider);
-    }
-
-    const providerToUse = selectedProviderFilter || channels[0]?.provider || "velocity";
+    const providerToUse = targetCarrier || selectedProviderFilter || channels[0]?.provider || "velocity";
     setIsCreatingWh(true);
     setWhMessage("");
 
@@ -250,11 +253,35 @@ export function ShippingView() {
     setServiceError("");
     setServiceResults(null);
 
-    const providerToUse = selectedProviderFilter || channels[0]?.provider || "velocity";
+    const connectedProviders = channels.filter((c) => c.status === "connected").map((c) => c.provider);
+    const providersToTest = selectedProviderFilter
+      ? [selectedProviderFilter]
+      : connectedProviders.length
+      ? connectedProviders
+      : ["velocity"];
 
     try {
-      const res = await checkServiceability(providerToUse, serviceCheck);
-      setServiceResults(res.result?.serviceability_results || res.data || res);
+      const resultsMap = {};
+      let anySuccess = false;
+      const errors = [];
+
+      await Promise.all(
+        providersToTest.map(async (prov) => {
+          try {
+            const res = await checkServiceability(prov, serviceCheck);
+            resultsMap[prov] = { success: true, data: res.result?.serviceability_results || res.data || res };
+            anySuccess = true;
+          } catch (err) {
+            resultsMap[prov] = { success: false, error: err.message };
+            errors.push(`${prov}: ${err.message}`);
+          }
+        }),
+      );
+
+      setServiceResults(resultsMap);
+      if (!anySuccess && errors.length) {
+        setServiceError(errors.join(" | "));
+      }
     } catch (err) {
       setServiceError(err.message);
     } finally {
@@ -348,17 +375,36 @@ export function ShippingView() {
         {/* Warehouses Panel (2 cols) */}
         <div className="lg:col-span-2 space-y-6">
           <Card>
-            <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+            <CardHeader className="flex flex-col sm:flex-row items-start sm:items-center justify-between border-b pb-4 gap-3">
               <div>
                 <CardTitle className="text-xl">Synced Pickup Warehouses</CardTitle>
                 <p className="text-sm text-[var(--muted)]">Fetched directly from your connected shipping channels</p>
               </div>
-              <Badge tone="teal">{warehouses.length} Total Locations</Badge>
+              <div className="flex flex-wrap items-center gap-1.5">
+                <button
+                  onClick={() => setSelectedProviderFilter("")}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${!selectedProviderFilter ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                >
+                  All ({warehouses.length})
+                </button>
+                {providers.map((p) => {
+                  const count = warehouses.filter((w) => w.provider === p.provider).length;
+                  return (
+                    <button
+                      key={p.provider}
+                      onClick={() => setSelectedProviderFilter(p.provider)}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${selectedProviderFilter === p.provider ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                    >
+                      {p.name} ({count})
+                    </button>
+                  );
+                })}
+              </div>
             </CardHeader>
             <CardContent className="p-4">
-              {warehouses.length === 0 ? (
+              {warehouses.filter((w) => !selectedProviderFilter || w.provider === selectedProviderFilter).length === 0 ? (
                 <div className="p-8 text-center text-sm text-[var(--muted)]">
-                  No pickup warehouses found. Connect Velocity, Shiprocket, Shipway, or ShipMozo to auto-fetch existing warehouses.
+                  No pickup warehouses found for {selectedProviderFilter ? selectedProviderFilter : "any connected channel"}. Click "Sync Warehouses" on a connected carrier above or register a location below.
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-md border border-[var(--line)]">
@@ -366,28 +412,32 @@ export function ShippingView() {
                     <thead className="bg-slate-50 text-xs font-semibold uppercase text-slate-600">
                       <tr>
                         <th className="px-4 py-3">Warehouse Name</th>
-                        <th className="px-4 py-3">Provider</th>
+                        <th className="px-4 py-3">Carrier / Provider</th>
                         <th className="px-4 py-3">Location ID</th>
                         <th className="px-4 py-3">City / PIN</th>
                         <th className="px-4 py-3">Contact</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-medium">
-                      {warehouses.map((w) => (
-                        <tr key={w._id || w.externalWarehouseId} className="hover:bg-slate-50">
-                          <td className="px-4 py-3 text-slate-900 font-bold">{w.name}</td>
-                          <td className="px-4 py-3">
-                            <Badge tone="slate">{w.provider}</Badge>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-600">{w.externalWarehouseId}</td>
-                          <td className="px-4 py-3 text-slate-700">
-                            {w.address?.city || "N/A"} ({w.address?.zip || "N/A"})
-                          </td>
-                          <td className="px-4 py-3 text-xs text-slate-600">
-                            {w.contactPerson || w.phone || "N/A"}
-                          </td>
-                        </tr>
-                      ))}
+                      {warehouses
+                        .filter((w) => !selectedProviderFilter || w.provider === selectedProviderFilter)
+                        .map((w) => (
+                          <tr key={w._id || w.externalWarehouseId} className="hover:bg-slate-50">
+                            <td className="px-4 py-3 text-slate-900 font-bold">{w.name}</td>
+                            <td className="px-4 py-3">
+                              <Badge tone={w.provider === "velocity" ? "teal" : w.provider === "shiprocket" ? "blue" : "purple"}>
+                                {providers.find((p) => p.provider === w.provider)?.name || w.provider}
+                              </Badge>
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600 font-mono">{w.externalWarehouseId}</td>
+                            <td className="px-4 py-3 text-slate-700">
+                              {w.address?.city || "N/A"} ({w.address?.zip || "N/A"})
+                            </td>
+                            <td className="px-4 py-3 text-xs text-slate-600">
+                              {w.contactPerson || w.phone || "N/A"}
+                            </td>
+                          </tr>
+                        ))}
                     </tbody>
                   </table>
                 </div>
@@ -403,6 +453,31 @@ export function ShippingView() {
             </CardHeader>
             <CardContent className="p-4">
               <form onSubmit={handleCreateWarehouse} className="grid gap-3 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="block text-sm font-semibold text-slate-700">Shipping Carrier / Channel</label>
+                  <select
+                    value={targetCarrier || (channels[0]?.provider || "velocity")}
+                    onChange={(e) => setTargetCarrier(e.target.value)}
+                    className="mt-1.5 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                  >
+                    {channels.map((c) => (
+                      <option key={c.provider} value={c.provider}>
+                        {providers.find((p) => p.provider === c.provider)?.name || c.name || c.provider} ({c.status === "connected" ? "Connected" : "Disconnected"})
+                      </option>
+                    ))}
+                    {channels.length === 0 && (
+                      <>
+                        <option value="velocity">Velocity Shipping</option>
+                        <option value="shipway">Shipway</option>
+                        <option value="shipmozo">ShipMozo</option>
+                        <option value="shiprocket">Shiprocket</option>
+                      </>
+                    )}
+                  </select>
+                  <p className="mt-1 text-xs text-[var(--muted)]">
+                    Select which shipping carrier (Velocity, Shipway, ShipMozo, Shiprocket) this pickup warehouse belongs to.
+                  </p>
+                </div>
                 <Field
                   label="Warehouse Name"
                   value={warehouseForm.name}
@@ -518,11 +593,27 @@ export function ShippingView() {
               {serviceError ? <p className="mt-3 text-xs text-rose-600 font-medium">{serviceError}</p> : null}
 
               {serviceResults ? (
-                <div className="mt-4 max-h-60 overflow-y-auto rounded-md border p-2 text-xs space-y-2 bg-slate-50">
-                  <p className="font-bold text-slate-800">Available Couriers:</p>
-                  <pre className="text-[10px] text-slate-600 font-mono whitespace-pre-wrap">
-                    {JSON.stringify(serviceResults, null, 2)}
-                  </pre>
+                <div className="mt-4 max-h-72 overflow-y-auto rounded-md border p-3 text-xs space-y-3 bg-slate-50">
+                  <p className="font-bold text-slate-900 border-b pb-1">Serviceability Results ({Object.keys(serviceResults).length} Carrier{Object.keys(serviceResults).length > 1 ? "s" : ""}):</p>
+                  {Object.entries(serviceResults).map(([provKey, resItem]) => (
+                    <div key={provKey} className="rounded border bg-white p-2.5 shadow-sm space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-bold uppercase text-[11px] text-teal-800">{provKey}</span>
+                        {resItem.success ? (
+                          <Badge tone="teal" className="text-[10px]">Serviceable</Badge>
+                        ) : (
+                          <Badge tone="amber" className="text-[10px]">Error</Badge>
+                        )}
+                      </div>
+                      {resItem.success ? (
+                        <pre className="mt-1 text-[10px] text-slate-700 font-mono whitespace-pre-wrap max-h-36 overflow-y-auto bg-slate-100 p-1.5 rounded">
+                          {JSON.stringify(resItem.data, null, 2)}
+                        </pre>
+                      ) : (
+                        <p className="text-[11px] text-rose-600 font-medium">{resItem.error}</p>
+                      )}
+                    </div>
+                  ))}
                 </div>
               ) : null}
             </CardContent>

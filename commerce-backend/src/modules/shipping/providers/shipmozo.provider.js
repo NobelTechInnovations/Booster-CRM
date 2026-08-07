@@ -66,9 +66,8 @@ export class ShipMozoProvider extends BaseShippingProvider {
    * 2. Username & Password (calls POST /login to obtain public_key & private_key)
    */
   async connect({ userId, publicKey, privateKey, username, password }) {
-
-    let pubKey = publicKey || "jpKMAvrkZPwTCZW8mXhJ";
-    let privKey = privateKey || "uy4RPAYeNZZnMwgLG9HO";
+    let pubKey = publicKey;
+    let privKey = privateKey;
 
     if (!pubKey || !privKey) {
       if (!username || !password) {

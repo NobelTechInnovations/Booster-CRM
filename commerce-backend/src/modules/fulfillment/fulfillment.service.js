@@ -146,3 +146,43 @@ export async function markShopifyOrderFulfilled({ shop, shopifyOrderId, awbCode,
     }),
   });
 }
+
+/**
+ * Cancel a pending order in OMS and push cancel to Shopify
+ */
+export async function cancelOrderFulfillment({ companyId, orderId, reason = "customer" }) {
+  const order = await getOrderById({ companyId, orderId });
+
+  if (!order) {
+    throw new HttpError(404, "Order not found");
+  }
+
+  const updated = await updateOrderOmsStatus({
+    companyId,
+    shopifyOrderId: order.externalId,
+    update: {
+      omsStatus: "cancelled",
+      cancelledAt: new Date(),
+      fulfillmentStatus: "cancelled",
+      financialStatus: "voided",
+    },
+  });
+
+  try {
+    const channel = await getShopifyChannelByShop(order.shop);
+    if (channel?.credentials?.accessToken) {
+      await fetch(`https://${order.shop}/admin/api/${env.shopify.apiVersion}/orders/${order.externalId}/cancel.json`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": channel.credentials.accessToken,
+        },
+        body: JSON.stringify({ reason }),
+      });
+    }
+  } catch (err) {
+    console.warn(`[Fulfillment] Shopify order cancel failed for ${order.name}:`, err.message);
+  }
+
+  return { message: `Order ${order.name || order.externalId} cancelled successfully`, order: updated };
+}
