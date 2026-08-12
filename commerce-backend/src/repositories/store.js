@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import bcrypt from "bcryptjs";
 import { isMongoConnected } from "../config/database.js";
 import { Channel } from "../models/channel.model.js";
 import { Company } from "../models/company.model.js";
@@ -516,6 +517,71 @@ export async function getCompany(companyId) {
   return clone(memory.companies.get(companyId) || null);
 }
 
+// ─── Multi-brand support ────────────────────────────────────────────────────
+// Same login email can own multiple companies (brands). Each User document
+// pairs one email with one companyId (see the {companyId, email} unique index
+// on the User model) — so "adding a brand" just creates a new Company plus a
+// new User row for the same email, and "switching" re-issues a JWT for a
+// different companyId the email already has a User row for.
+
+export async function listUserCompanies(email) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  if (isMongoConnected()) {
+    const users = await User.find({ email: normalizedEmail, status: "active" }).lean();
+    if (!users.length) return [];
+    const companies = await Company.find({ _id: { $in: users.map((u) => u.companyId) } }).lean();
+    const companyMap = new Map(companies.map((c) => [String(c._id), c]));
+    return users.map((u) => ({
+      companyId: String(u.companyId),
+      companyName: companyMap.get(String(u.companyId))?.name || "Unknown",
+      role: u.role,
+    }));
+  }
+
+  return [...memory.users.values()]
+    .filter((u) => u.email === normalizedEmail && u.status !== "disabled")
+    .map((u) => ({
+      companyId: String(u.companyId),
+      companyName: memory.companies.get(u.companyId)?.name || "Unknown",
+      role: u.role,
+    }));
+}
+
+export async function createAdditionalCompany({ email, companyName }) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  const existingUsers = await findUserByEmailWithPassword(normalizedEmail);
+
+  if (!existingUsers.length) {
+    return { error: "No existing account found for this email" };
+  }
+
+  const primary = existingUsers[0];
+  return createCompanyOwner({
+    companyName,
+    name: primary.name,
+    email: normalizedEmail,
+    passwordHash: primary.passwordHash,
+  });
+}
+
+export async function findUserForCompanySwitch({ email, companyId }) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+
+  if (isMongoConnected()) {
+    const user = await User.findOne({ email: normalizedEmail, companyId, status: "active" }).lean();
+    if (!user) return null;
+    const company = await Company.findById(companyId).lean();
+    return { user, company };
+  }
+
+  const user = [...memory.users.values()].find(
+    (u) => u.email === normalizedEmail && String(u.companyId) === String(companyId) && u.status !== "disabled",
+  );
+  if (!user) return null;
+  return { user: clone(user), company: clone(memory.companies.get(user.companyId) || null) };
+}
+
 export async function getAmazonConfig(companyId, { includeSecret = false } = {}) {
   if (isMongoConnected()) {
     const query = Company.findById(companyId);
@@ -639,6 +705,54 @@ export async function updateCompanyKyc({ companyId, payload }) {
   return { company: clone(company) };
 }
 
+function cleanTaxSettings(payload = {}) {
+  return {
+    gstRate: Number.isFinite(Number(payload.gstRate)) ? Number(payload.gstRate) : 5,
+    invoicePrefix: String(payload.invoicePrefix || "INV").trim().toUpperCase(),
+    invoiceStartNumber: Number.isFinite(Number(payload.invoiceStartNumber)) ? Number(payload.invoiceStartNumber) : 1,
+    placeOfSupply: String(payload.placeOfSupply || "").trim(),
+  };
+}
+
+function cleanNotificationSettings(payload = {}) {
+  return {
+    lowStockAlerts: Boolean(payload.lowStockAlerts),
+    newOrderAlerts: Boolean(payload.newOrderAlerts),
+    dailySummaryEmail: Boolean(payload.dailySummaryEmail),
+    lowStockThreshold: Number.isFinite(Number(payload.lowStockThreshold)) ? Number(payload.lowStockThreshold) : 5,
+  };
+}
+
+export async function updateCompanyTaxSettings({ companyId, payload }) {
+  const taxSettings = cleanTaxSettings(payload);
+
+  if (isMongoConnected()) {
+    const company = await Company.findByIdAndUpdate(companyId, { $set: { taxSettings } }, { new: true }).lean();
+    return { company };
+  }
+
+  const company = memory.companies.get(companyId);
+  if (!company) return { error: "Company not found" };
+  company.taxSettings = taxSettings;
+  company.updatedAt = now();
+  return { company: clone(company) };
+}
+
+export async function updateCompanyNotificationSettings({ companyId, payload }) {
+  const notificationSettings = cleanNotificationSettings(payload);
+
+  if (isMongoConnected()) {
+    const company = await Company.findByIdAndUpdate(companyId, { $set: { notificationSettings } }, { new: true }).lean();
+    return { company };
+  }
+
+  const company = memory.companies.get(companyId);
+  if (!company) return { error: "Company not found" };
+  company.notificationSettings = notificationSettings;
+  company.updatedAt = now();
+  return { company: clone(company) };
+}
+
 export async function listCompanyUsers({ companyId, actorUserId }) {
   const company = await getCompany(companyId);
 
@@ -727,6 +841,34 @@ export async function updateCompanyUser({ companyId, userId, actorUserId, role, 
   user.updatedAt = now();
 
   return { user: publicUser(user, { actorUserId, company }) };
+}
+
+export async function changeOwnPassword({ userId, currentPassword, newPassword }) {
+  if (String(newPassword || "").length < 8) {
+    return { error: "New password must be at least 8 characters" };
+  }
+
+  if (isMongoConnected()) {
+    const user = await User.findById(userId).select("+passwordHash");
+    if (!user) return { error: "User not found" };
+
+    const matches = await bcrypt.compare(String(currentPassword || ""), user.passwordHash || "");
+    if (!matches) return { error: "Current password is incorrect" };
+
+    user.passwordHash = await bcrypt.hash(String(newPassword), 12);
+    await user.save();
+    return { success: true };
+  }
+
+  const user = memory.users.get(userId);
+  if (!user) return { error: "User not found" };
+
+  const matches = await bcrypt.compare(String(currentPassword || ""), user.passwordHash || "");
+  if (!matches) return { error: "Current password is incorrect" };
+
+  user.passwordHash = await bcrypt.hash(String(newPassword), 12);
+  user.updatedAt = now();
+  return { success: true };
 }
 
 export async function listChannels(companyId) {

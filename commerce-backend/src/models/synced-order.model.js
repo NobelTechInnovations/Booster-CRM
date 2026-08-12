@@ -81,6 +81,26 @@ const syncedOrderSchema = new mongoose.Schema(
     awbCode:          String,
     labelUrl:         String,
     markedFulfilledAt: Date,
+    // Freight cost quoted/selected at ship time (courier rate the user picked in the
+    // Ship Order modal) — captured here since it varies per order by destination and
+    // weight, so it can't be a fixed per-SKU cost. Used to compute true net margin.
+    shippingCost: { type: Number, default: 0 },
+
+    // Tracking pulled from Shopify's fulfillments (admin-side or another channel/app)
+    trackingNumber:  String,
+    trackingUrl:     String,
+    trackingCompany: String,
+    fulfillments: [
+      {
+        status:          String,
+        shipmentStatus:  String,
+        trackingNumber:  String,
+        trackingUrl:     String,
+        trackingCompany: String,
+        createdAt:       Date,
+        updatedAt:       Date,
+      },
+    ],
 
     // Timestamps from source
     shopifyCreatedAt: Date,

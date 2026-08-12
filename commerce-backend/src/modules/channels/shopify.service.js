@@ -201,8 +201,10 @@ export async function fetchShopifyOrders(shop, accessToken) {
     key: "orders",
     params: {
       status: "any",
+      // note_attributes/landing_site/referring_site carry UTM data used to attribute Meta ad spend to orders — keep these.
+      // fulfillments carries tracking number/url/company for orders fulfilled via Shopify admin or another channel.
       fields:
-        "id,name,order_number,email,phone,customer,financial_status,fulfillment_status,note,tags,currency,total_price,subtotal_price,total_tax,payment_gateway_names,line_items,shipping_address,created_at,processed_at,cancelled_at",
+        "id,name,order_number,email,phone,customer,financial_status,fulfillment_status,note,note_attributes,tags,currency,total_price,subtotal_price,total_tax,payment_gateway_names,line_items,shipping_address,landing_site,referring_site,source_name,created_at,processed_at,cancelled_at,fulfillments",
     },
   });
 }
@@ -469,7 +471,15 @@ export async function syncShopifyData({ channelId, companyId }) {
     throw new HttpError(400, "Only Shopify sync is available right now");
   }
 
-  if (channel.status !== "connected") {
+  // A channel can be left stuck on "syncing" if a previous run crashed before its
+  // finally-block ran (e.g. server restart mid-sync). Self-heal: treat a "syncing"
+  // status older than 5 minutes as stale and let this call proceed instead of
+  // permanently requiring a manual reconnect.
+  const STALE_SYNC_MS = 5 * 60 * 1000;
+  const syncStartedAt = channel.sync?.lastSyncAt ? new Date(channel.sync.lastSyncAt).getTime() : 0;
+  const isStaleSyncing = channel.status === "syncing" && Date.now() - syncStartedAt > STALE_SYNC_MS;
+
+  if (channel.status !== "connected" && !isStaleSyncing) {
     throw new HttpError(400, "Reconnect Shopify before syncing orders");
   }
 
@@ -493,18 +503,73 @@ export async function syncShopifyData({ channelId, companyId }) {
     },
   });
 
-  const [ordersResult, productsResult, customersResult] = await Promise.allSettled([
-    fetchShopifyOrders(channel.shop, accessToken),
-    fetchShopifyProducts(channel.shop, accessToken),
-    fetchShopifyCustomers(channel.shop, accessToken),
-  ]);
+  // Everything below can throw (network errors, DB write failures, etc). The channel
+  // must never be left stuck on status "syncing" — that hides it as "disconnected" on
+  // the frontend and blocks all future syncs (see the status !== "connected" guard above).
+  // Always fall back to "connected" with a failure note if anything goes wrong.
+  try {
+    const [ordersResult, productsResult, customersResult] = await Promise.allSettled([
+      fetchShopifyOrders(channel.shop, accessToken),
+      fetchShopifyProducts(channel.shop, accessToken),
+      fetchShopifyCustomers(channel.shop, accessToken),
+    ]);
 
-  const orders = resultValue(ordersResult);
-  const products = resultValue(productsResult);
-  const customers = resultValue(customersResult);
-  const failures = syncErrorMessage([ordersResult, productsResult, customersResult]);
+    const orders = resultValue(ordersResult);
+    const products = resultValue(productsResult);
+    const customers = resultValue(customersResult);
+    const failures = syncErrorMessage([ordersResult, productsResult, customersResult]);
 
-  if (!orders.length && !products.length && !customers.length && failures) {
+    if (!orders.length && !products.length && !customers.length && failures) {
+      await updateChannelSyncState({
+        channelId,
+        companyId,
+        status: "connected",
+        sync: {
+          products: "failed",
+          orders: "failed",
+          inventory: "failed",
+          customers: "failed",
+          lastSyncAt: new Date(),
+          lastError: failures,
+        },
+      });
+
+      throw new HttpError(502, failures);
+    }
+
+    await saveSyncedShopifyData({
+      companyId,
+      channelId,
+      shop: channel.shop,
+      orders,
+      products,
+      customers,
+    });
+
+    const metrics = buildMetrics({
+      orders,
+      products,
+      customers,
+      fallbackCurrency: channel.metrics?.currency || channel.external?.currency,
+    });
+
+    return await updateChannelSyncState({
+      channelId,
+      companyId,
+      status: "connected",
+      metrics,
+      sync: {
+        products: syncStatus(productsResult),
+        orders: syncStatus(ordersResult),
+        inventory: syncStatus(productsResult),
+        customers: syncStatus(customersResult),
+        lastSyncAt: new Date(),
+        lastError: failures || undefined,
+      },
+    });
+  } catch (error) {
+    // Reset status back to "connected" (never leave it stuck on "syncing") so the
+    // channel keeps showing as connected and can be retried without a full reconnect.
     await updateChannelSyncState({
       channelId,
       companyId,
@@ -515,43 +580,12 @@ export async function syncShopifyData({ channelId, companyId }) {
         inventory: "failed",
         customers: "failed",
         lastSyncAt: new Date(),
-        lastError: failures,
+        lastError: error.message,
       },
-    });
+    }).catch(() => {});
 
-    throw new HttpError(502, failures);
+    throw error;
   }
-
-  await saveSyncedShopifyData({
-    companyId,
-    channelId,
-    shop: channel.shop,
-    orders,
-    products,
-    customers,
-  });
-
-  const metrics = buildMetrics({
-    orders,
-    products,
-    customers,
-    fallbackCurrency: channel.metrics?.currency || channel.external?.currency,
-  });
-
-  return updateChannelSyncState({
-    channelId,
-    companyId,
-    status: "connected",
-    metrics,
-    sync: {
-      products: syncStatus(productsResult),
-      orders: syncStatus(ordersResult),
-      inventory: syncStatus(productsResult),
-      customers: syncStatus(customersResult),
-      lastSyncAt: new Date(),
-      lastError: failures || undefined,
-    },
-  });
 }
 
 export async function registerShopifyWebhooks(shop, accessToken, channelId, companyId) {

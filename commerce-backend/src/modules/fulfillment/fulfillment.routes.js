@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, shipOrder, cancelOrderFulfillment } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -15,6 +15,18 @@ fulfillmentRoutes.get(
     const limit = Number(req.query.limit || 100);
 
     const result = await getFulfillmentOrders(req.auth.companyId, { page, limit });
+    res.json(result);
+  }),
+);
+
+// Get already-fulfilled orders (fulfilled via Shopify or shipped through our system)
+fulfillmentRoutes.get(
+  "/orders/fulfilled",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const page = Number(req.query.page || 1);
+    const limit = Number(req.query.limit || 200);
+    const result = await getFulfilledOrders(req.auth.companyId, { page, limit });
     res.json(result);
   }),
 );

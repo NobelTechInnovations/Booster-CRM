@@ -16,7 +16,8 @@ export async function listChannels(companyId, { channelType } = {}) {
   const filter = { companyId, ...(channelType ? { channelType } : {}) };
 
   if (isMongoConnected()) {
-    return Channel.find(filter).sort({ updatedAt: -1 }).lean();
+    const channels = await Channel.find(filter).sort({ updatedAt: -1 }).lean();
+    return channels.map(withoutCredentials);
   }
 
   return [...memory.channels.values()]
@@ -357,6 +358,83 @@ export async function listShippingChannels(companyId) {
 
 export async function listSalesChannels(companyId) {
   return listChannels(companyId, { channelType: "sales" });
+}
+
+// ─── Ads Channel (Meta) ──────────────────────────────────────────────────────
+
+export async function listAdsChannels(companyId) {
+  return listChannels(companyId, { channelType: "ads" });
+}
+
+export async function upsertMetaChannel({ companyId, userId, businessId, accessToken, longLivedTokenExpiresAt, adAccountId, adAccountName, adAccountCurrency }) {
+  const shop = "meta-ads";
+
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate(
+      { companyId, provider: "meta", shop },
+      {
+        $set: {
+          channelType: "ads",
+          provider: "meta",
+          companyId,
+          shop,
+          name: adAccountName ? `Meta Ads · ${adAccountName}` : "Meta Ads",
+          status: "connected",
+          scopes: ["ads_read", "business_management"],
+          credentials: { accessToken, longLivedTokenExpiresAt },
+          external: { businessId, adAccountId, adAccountName, adAccountCurrency },
+          connectedBy: userId,
+          disconnectedAt: null,
+        },
+      },
+      { new: true, upsert: true },
+    ).lean();
+  }
+
+  const existing = [...memory.channels.values()].find(
+    (ch) => String(ch.companyId) === String(companyId) && ch.provider === "meta" && ch.shop === shop,
+  );
+
+  const channel = {
+    _id: existing?._id || id(),
+    channelType: "ads",
+    provider: "meta",
+    companyId,
+    shop,
+    name: adAccountName ? `Meta Ads · ${adAccountName}` : "Meta Ads",
+    status: "connected",
+    scopes: ["ads_read", "business_management"],
+    credentials: { accessToken, longLivedTokenExpiresAt },
+    external: { businessId, adAccountId, adAccountName, adAccountCurrency },
+    sync: existing?.sync || { orders: "idle" },
+    connectedBy: userId,
+    disconnectedAt: null,
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+
+  memory.channels.set(channel._id, channel);
+  return clone(channel);
+}
+
+export async function updateMetaAdAccount({ companyId, channelId, adAccountId, adAccountName, adAccountCurrency }) {
+  const update = {
+    "external.adAccountId": adAccountId,
+    "external.adAccountName": adAccountName,
+    "external.adAccountCurrency": adAccountCurrency,
+    name: adAccountName ? `Meta Ads · ${adAccountName}` : "Meta Ads",
+  };
+
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate({ _id: channelId, companyId, provider: "meta" }, { $set: update }, { new: true }).lean();
+  }
+
+  const channel = memory.channels.get(channelId);
+  if (!channel || String(channel.companyId) !== String(companyId)) return null;
+  channel.external = { ...channel.external, adAccountId, adAccountName, adAccountCurrency };
+  channel.name = update.name;
+  channel.updatedAt = now();
+  return withoutCredentials(channel);
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

@@ -3,6 +3,7 @@ import { runWarehouseSyncJob } from "./warehouse-sync.job.js";
 import { runTrackingUpdateJob } from "./tracking-update.job.js";
 import { runTokenRefreshJob } from "./token-refresh.job.js";
 import { runShopifySyncJob } from "./shopify-sync.job.js";
+import { runMetaAdsSyncJob } from "./meta-ads-sync.job.js";
 
 /**
  * Initializes and schedules all OMS background automation jobs.
@@ -30,11 +31,16 @@ export function startScheduler() {
     runShopifySyncJob().catch(console.error);
   });
 
+  // 5. Meta Ads spend + attribution sync every 6 hours
+  cron.schedule("0 */6 * * *", () => {
+    runMetaAdsSyncJob().catch(console.error);
+  });
+
   // Run immediate initial checks on startup (non-blocking)
   setTimeout(() => {
     runTokenRefreshJob().catch(console.error);
     runWarehouseSyncJob().catch(console.error);
   }, 5000);
 
-  console.log("[Scheduler] Background jobs scheduled: Token Refresh (1h), Tracking Update (15m), Warehouse Sync (6h), Shopify Sync (30m).");
+  console.log("[Scheduler] Background jobs scheduled: Token Refresh (1h), Tracking Update (15m), Warehouse Sync (6h), Shopify Sync (30m), Meta Ads Sync (6h).");
 }

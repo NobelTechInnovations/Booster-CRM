@@ -1,7 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
-import { createCompanyUser, listCompanyUsers, updateCompanyUser } from "../../repositories/store.js";
+import { createCompanyUser, listCompanyUsers, updateCompanyUser, changeOwnPassword } from "../../repositories/store.js";
 import { roles } from "../auth/permissions.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
@@ -65,6 +65,28 @@ userRoutes.post(
     }
 
     res.status(201).json({ user: result.user });
+  }),
+);
+
+userRoutes.post(
+  "/me/password",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { currentPassword, newPassword } = req.body;
+    requireField(currentPassword, "Current password");
+    requireField(newPassword, "New password");
+
+    const result = await changeOwnPassword({
+      userId: req.auth.sub,
+      currentPassword,
+      newPassword,
+    });
+
+    if (result.error) {
+      throw new HttpError(400, result.error);
+    }
+
+    res.json({ success: true });
   }),
 );
 

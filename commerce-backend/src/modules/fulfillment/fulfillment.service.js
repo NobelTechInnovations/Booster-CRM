@@ -1,4 +1,4 @@
-import { getOrderById, listPendingOrders, updateOrderOmsStatus } from "../../repositories/order.repo.js";
+import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus } from "../../repositories/order.repo.js";
 import { getWarehouseByExternalId, listWarehouses } from "../../repositories/warehouse.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
@@ -15,6 +15,14 @@ export async function getFulfillmentOrders(companyId, { page = 1, limit = 100 } 
   ]);
 
   return { orders, warehouses };
+}
+
+/**
+ * List orders that are already fulfilled (via Shopify or our shipping flow)
+ */
+export async function getFulfilledOrders(companyId, { page = 1, limit = 200 } = {}) {
+  const orders = await listFulfilledOrders(companyId, { page, limit });
+  return { orders };
 }
 
 /**
@@ -78,6 +86,9 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
       awbCode: shipment.awbCode,
       labelUrl: shipment.labelUrl,
       fulfillmentStatus: "fulfilled",
+      // The courier rate the user picked in the Ship Order modal — varies by
+      // destination/weight per order, so this is the real per-order freight cost.
+      shippingCost: Number(options.rate) || 0,
     },
   });
 

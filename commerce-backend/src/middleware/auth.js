@@ -9,6 +9,7 @@ export function signAuthToken(user) {
       sub: String(user._id),
       companyId: String(user.companyId),
       role: user.role,
+      email: user.email,
     },
     env.jwtSecret,
     { expiresIn: "7d" },

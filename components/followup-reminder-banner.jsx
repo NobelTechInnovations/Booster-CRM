@@ -124,7 +124,7 @@ export function FollowUpReminderBanner({ onOpenCustomer }) {
               {c.phone && <span className="text-[10px] text-slate-500">{c.phone}</span>}
               <button
                 onClick={() => { setExpanded(false); onOpenCustomer?.(c); }}
-                className="text-[10px] font-semibold text-teal-700 hover:underline"
+                className="text-[10px] font-semibold text-indigo-700 hover:underline"
               >
                 Open
               </button>

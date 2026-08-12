@@ -158,9 +158,9 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-xl shadow-2xl border border-[var(--line)] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)] bg-gradient-to-r from-teal-50 to-white">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)] bg-gradient-to-r from-indigo-50 to-white">
           <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-teal-700 text-white text-sm font-bold shrink-0">
+            <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white text-sm font-bold shrink-0">
               {(customer?.name || "?")[0]?.toUpperCase()}
             </div>
             <div>
@@ -177,7 +177,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
             {onCreateOrder && (
               <button
                 onClick={onCreateOrder}
-                className="flex items-center gap-1.5 rounded-lg bg-teal-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-teal-800 transition"
+                className="flex items-center gap-1.5 rounded-lg bg-indigo-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-800 transition"
               >
                 <ShoppingCart size={13} />
                 Create Order
@@ -197,7 +197,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
               onClick={() => setTab(key)}
               className={cn(
                 "py-2.5 px-3 text-xs font-semibold border-b-2 transition",
-                tab === key ? "border-teal-600 text-teal-700" : "border-transparent text-slate-500 hover:text-slate-800"
+                tab === key ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-800"
               )}
             >
               {label}
@@ -217,11 +217,11 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                     type="datetime-local"
                     value={calledAt}
                     onChange={(e) => setCalledAt(e.target.value)}
-                    className="flex-1 h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white"
+                    className="flex-1 h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
                   />
                   <button
                     onClick={setNow}
-                    className="h-9 px-3 rounded-lg border border-teal-200 bg-teal-50 text-teal-700 text-xs font-semibold hover:bg-teal-100 transition"
+                    className="h-9 px-3 rounded-lg border border-indigo-200 bg-indigo-50 text-indigo-700 text-xs font-semibold hover:bg-indigo-100 transition"
                   >
                     Now
                   </button>
@@ -244,7 +244,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                       }}
                       className={cn(
                         "flex items-center gap-1.5 rounded-lg border px-2.5 py-2 text-xs font-medium transition",
-                        outcome === key ? color + " ring-2 ring-offset-1 ring-teal-400" : color
+                        outcome === key ? color + " ring-2 ring-offset-1 ring-indigo-400" : color
                       )}
                     >
                       <Icon size={13} />
@@ -262,7 +262,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                   onChange={(e) => setNote(e.target.value)}
                   rows={3}
                   placeholder="Conversation details, customer concerns, follow-up instructions..."
-                  className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 resize-none bg-white"
+                  className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 resize-none bg-white"
                 />
               </div>
 
@@ -280,7 +280,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                   type="datetime-local"
                   value={nextFollowUpAt}
                   onChange={(e) => setNextFollowUpAt(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white"
+                  className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
                 />
               </div>
 
@@ -290,7 +290,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                 <select
                   value={followUpStatus}
                   onChange={(e) => setFollowUpStatus(e.target.value)}
-                  className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 bg-white"
+                  className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 bg-white"
                 >
                   {FOLLOW_UP_STATUSES.map((s) => (
                     <option key={s.key} value={s.key}>{s.label}</option>
@@ -310,7 +310,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                 {[["First Name", editFirst, setEditFirst], ["Last Name", editLast, setEditLast]].map(([l, v, s]) => (
                   <div key={l}>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">{l}</label>
-                    <input value={v} onChange={(e) => s(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+                    <input value={v} onChange={(e) => s(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white" />
                   </div>
                 ))}
               </div>
@@ -318,23 +318,23 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                 {[["Email", editEmail, setEditEmail, "email"], ["Phone", editPhone, setEditPhone, "tel"]].map(([l, v, s, t]) => (
                   <div key={l}>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">{l}</label>
-                    <input type={t} value={v} onChange={(e) => s(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+                    <input type={t} value={v} onChange={(e) => s(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white" />
                   </div>
                 ))}
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Address Line 1</label>
-                <input value={editAddr1} onChange={(e) => setEditAddr1(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+                <input value={editAddr1} onChange={(e) => setEditAddr1(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white" />
               </div>
               <div>
                 <label className="block text-xs font-semibold text-slate-600 mb-1">Address Line 2</label>
-                <input value={editAddr2} onChange={(e) => setEditAddr2(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+                <input value={editAddr2} onChange={(e) => setEditAddr2(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white" />
               </div>
               <div className="grid grid-cols-2 gap-3">
                 {[["City", editCity, setEditCity], ["Province / State", editProvince, setEditProvince], ["ZIP / PIN", editZip, setEditZip], ["Country", editCountry, setEditCountry]].map(([l, v, s]) => (
                   <div key={l}>
                     <label className="block text-xs font-semibold text-slate-600 mb-1">{l}</label>
-                    <input value={v} onChange={(e) => s(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-teal-600 focus:ring-1 focus:ring-teal-600 bg-white" />
+                    <input value={v} onChange={(e) => s(e.target.value)} className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white" />
                   </div>
                 ))}
               </div>
@@ -394,7 +394,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
             <button
               onClick={saveFollowUp}
               disabled={saving}
-              className="h-8 px-4 rounded-lg bg-teal-700 text-xs font-semibold text-white hover:bg-teal-800 transition disabled:opacity-50 flex items-center gap-1.5"
+              className="h-8 px-4 rounded-lg bg-indigo-700 text-xs font-semibold text-white hover:bg-indigo-800 transition disabled:opacity-50 flex items-center gap-1.5"
             >
               {saving ? <RefreshCw size={12} className="animate-spin" /> : null}
               {tab === "edit" ? "Save + Log Call" : "Log Follow-Up"}

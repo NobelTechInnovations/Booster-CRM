@@ -30,4 +30,11 @@ export const env = {
   amazon: {
     appUrl: process.env.AMAZON_APP_URL || process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
   },
+  meta: {
+    appId: process.env.META_APP_ID || "",
+    appSecret: process.env.META_APP_SECRET || "",
+    apiVersion: process.env.META_API_VERSION || "v21.0",
+    appUrl: process.env.META_APP_URL || process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
+    scopes: process.env.META_SCOPES || "ads_read,business_management",
+  },
 };

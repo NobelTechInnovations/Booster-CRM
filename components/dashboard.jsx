@@ -59,7 +59,6 @@ import {
   automations,
   channelCatalog,
   financeBreakdown,
-  modules,
   roles,
 } from "@/lib/data";
 import {
@@ -101,7 +100,7 @@ const menu = [
   { label: "Settings", icon: Settings },
 ];
 
-const chartColors = ["#0f766e", "#2563eb", "#d94635", "#d97706", "#64748b", "#16a34a"];
+const chartColors = ["#3730a3", "#2563eb", "#b45309", "#d97706", "#64748b", "#16a34a"];
 const defaultShopifyShop = "kghkjm-bs.myshopify.com";
 const zeroKpis = [
   { label: "Today's Sales", value: "₹0", change: "Sync Shopify data", tone: "green" },
@@ -152,7 +151,7 @@ function Sidebar({ open, setOpen, activeView, setActiveView }) {
       >
         <div className="flex h-16 items-center justify-between border-b border-[var(--line)] px-4">
           <div className="flex items-center gap-3">
-            <div className="grid h-10 w-10 place-items-center rounded-md bg-teal-700 text-white">
+            <div className="grid h-10 w-10 place-items-center rounded-md bg-[var(--navy)] text-white">
               <Layers3 size={21} />
             </div>
             <div>
@@ -178,7 +177,7 @@ function Sidebar({ open, setOpen, activeView, setActiveView }) {
                 className={cn(
                   "flex h-10 w-full items-center gap-3 rounded-md px-3 text-left text-sm font-medium transition",
                   item.label === activeView
-                    ? "bg-teal-50 text-teal-800"
+                    ? "bg-indigo-50 text-indigo-800"
                     : "text-slate-600 hover:bg-slate-100 hover:text-slate-900",
                 )}
               >
@@ -190,14 +189,14 @@ function Sidebar({ open, setOpen, activeView, setActiveView }) {
         </nav>
 
         <div className="border-t border-[var(--line)] p-4">
-          <div className="rounded-lg border border-teal-100 bg-teal-50 p-3">
-            <div className="flex items-center gap-2 text-sm font-semibold text-teal-900">
+          <div className="rounded-lg border border-indigo-100 bg-indigo-50 p-3">
+            <div className="flex items-center gap-2 text-sm font-semibold text-indigo-900">
               <ShieldCheck size={16} />
               Role Matrix
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {roles.slice(0, 5).map((role) => (
-                <Badge key={role} tone="teal">
+                <Badge key={role} tone="indigo">
                   {role}
                 </Badge>
               ))}
@@ -226,19 +225,19 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
           <Menu size={20} />
         </button>
         <div className="hidden min-w-0 items-center gap-2 rounded-md border border-[var(--line)] bg-[var(--panel-soft)] px-3 py-2 md:flex">
-          <Building2 size={17} className="text-teal-700" />
+          <Building2 size={17} className="text-indigo-700" />
           <span className="truncate text-sm font-semibold">{companyName}</span>
           <ChevronDown size={16} className="text-slate-500" />
         </div>
         <div className="relative flex-1">
           <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={18} />
           <input
-            className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+            className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
             placeholder="Search orders, SKU, customer, shipment, invoice"
           />
         </div>
         <select
-          className="hidden h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-teal-600 md:block"
+          className="hidden h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-indigo-600 md:block"
           value={period}
           onChange={(event) => setPeriod(event.target.value)}
         >
@@ -300,7 +299,14 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-function SalesCharts({ salesTrend, channelMix }) {
+const PERIOD_LABELS = { today: "Today", yesterday: "Yesterday", month: "This Month", last90: "Last 90 Days" };
+
+function formatPeriodMoney(value) {
+  const n = Math.round(value || 0);
+  return n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : n >= 1000 ? `₹${(n / 1000).toFixed(1)}k` : `₹${n}`;
+}
+
+function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderCount }) {
   return (
     <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
       <Card>
@@ -309,7 +315,7 @@ function SalesCharts({ salesTrend, channelMix }) {
             <CardTitle>Sales, Profit, Orders</CardTitle>
             <p className="mt-1 text-sm text-[var(--muted)]">Daily operating pulse across connected channels.</p>
           </div>
-          <Badge tone="green">ROAS 4.8x</Badge>
+          <Badge tone="indigo">{PERIOD_LABELS[period] || "Today"}: {formatPeriodMoney(periodSales)} · {periodOrderCount || 0} orders</Badge>
         </CardHeader>
         <CardContent>
           <div className="h-80">
@@ -317,16 +323,16 @@ function SalesCharts({ salesTrend, channelMix }) {
               <AreaChart data={salesTrend} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="salesGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#0f766e" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#0f766e" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#3730a3" stopOpacity={0.3} />
+                    <stop offset="95%" stopColor="#3730a3" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="#e5eaf1" vertical={false} />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} />
                 <YAxis tickFormatter={formatCurrency} tickLine={false} axisLine={false} width={52} />
                 <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="sales" name="Sales" stroke="#0f766e" fill="url(#salesGradient)" strokeWidth={3} />
-                <Area type="monotone" dataKey="profit" name="Profit" stroke="#d94635" fill="transparent" strokeWidth={3} />
+                <Area type="monotone" dataKey="sales" name="Sales" stroke="#3730a3" fill="url(#salesGradient)" strokeWidth={3} />
+                <Area type="monotone" dataKey="profit" name="Profit" stroke="#b45309" fill="transparent" strokeWidth={3} />
                 <Bar dataKey="orders" name="Orders" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={22} />
               </AreaChart>
             </ResponsiveContainer>
@@ -423,41 +429,31 @@ function ChannelsPanel({
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Channel Integrations</CardTitle>
-          <p className="mt-1 text-sm text-[var(--muted)]">Connect, reconnect, sync, webhooks, and logs.</p>
+          <CardTitle>Active Integrations</CardTitle>
+          <p className="mt-1 text-sm text-[var(--muted)]">All connected channels and their sync health.</p>
         </div>
-        <Button variant="secondary" onClick={() => setShowConnect((value) => !value)}>
-          <PlugZap size={16} />
-          Shopify
-        </Button>
       </CardHeader>
       <CardContent className="space-y-3">
-        {showConnect ? (
-          <form onSubmit={handleConnect} className="rounded-lg border border-teal-100 bg-teal-50 p-3">
-            <label className="text-sm font-semibold text-teal-950" htmlFor="shopify-shop">
-              Shopify store
-            </label>
-            <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
-              <input
-                id="shopify-shop"
-                className="h-10 rounded-md border border-teal-200 bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"
-                placeholder="your-store.myshopify.com"
-                value={shop}
-                onChange={(event) => setShop(event.target.value)}
-              />
-              <Button type="submit" disabled={isConnecting}>
-                <PlugZap size={16} />
-                {isConnecting ? "Opening" : "Connect"}
-              </Button>
-            </div>
-            {connectError ? <p className="mt-2 text-sm font-medium text-rose-700">{connectError}</p> : null}
-          </form>
+        {channelsError ? (
+          <div className="flex items-start gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-sm font-medium text-rose-700">
+            <span className="mt-0.5 shrink-0">⚠</span>{channelsError}
+          </div>
         ) : null}
-        {channelsError ? <p className="rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{channelsError}</p> : null}
-        {isLoadingChannels ? <p className="text-sm text-[var(--muted)]">Loading connected channels...</p> : null}
+        {isLoadingChannels ? (
+          <div className="flex items-center gap-2 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] px-4 py-3 text-sm text-[var(--muted)]">
+            <RefreshCw size={14} className="animate-spin shrink-0" />
+            Loading connected channels…
+          </div>
+        ) : null}
         {!isLoadingChannels && !connectedChannels.length ? (
-          <div className="rounded-lg border border-dashed border-[var(--line)] bg-[var(--panel-soft)] p-4 text-sm text-[var(--muted)]">
-            Shopify is not connected yet. Connect {defaultShopifyShop} first, then run Sync to pull order totals into this panel.
+          <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-[var(--line)] bg-[var(--panel-soft)] px-4 py-8 text-center">
+            <div className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100">
+              <PlugZap size={22} className="text-slate-400" />
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">No channels connected</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Connect Shopify or Amazon above to start syncing.</p>
+            </div>
           </div>
         ) : null}
         {connectedChannels.map((channel) => {
@@ -466,30 +462,70 @@ function ChannelsPanel({
           const orderCount = channel.metrics?.orderCount || 0;
           const salesTotal = Number(channel.metrics?.salesTotal || 0);
           const currency = channel.metrics?.currency || "INR";
+          const colors = PROVIDER_COLORS[channel.provider] || PROVIDER_COLORS.default;
+          const syncFailed = channel.sync?.orders === "failed";
 
           return (
-            <div key={channelId} className="grid gap-3 rounded-lg border border-[var(--line)] p-3 sm:grid-cols-[1fr_auto]">
-              <div className="min-w-0">
-                <div className="flex flex-wrap items-center gap-2">
-                  <p className="font-semibold">{channel.name || "Shopify"}</p>
-                  <Badge tone={channel.status === "connected" ? "green" : "amber"}>{channel.status}</Badge>
+            <div key={channelId} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white text-base font-extrabold ring-2", colors.bg, colors.ring)}>
+                    {colors.label}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <p className="font-bold text-slate-900">{channel.name || channel.provider}</p>
+                      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                        Live
+                      </span>
+                    </div>
+                    <p className="text-xs text-[var(--muted)] truncate">{channel.shop}</p>
+                  </div>
                 </div>
-                <p className="mt-1 text-sm text-[var(--muted)]">{channel.shop}</p>
-                <p className="mt-1 text-sm text-[var(--muted)]">
-                  {orderCount.toLocaleString("en-IN")} orders synced, {currency} {salesTotal.toLocaleString("en-IN")} sales, last sync {formatChannelSync(channel.sync)}
-                </p>
-                <div className="mt-3 h-2 rounded-full bg-slate-100">
-                  <div className="h-2 rounded-full bg-teal-700" style={{ width: channel.sync?.orders === "failed" ? "38%" : "98%" }} />
+                <div className="flex shrink-0 items-center gap-1.5">
+                  <Button variant="ghost" className="h-8 w-8 p-0 rounded-lg" aria-label="Logs">
+                    <ClipboardList size={14} />
+                  </Button>
+                  <Button variant="secondary" className="h-8 px-3 text-xs" onClick={() => handleSync(channelId)} disabled={isSyncing}>
+                    <RefreshCw size={13} className={isSyncing ? "animate-spin" : ""} />
+                    {isSyncing ? "Syncing" : "Sync"}
+                  </Button>
                 </div>
               </div>
-              <div className="flex items-center gap-2 sm:justify-end">
-                <Button variant="ghost" className="h-9 px-2" aria-label={`${channel.name || "Shopify"} logs`}>
-                  <ClipboardList size={16} />
-                </Button>
-                <Button variant="secondary" className="h-9" onClick={() => handleSync(channelId)} disabled={isSyncing}>
-                  <RefreshCw size={15} className={isSyncing ? "animate-spin" : ""} />
-                  {isSyncing ? "Syncing" : "Sync Data"}
-                </Button>
+
+              {/* Metrics */}
+              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Orders</p>
+                  <p className="text-sm font-bold text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
+                </div>
+                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
+                  <p className="text-sm font-bold text-slate-900">
+                    {currency === "INR" ? "₹" : ""}{salesTotal >= 1000 ? `${Math.round(salesTotal / 1000)}k` : salesTotal}
+                  </p>
+                </div>
+                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Last Sync</p>
+                  <p className="text-sm font-bold text-slate-900">{formatChannelSync(channel.sync)}</p>
+                </div>
+              </div>
+
+              {/* Sync health bar */}
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Sync Health</span>
+                  <span className={cn("text-[10px] font-semibold", syncFailed ? "text-rose-600" : "text-emerald-600")}>
+                    {syncFailed ? "Degraded" : "Healthy"}
+                  </span>
+                </div>
+                <div className="h-1.5 rounded-full bg-slate-100">
+                  <div
+                    className={cn("h-1.5 rounded-full transition-all", syncFailed ? "bg-rose-400" : "bg-emerald-500")}
+                    style={{ width: syncFailed ? "38%" : "98%" }}
+                  />
+                </div>
               </div>
             </div>
           );
@@ -508,7 +544,6 @@ function ShopifyConnectForm({ compact = false }) {
     event.preventDefault();
     setConnectError("");
     setIsConnecting(true);
-
     try {
       const result = await createShopifyConnection(shop);
       window.location.href = result.installUrl;
@@ -519,32 +554,27 @@ function ShopifyConnectForm({ compact = false }) {
   }
 
   return (
-    <form onSubmit={handleConnect} className={cn("rounded-lg border border-teal-100 bg-teal-50 p-3", compact && "bg-white")}>
-      <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-semibold text-teal-950" htmlFor={compact ? "shopify-shop-compact" : "shopify-shop"}>
-          Shopify login
-        </label>
-        <Badge tone="green">Company mapped</Badge>
-      </div>
-      <Button type="submit" className="mt-3 w-full" disabled={isConnecting}>
+    <form onSubmit={handleConnect} className="space-y-3">
+      <Button type="submit" className="w-full h-10 font-semibold" disabled={isConnecting}>
         <PlugZap size={16} />
-        {isConnecting ? "Opening Shopify" : "Connect with Shopify"}
+        {isConnecting ? "Opening Shopify…" : "Connect with Shopify"}
       </Button>
-      <div className="mt-2 grid gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+      <div className="relative">
         <input
           id={compact ? "shopify-shop-compact" : "shopify-shop"}
-          className="h-10 rounded-md border border-teal-200 bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"
-          placeholder="Optional dev store: your-store.myshopify.com"
+          className="h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 placeholder:text-slate-400"
+          placeholder="Dev store: your-store.myshopify.com"
           value={shop}
           onChange={(event) => setShop(event.target.value)}
         />
-        <Button type="submit" variant="secondary" disabled={isConnecting}>
-          Dev Connect
-        </Button>
       </div>
-      {connectError ? <p className="mt-2 text-sm font-medium text-rose-700">{connectError}</p> : null}
-      <p className="mt-2 text-xs leading-5 text-teal-900">
-        Public app me button direct Shopify install/login kholega. Dev app me store domain dalna padega.
+      {connectError ? (
+        <p className="flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-2 text-xs font-medium text-rose-700">
+          <span>⚠</span>{connectError}
+        </p>
+      ) : null}
+      <p className="text-[11px] leading-4 text-slate-500">
+        Installs the public app via Shopify OAuth. For dev stores, enter the domain above.
       </p>
     </form>
   );
@@ -565,6 +595,7 @@ function AmazonConnectForm({ compact = false }) {
   });
   const [connectError, setConnectError] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   function setField(field, value) {
     setForm((current) => ({ ...current, [field]: value }));
@@ -574,18 +605,13 @@ function AmazonConnectForm({ compact = false }) {
     event.preventDefault();
     setConnectError("");
     setIsConnecting(true);
-
     try {
       await saveAmazonSetup(form);
       if (form.refreshToken.trim()) {
-        await createAmazonPrivateConnection({
-          refreshToken: form.refreshToken,
-          sellerId: form.sellerId,
-        });
+        await createAmazonPrivateConnection({ refreshToken: form.refreshToken, sellerId: form.sellerId });
         window.location.href = "/panel?view=Channels&provider=amazon&status=connected";
         return;
       }
-
       const result = await createAmazonConnection();
       window.location.href = result.installUrl;
     } catch (error) {
@@ -594,110 +620,62 @@ function AmazonConnectForm({ compact = false }) {
     }
   }
 
-  const fieldClass = "h-10 rounded-md border border-amber-200 bg-white px-3 text-sm outline-none focus:border-amber-700 focus:ring-2 focus:ring-amber-100";
+  const inputClass = "h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-100 placeholder:text-slate-400";
 
   return (
-    <form onSubmit={handleConnect} className={cn("rounded-lg border border-amber-100 bg-amber-50 p-3", compact && "bg-white")}>
-      <div className="flex items-center justify-between gap-3">
-        <label className="text-sm font-semibold text-amber-950" htmlFor={compact ? "amazon-application-id-compact" : "amazon-application-id"}>
-          Amazon seller login
-        </label>
-        <Badge tone="amber">DB setup</Badge>
+    <form onSubmit={handleConnect} className="space-y-2.5">
+      <div className="grid gap-2">
+        <input className={inputClass} placeholder="Refresh token (private app)" value={form.refreshToken} onChange={(e) => setField("refreshToken", e.target.value)} />
+        <input className={inputClass} placeholder="Seller ID (optional)" value={form.sellerId} onChange={(e) => setField("sellerId", e.target.value)} />
       </div>
-      <div className="mt-3 grid gap-2">
-        <input
-          id={compact ? "amazon-application-id-compact" : "amazon-application-id"}
-          className={fieldClass}
-          placeholder="Application ID: amzn1.sellerapps.app.xxxxx"
-          value={form.applicationId}
-          onChange={(event) => setField("applicationId", event.target.value)}
-        />
-        <input
-          className={fieldClass}
-          placeholder="LWA client ID"
-          value={form.clientId}
-          onChange={(event) => setField("clientId", event.target.value)}
-        />
-        <input
-          className={fieldClass}
-          placeholder="LWA client secret"
-          type="password"
-          value={form.clientSecret}
-          onChange={(event) => setField("clientSecret", event.target.value)}
-        />
-        <input
-          className={fieldClass}
-          placeholder="Refresh token for private app (recommended)"
-          value={form.refreshToken}
-          onChange={(event) => setField("refreshToken", event.target.value)}
-        />
-        {!compact ? (
-          <div className="grid gap-2 sm:grid-cols-2">
-            <input
-              className={fieldClass}
-              placeholder="Seller ID for product sync (optional)"
-              value={form.sellerId}
-              onChange={(event) => setField("sellerId", event.target.value)}
-            />
-            <input
-              className={fieldClass}
-              placeholder="Seller Central URL"
-              value={form.sellerCentralUrl}
-              onChange={(event) => setField("sellerCentralUrl", event.target.value)}
-            />
-            <input
-              className={fieldClass}
-              placeholder="Marketplace ID"
-              value={form.marketplaceId}
-              onChange={(event) => setField("marketplaceId", event.target.value)}
-            />
-            <input
-              className={cn(fieldClass, "sm:col-span-2")}
-              placeholder="SP-API endpoint"
-              value={form.spApiEndpoint}
-              onChange={(event) => setField("spApiEndpoint", event.target.value)}
-            />
-            <input
-              className={fieldClass}
-              placeholder="Sync days"
-              value={form.syncDays}
-              onChange={(event) => setField("syncDays", event.target.value)}
-            />
-          </div>
-        ) : null}
-        <label className="flex items-center gap-2 text-xs font-semibold text-amber-950">
-          <input
-            type="checkbox"
-            checked={form.draftMode}
-            onChange={(event) => setField("draftMode", event.target.checked)}
-            className="h-4 w-4 rounded border-amber-300 text-amber-700"
-          />
-          Draft app authorization
-        </label>
-      </div>
-      <Button type="submit" className="mt-3 w-full" disabled={isConnecting}>
+      <button type="button" onClick={() => setShowAdvanced((v) => !v)} className="flex items-center gap-1 text-[11px] font-semibold text-amber-700 hover:underline">
+        {showAdvanced ? "Hide" : "Show"} OAuth / advanced fields
+        <ChevronDown size={12} className={cn("transition-transform", showAdvanced && "rotate-180")} />
+      </button>
+      {showAdvanced && (
+        <div className="grid gap-2">
+          <input className={inputClass} placeholder="Application ID: amzn1.sellerapps.app.xxxx" value={form.applicationId} onChange={(e) => setField("applicationId", e.target.value)} />
+          <input className={inputClass} placeholder="LWA client ID" value={form.clientId} onChange={(e) => setField("clientId", e.target.value)} />
+          <input className={inputClass} type="password" placeholder="LWA client secret" value={form.clientSecret} onChange={(e) => setField("clientSecret", e.target.value)} />
+          <input className={inputClass} placeholder="Seller Central URL" value={form.sellerCentralUrl} onChange={(e) => setField("sellerCentralUrl", e.target.value)} />
+          <input className={inputClass} placeholder="Marketplace ID" value={form.marketplaceId} onChange={(e) => setField("marketplaceId", e.target.value)} />
+          <input className={inputClass} placeholder="SP-API endpoint" value={form.spApiEndpoint} onChange={(e) => setField("spApiEndpoint", e.target.value)} />
+          <input className={inputClass} placeholder="Sync days" value={form.syncDays} onChange={(e) => setField("syncDays", e.target.value)} />
+          <label className="flex items-center gap-2 text-xs font-semibold text-slate-700">
+            <input type="checkbox" checked={form.draftMode} onChange={(e) => setField("draftMode", e.target.checked)} className="h-3.5 w-3.5 rounded border-slate-300" />
+            Draft app authorization
+          </label>
+        </div>
+      )}
+      <Button type="submit" className="w-full h-10 font-semibold" disabled={isConnecting}>
         <PlugZap size={16} />
-        {isConnecting ? "Connecting Amazon" : form.refreshToken.trim() ? "Save & Connect Private App" : "Save Setup & Connect"}
+        {isConnecting ? "Connecting…" : form.refreshToken.trim() ? "Connect Private App" : "Connect via OAuth"}
       </Button>
-      {connectError ? <p className="mt-2 text-sm font-medium text-rose-700">{connectError}</p> : null}
-      <p className="mt-2 text-xs leading-5 text-amber-900">
-        LWA/OAuth2 setup stays in database. Seller login saves the refresh token in the Amazon channel record.
-      </p>
-      <p className="mt-1 text-xs leading-5 text-amber-900">
-        Private apps can use `amzn1.sp.solution...` plus refresh token. Website OAuth apps use `amzn1.sellerapps.app...`.
-      </p>
-      <p className="mt-1 text-xs leading-5 text-amber-900">
-        In Amazon app settings, set Login URI to `{`http://your-public-domain/api/channels/amazon/login`}` and Redirect URI to `{`http://your-public-domain/api/channels/amazon/callback`}`. Amazon does not accept localhost redirect URIs.
-      </p>
+      {connectError ? (
+        <p className="flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-2 text-xs font-medium text-rose-700">
+          <span>⚠</span>{connectError}
+        </p>
+      ) : null}
     </form>
   );
 }
+
+// Provider brand colours (bg, text, ring)
+const PROVIDER_COLORS = {
+  shopify:    { bg: "bg-emerald-600", ring: "ring-emerald-200", label: "S" },
+  amazon:     { bg: "bg-amber-500",   ring: "ring-amber-200",   label: "A" },
+  woocommerce:{ bg: "bg-violet-600",  ring: "ring-violet-200",  label: "W" },
+  flipkart:   { bg: "bg-blue-600",    ring: "ring-blue-200",    label: "F" },
+  meesho:     { bg: "bg-pink-600",    ring: "ring-pink-200",    label: "M" },
+  default:    { bg: "bg-slate-500",   ring: "ring-slate-200",   label: "?" },
+};
 
 function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
   const isShopify = channel.provider === "shopify";
   const isAmazon = channel.provider === "amazon";
   const isConnected = Boolean(connectedChannel);
-  const badgeTone = isConnected ? "green" : channel.status === "Available" ? "green" : channel.status === "Next" ? "blue" : "slate";
+  const isAvailable = channel.status === "Available";
+  const colors = PROVIDER_COLORS[channel.provider] || PROVIDER_COLORS.default;
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectError, setReconnectError] = useState("");
   const canEditShopify =
@@ -707,7 +685,6 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
   async function reconnectShopify() {
     setReconnectError("");
     setIsReconnecting(true);
-
     try {
       const result = await createShopifyConnection(connectedChannel?.shop || defaultShopifyShop);
       window.location.href = result.installUrl;
@@ -717,49 +694,89 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
     }
   }
 
+  const orderCount = connectedChannel?.metrics?.orderCount || 0;
+  const salesTotal = Number(connectedChannel?.metrics?.salesTotal || 0);
+  const currency = connectedChannel?.metrics?.currency || "INR";
+
   return (
-    <Card className="flex min-h-[220px] flex-col p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2">
-            <div
-              className={cn(
-                "grid h-10 w-10 place-items-center rounded-md text-white",
-                channel.accent === "green" && "bg-emerald-600",
-                channel.accent === "blue" && "bg-blue-600",
-                channel.accent === "amber" && "bg-amber-600",
-                channel.accent === "slate" && "bg-slate-600",
-              )}
-            >
-              <PlugZap size={19} />
-            </div>
-            <div>
-              <h3 className="font-bold">{channel.name}</h3>
-              <p className="text-xs font-semibold uppercase text-slate-500">{channel.phase}</p>
-            </div>
+    <div
+      className={cn(
+        "flex flex-col rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md",
+        isConnected ? "border-emerald-200" : "border-[var(--line)]",
+      )}
+    >
+      {/* Card header */}
+      <div className="flex items-start justify-between gap-3 p-5 pb-4">
+        <div className="flex items-center gap-3">
+          {/* Provider logo tile */}
+          <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white text-lg font-extrabold ring-4", colors.bg, colors.ring)}>
+            {colors.label}
           </div>
-          <p className="mt-4 text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
+          <div>
+            <h3 className="font-bold text-slate-900">{channel.name}</h3>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{channel.phase}</p>
+          </div>
         </div>
-        <Badge tone={badgeTone}>{isConnected ? "Connected" : channel.status}</Badge>
+        {/* Status badge */}
+        {isConnected ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            Live
+          </span>
+        ) : isAvailable ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+            Available
+          </span>
+        ) : channel.status === "Next" ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-50 px-2.5 py-1 text-[11px] font-semibold text-blue-700 ring-1 ring-blue-200">
+            Coming next
+          </span>
+        ) : (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-semibold text-slate-500">
+            Planned
+          </span>
+        )}
       </div>
 
-      <div className="mt-auto pt-4">
+      {/* Description */}
+      <p className="px-5 pb-4 text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
+
+      {/* Connected metrics strip */}
+      {isConnected && (
+        <div className="mx-5 mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Orders Synced</p>
+            <p className="mt-0.5 text-lg font-extrabold text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
+          </div>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
+            <p className="mt-0.5 text-lg font-extrabold text-slate-900">
+              {currency === "INR" ? "₹" : currency + " "}{salesTotal >= 1000 ? `${Math.round(salesTotal / 1000)}k` : salesTotal.toLocaleString("en-IN")}
+            </p>
+          </div>
+          <div className="col-span-2 flex items-center gap-1.5 border-t border-slate-200 pt-2 text-[11px] text-slate-500">
+            <RefreshCw size={11} />
+            Last sync: {formatChannelSync(connectedChannel.sync)}
+          </div>
+        </div>
+      )}
+
+      {/* Action area */}
+      <div className="mt-auto px-5 pb-5">
         {isConnected ? (
-          <div className="space-y-3 rounded-lg border border-emerald-100 bg-emerald-50 p-3">
-            <div>
-              <p className="text-sm font-semibold text-emerald-950">{connectedChannel.shop}</p>
-              <p className="mt-1 text-xs text-emerald-900">Last sync {formatChannelSync(connectedChannel.sync)}</p>
-            </div>
-            <Button className="w-full" onClick={() => onSyncChannel?.(connectedChannel._id || connectedChannel.id)}>
-              <RefreshCw size={16} />
-              Sync {channel.name} Data
+          <div className="space-y-2">
+            <Button className="w-full h-10 font-semibold" onClick={() => onSyncChannel?.(connectedChannel._id || connectedChannel.id)}>
+              <RefreshCw size={15} />
+              Sync {channel.name}
             </Button>
             {!canEditShopify ? (
               <>
-                <p className="text-xs leading-5 text-amber-900">Reconnect once to approve product, order, and customer editing.</p>
-                <Button variant="secondary" className="w-full" onClick={reconnectShopify} disabled={isReconnecting}>
-                  <PlugZap size={16} />
-                  {isReconnecting ? "Opening Shopify" : "Reconnect for Edit Access"}
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                  Reconnect once to approve product, order &amp; customer editing.
+                </p>
+                <Button variant="secondary" className="w-full h-9" onClick={reconnectShopify} disabled={isReconnecting}>
+                  <PlugZap size={14} />
+                  {isReconnecting ? "Opening Shopify…" : "Reconnect for Edit Access"}
                 </Button>
                 {reconnectError ? <p className="text-xs font-medium text-rose-700">{reconnectError}</p> : null}
               </>
@@ -770,13 +787,16 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
         ) : isAmazon ? (
           <AmazonConnectForm compact />
         ) : (
-          <Button variant="secondary" className="w-full" disabled>
-            <PlugZap size={16} />
+          <button
+            disabled
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-slate-200 bg-slate-50 py-2.5 text-sm font-semibold text-slate-400 cursor-not-allowed"
+          >
+            <PlugZap size={15} />
             Connect Soon
-          </Button>
+          </button>
         )}
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -799,10 +819,10 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Badge tone="teal">Phase 3 channel integrations</Badge>
+          <Badge tone="indigo">Channel Integrations</Badge>
           <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Channels</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
-            Connect marketplaces and stores company-wise. Shopify sync is active, and Amazon seller login is ready for app-based OAuth setup.
+            Connect your marketplaces and stores to sync orders, products, and inventory in real time.
           </p>
         </div>
         <Button onClick={onSyncAll} disabled={!connectedChannels.length}>
@@ -834,14 +854,29 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Company Mapping</CardTitle>
-              <p className="mt-1 text-sm text-[var(--muted)]">Every channel is saved against the authenticated company.</p>
+              <CardTitle>Channel Guide</CardTitle>
+              <p className="mt-1 text-sm text-[var(--muted)]">How channel data flows into CommerceOS.</p>
             </div>
           </CardHeader>
-          <CardContent className="space-y-3 text-sm leading-6 text-[var(--muted)]">
-            <p>Frontend creates a dev session, backend signs a JWT with `companyId`, and each OAuth state carries that company into callback.</p>
-            <p>After seller approval, the backend saves the provider, shop or seller ID, tokens, and sync status in the Channel collection or memory store.</p>
-            <Badge tone="green">Shopify + Amazon OAuth</Badge>
+          <CardContent className="space-y-4">
+            {[
+              { step: "01", title: "Connect", desc: "Authorise your store via OAuth. Each channel is tied to your company workspace." },
+              { step: "02", title: "Sync", desc: "Pull orders, products, customers, and inventory from the marketplace in one click." },
+              { step: "03", title: "Operate", desc: "Fulfil, ship, and report across all channels from a single dashboard." },
+            ].map((item) => (
+              <div key={item.step} className="flex gap-4">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-50 text-xs font-extrabold text-indigo-700">
+                  {item.step}
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-slate-900">{item.title}</p>
+                  <p className="mt-0.5 text-xs leading-5 text-[var(--muted)]">{item.desc}</p>
+                </div>
+              </div>
+            ))}
+            <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs leading-5 text-emerald-800">
+              <span className="font-semibold">Tip:</span> Revenue shown on the dashboard excludes cancelled and refunded orders — matching Shopify&rsquo;s analytics view.
+            </div>
           </CardContent>
         </Card>
       </section>
@@ -997,47 +1032,10 @@ function AutomationPanel() {
   );
 }
 
-function Roadmap() {
-  const statusTone = useMemo(
-    () => ({
-      Live: "green",
-      Ready: "blue",
-      Build: "amber",
-      Mapped: "teal",
-      Design: "slate",
-      Queued: "slate",
-    }),
-    [],
-  );
-
-  return (
-    <Card>
-      <CardHeader>
-        <div>
-          <CardTitle>Implementation Roadmap</CardTitle>
-          <p className="mt-1 text-sm text-[var(--muted)]">Phases from the product brief, grouped into dashboard modules.</p>
-        </div>
-      </CardHeader>
-      <CardContent>
-        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-          {modules.map((module) => (
-            <div key={module.name} className="rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] p-3">
-              <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold">{module.name}</p>
-                <Badge tone={statusTone[module.status]}>{module.status}</Badge>
-              </div>
-              <p className="mt-2 text-sm text-[var(--muted)]">{module.phase}</p>
-            </div>
-          ))}
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
 
 const modulePages = {
   Orders: {
-    eyebrow: "Phase 9",
+    eyebrow: "Order Operations",
     title: "Order Management",
     subtitle: "Central order panel for Shopify, WooCommerce, Amazon, Flipkart, manual, phone, WhatsApp, Instagram, and Facebook orders.",
     actions: ["Confirm", "Pack", "Ship", "Cancel", "Return", "Refund", "Exchange", "Print Invoice", "Print Label"],
@@ -1049,7 +1047,7 @@ const modulePages = {
     ],
   },
   Products: {
-    eyebrow: "Phase 4",
+    eyebrow: "Catalog",
     title: "Product Management",
     subtitle: "Master product catalog with SKU, barcode, brand, category, GST, HSN, weight, dimensions, images, and variants.",
     actions: ["Create Product", "Add Variant", "Map SKU", "Upload Images", "Bulk Import"],
@@ -1061,7 +1059,7 @@ const modulePages = {
     ],
   },
   Inventory: {
-    eyebrow: "Phase 5",
+    eyebrow: "Stock Control",
     title: "Inventory",
     subtitle: "Stock, warehouse, reserved, available, damaged, lost, low-stock alerts, transfer, barcode, batch, and expiry tracking.",
     actions: ["Adjust Stock", "Transfer", "Scan Barcode", "Create Alert", "View History"],
@@ -1073,7 +1071,7 @@ const modulePages = {
     ],
   },
   CRM: {
-    eyebrow: "Phase 12",
+    eyebrow: "Customer Relations",
     title: "CRM",
     subtitle: "Customer profile with orders, returns, calls, WhatsApp, emails, notes, tags, lifetime value, RFM score, and segments.",
     actions: ["Create Segment", "Add Follow-up", "Add Note", "Tag Customer", "Export"],
@@ -1085,7 +1083,7 @@ const modulePages = {
     ],
   },
   Finance: {
-    eyebrow: "Phase 14",
+    eyebrow: "Finance",
     title: "Finance",
     subtitle: "Income, expenses, profit, GST, tax, cash flow, wallet, COD, bank, UPI, bills, and invoices.",
     actions: ["Add Expense", "Attach Bill", "View GST", "COD Report", "Cash Flow"],
@@ -1097,7 +1095,7 @@ const modulePages = {
     ],
   },
   Ads: {
-    eyebrow: "Phase 16",
+    eyebrow: "Ad Performance",
     title: "Ads Tracking",
     subtitle: "Meta, Google, Amazon Ads, manual spend, ROAS, CPA, CTR, orders, revenue, and campaign-sale mapping.",
     actions: ["Connect Meta", "Connect Google", "Add Manual Spend", "Map Campaign", "View ROAS"],
@@ -1109,7 +1107,7 @@ const modulePages = {
     ],
   },
   Automation: {
-    eyebrow: "Phase 18",
+    eyebrow: "Automation",
     title: "Automation",
     subtitle: "Zapier-like builder for order received, order shipped, low stock, abandoned checkout, and repeat customer journeys.",
     actions: ["New Rule", "Add Trigger", "Add Delay", "Send WhatsApp", "Send Email"],
@@ -1121,7 +1119,7 @@ const modulePages = {
     ],
   },
   Reports: {
-    eyebrow: "Phase 20",
+    eyebrow: "Business Reports",
     title: "Reports",
     subtitle: "Sales, profit, growth, top products, worst products, top customers, repeat %, state, city, channel, payment, courier, RTO, refund, return.",
     actions: ["Sales Report", "Profit Report", "Inventory Report", "Courier Report", "Export CSV"],
@@ -1133,15 +1131,15 @@ const modulePages = {
     ],
   },
   Settings: {
-    eyebrow: "Phase 1",
+    eyebrow: "Settings",
     title: "Settings",
     subtitle: "Company, users, roles, permissions, security, API configuration, notifications, and audit setup.",
     actions: ["Company Details", "Manage Users", "Roles", "Security", "API Keys"],
     cards: [
-      ["Authentication", "Active", "JWT login/signup enabled."],
+      ["Authentication", "Active", "Secure login and signup enabled."],
       ["Roles", "7", "Owner, Admin, Manager, Support, Warehouse, Marketing, Accountant."],
-      ["Permissions", "Mapped", "Backend-enforced role permissions."],
-      ["Audit Logs", "Planned", "Future activity tracking."],
+      ["Permissions", "Mapped", "Role-based access enforced across every module."],
+      ["Audit Logs", "Coming Soon", "Team activity tracking."],
     ],
   },
 };
@@ -1213,7 +1211,7 @@ function editablePayload(resource, record) {
 
 function FormField({ label, value, onChange, as = "input" }) {
   const className =
-    "mt-1 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100";
+    "mt-1 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100";
   const safeValue = value ?? "";
 
   return (
@@ -1305,14 +1303,14 @@ function RecordFilters({ resource, records, filters, setFilters }) {
       <div className="relative">
         <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={17} />
         <input
-          className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+          className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-10 pr-3 text-sm outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
           placeholder={`Search ${resource}`}
           value={filters.query}
           onChange={(event) => setFilter("query", event.target.value)}
         />
       </div>
       <select
-        className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-teal-600"
+        className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-indigo-600"
         value={filters.status}
         onChange={(event) => setFilter("status", event.target.value)}
       >
@@ -1324,7 +1322,7 @@ function RecordFilters({ resource, records, filters, setFilters }) {
         ))}
       </select>
       <select
-        className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-teal-600"
+        className="h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-indigo-600"
         value={filters.channel}
         onChange={(event) => setFilter("channel", event.target.value)}
       >
@@ -1339,7 +1337,7 @@ function RecordFilters({ resource, records, filters, setFilters }) {
         {quickOptions.map(([value, label]) => (
           <button
             key={value}
-            className={cn("h-8 flex-1 rounded px-2 text-xs font-semibold", filters.quick === value ? "bg-teal-700 text-white" : "text-slate-600 hover:bg-slate-100")}
+            className={cn("h-8 flex-1 rounded px-2 text-xs font-semibold", filters.quick === value ? "bg-indigo-700 text-white" : "text-slate-600 hover:bg-slate-100")}
             onClick={() => setFilter("quick", value)}
             type="button"
           >
@@ -1374,7 +1372,7 @@ function OrderCells({ record }) {
               {item.quantity}x {item.title} {item.sku ? `(${item.sku})` : ""}
             </p>
           ))}
-          {(record.lineItems || []).length > 3 ? <p className="text-xs font-semibold text-teal-700">+{record.lineItems.length - 3} more</p> : null}
+          {(record.lineItems || []).length > 3 ? <p className="text-xs font-semibold text-indigo-700">+{record.lineItems.length - 3} more</p> : null}
         </div>
         {record.note && (
           <p className="mt-1.5 max-w-[280px] rounded bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-800 border border-amber-200/70 truncate">
@@ -1416,7 +1414,7 @@ function ProductCells({ record }) {
               {variant.title}: {variant.sku || "No SKU"} / {recordMoney(variant.price, "INR")} / stock {Number(variant.inventoryQuantity || 0).toLocaleString("en-IN")}
             </p>
           ))}
-          {(record.variants || []).length > 3 ? <p className="text-xs font-semibold text-teal-700">+{record.variants.length - 3} variants</p> : null}
+          {(record.variants || []).length > 3 ? <p className="text-xs font-semibold text-indigo-700">+{record.variants.length - 3} variants</p> : null}
         </div>
       </td>
       <td className="py-3 pr-4 align-top">
@@ -1808,7 +1806,7 @@ function RecordsModuleView({ name }) {
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Badge tone="teal">{name}</Badge>
+          <Badge tone="indigo">{name}</Badge>
           <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{pageTitle}</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
             Synced Shopify {pageTitle.toLowerCase()} across connected channels with detail view and Shopify update.
@@ -2055,7 +2053,7 @@ function ProductMappingView() {
           <div className="relative min-w-[260px]">
             <Search className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
             <input
-              className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-9 pr-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"
+              className="h-10 w-full rounded-md border border-[var(--line)] bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-700 focus:ring-2 focus:ring-indigo-100"
               placeholder="Search Shopify product or SKU"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -2098,7 +2096,7 @@ function ProductMappingView() {
                       </td>
                       <td className="px-4 py-3">
                         <select
-                          className="h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"
+                          className="h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-700 focus:ring-2 focus:ring-indigo-100"
                           value={selectedAmazonKey}
                           onChange={(event) =>
                             setRowSelections((current) => ({
@@ -2157,7 +2155,7 @@ export function ModuleView({ name, setActiveView }) {
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
-          <Badge tone="teal">{page.eyebrow}</Badge>
+          <Badge tone="indigo">{page.eyebrow}</Badge>
           <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{page.title}</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">{page.subtitle}</p>
         </div>
@@ -2191,15 +2189,15 @@ export function ModuleView({ name, setActiveView }) {
           <CardHeader>
             <div>
               <CardTitle>{page.title} Workbench</CardTitle>
-              <p className="mt-1 text-sm text-[var(--muted)]">Feature-complete UI shell ready for API integration.</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Quick actions for this module.</p>
             </div>
           </CardHeader>
           <CardContent>
             <div className="grid gap-3 md:grid-cols-2">
               {page.actions.map((action) => (
-                <button key={action} className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] p-3 text-left text-sm font-semibold hover:border-teal-600">
+                <button key={action} className="flex items-center justify-between rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] p-3 text-left text-sm font-semibold hover:border-indigo-600">
                   {action}
-                  <span className="text-xs text-teal-700">Open</span>
+                  <span className="text-xs text-indigo-700">Open</span>
                 </button>
               ))}
             </div>
@@ -2208,13 +2206,12 @@ export function ModuleView({ name, setActiveView }) {
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Implementation Notes</CardTitle>
-              <p className="mt-1 text-sm text-[var(--muted)]">This page is ready visually; backend CRUD can be attached phase by phase.</p>
+              <CardTitle>Coming Soon</CardTitle>
+              <p className="mt-1 text-sm text-[var(--muted)]">This module is on our near-term roadmap.</p>
             </div>
           </CardHeader>
           <CardContent className="space-y-3 text-sm leading-6 text-[var(--muted)]">
-            <p>Each page follows the same panel layout: summary metrics, command actions, and a workbench area.</p>
-            <p>Phase 1 auth already protects this route. Future APIs should use the current JWT companyId for data isolation.</p>
+            <p>We&rsquo;re actively building this out. Reach out to your account manager if you&rsquo;d like it prioritized.</p>
           </CardContent>
         </Card>
       </section>
@@ -2236,9 +2233,7 @@ export function DashboardView() {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="teal">Unified commerce command center</Badge>
-            <Badge tone="blue">JWT-ready</Badge>
-            <Badge tone="slate">MongoDB service model</Badge>
+            <Badge tone="indigo">Live</Badge>
           </div>
           <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Sukirti Commerce Hub</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
@@ -2264,7 +2259,13 @@ export function DashboardView() {
       </section>
 
       <section className="mt-6">
-        <SalesCharts salesTrend={chartSalesTrend} channelMix={chartChannelMix} />
+        <SalesCharts
+          salesTrend={chartSalesTrend}
+          channelMix={chartChannelMix}
+          period={dashboardData?.period}
+          periodSales={dashboardData?.periodSales}
+          periodOrderCount={dashboardData?.periodOrderCount}
+        />
       </section>
 
       <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
@@ -2287,13 +2288,8 @@ export function DashboardView() {
         </div>
       </section>
 
-      <section className="mt-6">
-        <Roadmap />
-      </section>
-
       <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] py-5 text-sm text-[var(--muted)]">
-        <span>Architecture: Frontend &gt; Backend API &gt; Services &gt; MongoDB &gt; external APIs.</span>
-        <span>Socket.io-ready for live orders, stock, notifications, and sync logs.</span>
+        <span>CommerceOS — real-time multi-channel commerce operations.</span>
       </footer>
     </div>
   );

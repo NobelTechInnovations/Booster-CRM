@@ -83,7 +83,7 @@ export function UsersView() {
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       <section className="mb-6">
-        <Badge tone="teal">Phase 1</Badge>
+        <Badge tone="indigo">Team Access</Badge>
         <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Users, Roles & Permissions</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
           Create multiple users under the same company and assign role-based permissions.
@@ -100,7 +100,7 @@ export function UsersView() {
               <CardTitle>Create User</CardTitle>
               <p className="mt-1 text-sm text-[var(--muted)]">New user gets login access to this company only.</p>
             </div>
-            <UserPlus className="text-teal-700" size={22} />
+            <UserPlus className="text-indigo-700" size={22} />
           </CardHeader>
           <CardContent>
             <form className="space-y-4" onSubmit={createTeamUser}>
@@ -123,7 +123,7 @@ export function UsersView() {
               <CardTitle>Company Users</CardTitle>
               <p className="mt-1 text-sm text-[var(--muted)]">Manage existing users, role, and access status.</p>
             </div>
-            <UsersRound className="text-teal-700" size={22} />
+            <UsersRound className="text-indigo-700" size={22} />
           </CardHeader>
           <CardContent className="space-y-3">
             {loading ? <p className="text-sm text-[var(--muted)]">Loading users...</p> : null}
@@ -149,7 +149,7 @@ function UserRow({ user, onChange, onSave, saving }) {
         <div className="flex flex-wrap items-center gap-2">
           <p className="font-semibold">{user.name}</p>
           <Badge tone={user.status === "active" ? "green" : "slate"}>{user.status}</Badge>
-          {user.isPrimaryOwner ? <Badge tone="teal">Primary owner</Badge> : null}
+          {user.isPrimaryOwner ? <Badge tone="indigo">Primary owner</Badge> : null}
           {user.isSelf ? <Badge tone="blue">You</Badge> : null}
         </div>
         <p className="mt-1 text-sm text-[var(--muted)]">{user.email}</p>
@@ -170,7 +170,7 @@ function Input({ label, value, onChange, type = "text", required = false }) {
     <label className="block">
       <span className="text-sm font-semibold">{label}</span>
       <input
-        className="mt-2 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"
+        className="mt-2 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-700 focus:ring-2 focus:ring-indigo-100"
         type={type}
         value={value || ""}
         required={required}
@@ -186,7 +186,7 @@ function Select({ label, value, onChange, options, compact = false, disabled = f
     <label className="block">
       <span className={compact ? "sr-only" : "text-sm font-semibold"}>{label}</span>
       <select
-        className={compact ? "h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-teal-700" : "mt-2 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-teal-700 focus:ring-2 focus:ring-teal-100"}
+        className={compact ? "h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-700" : "mt-2 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-700 focus:ring-2 focus:ring-indigo-100"}
         value={value || ""}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}

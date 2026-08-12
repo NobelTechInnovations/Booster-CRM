@@ -126,7 +126,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
             <p>✓ Customer marked as Converted</p>
             <p>✓ Added to Fulfillment Queue</p>
           </div>
-          <button onClick={onClose} className="mt-5 w-full rounded-lg bg-teal-700 py-2 text-sm font-semibold text-white hover:bg-teal-800 transition">
+          <button onClick={onClose} className="mt-5 w-full rounded-lg bg-indigo-700 py-2 text-sm font-semibold text-white hover:bg-indigo-800 transition">
             Done
           </button>
         </div>
@@ -140,7 +140,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)]">
           <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-teal-700 text-white">
+            <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white">
               <ShoppingCart size={16} />
             </div>
             <div>
@@ -163,7 +163,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search products or SKU..."
-                  className="w-full h-8 pl-8 pr-3 rounded-lg border border-[var(--line)] text-xs outline-none focus:border-teal-600 bg-white"
+                  className="w-full h-8 pl-8 pr-3 rounded-lg border border-[var(--line)] text-xs outline-none focus:border-indigo-600 bg-white"
                 />
               </div>
             </div>
@@ -187,7 +187,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                         <p className="text-xs font-semibold text-slate-800 shrink-0">₹{Number(variant.price || 0).toLocaleString("en-IN")}</p>
                         <button
                           onClick={() => addToCart(product, variant)}
-                          className="h-6 w-6 grid place-items-center rounded-md bg-teal-700 text-white hover:bg-teal-800 transition shrink-0"
+                          className="h-6 w-6 grid place-items-center rounded-md bg-indigo-700 text-white hover:bg-indigo-800 transition shrink-0"
                         >
                           <Plus size={12} />
                         </button>
@@ -217,7 +217,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                           type="number"
                           value={item.price}
                           onChange={(e) => updatePrice(item.key, e.target.value)}
-                          className="mt-1 w-full h-6 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-teal-600"
+                          className="mt-1 w-full h-6 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-600"
                           placeholder="Price"
                         />
                       </div>
@@ -245,7 +245,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                   <button
                     key={label}
                     onClick={() => setIsCOD(val)}
-                    className={cn("flex-1 py-1.5 rounded-lg border text-xs font-semibold transition", isCOD === val ? "bg-teal-700 text-white border-teal-700" : "border-[var(--line)] text-slate-600 hover:bg-slate-50")}
+                    className={cn("flex-1 py-1.5 rounded-lg border text-xs font-semibold transition", isCOD === val ? "bg-indigo-700 text-white border-indigo-700" : "border-[var(--line)] text-slate-600 hover:bg-slate-50")}
                   >
                     {label}
                   </button>
@@ -261,21 +261,21 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                   {[["First Name", "firstName"], ["Last Name", "lastName"]].map(([l, k]) => (
                     <div key={k}>
                       <label className="block text-[10px] text-slate-500 mb-0.5">{l}</label>
-                      <input value={shipping[k]} onChange={(e) => setShipping((s) => ({ ...s, [k]: e.target.value }))} className="w-full h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-teal-600 bg-white" />
+                      <input value={shipping[k]} onChange={(e) => setShipping((s) => ({ ...s, [k]: e.target.value }))} className="w-full h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-600 bg-white" />
                     </div>
                   ))}
                 </div>
                 {[["Address 1", "address1"], ["Address 2", "address2"]].map(([l, k]) => (
                   <div key={k}>
                     <label className="block text-[10px] text-slate-500 mb-0.5">{l}</label>
-                    <input value={shipping[k]} onChange={(e) => setShipping((s) => ({ ...s, [k]: e.target.value }))} className="w-full h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-teal-600 bg-white" />
+                    <input value={shipping[k]} onChange={(e) => setShipping((s) => ({ ...s, [k]: e.target.value }))} className="w-full h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-600 bg-white" />
                   </div>
                 ))}
                 <div className="grid grid-cols-2 gap-1.5">
                   {[["City", "city"], ["State", "province"], ["PIN", "zip"], ["Phone", "phone"]].map(([l, k]) => (
                     <div key={k}>
                       <label className="block text-[10px] text-slate-500 mb-0.5">{l}</label>
-                      <input value={shipping[k]} onChange={(e) => setShipping((s) => ({ ...s, [k]: e.target.value }))} className="w-full h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-teal-600 bg-white" />
+                      <input value={shipping[k]} onChange={(e) => setShipping((s) => ({ ...s, [k]: e.target.value }))} className="w-full h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-600 bg-white" />
                     </div>
                   ))}
                 </div>
@@ -285,7 +285,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
             {/* Note */}
             <div className="p-3">
               <label className="block text-xs font-semibold text-slate-600 mb-1.5">Order Note</label>
-              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Special instructions, customer remarks..." className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-xs outline-none focus:border-teal-600 resize-none bg-white" />
+              <textarea value={note} onChange={(e) => setNote(e.target.value)} rows={2} placeholder="Special instructions, customer remarks..." className="w-full rounded-lg border border-[var(--line)] px-3 py-2 text-xs outline-none focus:border-indigo-600 resize-none bg-white" />
             </div>
           </div>
         </div>
@@ -300,7 +300,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
           <button
             onClick={placeOrder}
             disabled={placing || !cart.length}
-            className="h-8 px-4 rounded-lg bg-teal-700 text-xs font-semibold text-white hover:bg-teal-800 transition disabled:opacity-50 flex items-center gap-1.5"
+            className="h-8 px-4 rounded-lg bg-indigo-700 text-xs font-semibold text-white hover:bg-indigo-800 transition disabled:opacity-50 flex items-center gap-1.5"
           >
             {placing ? <RefreshCw size={12} className="animate-spin" /> : <PackageCheck size={13} />}
             Place Order & Sync

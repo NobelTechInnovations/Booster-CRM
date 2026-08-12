@@ -30,7 +30,7 @@ function Field({ label, value, onChange, type = "text", required = false, classN
     <label className={`block ${className}`}>
       <span className="text-sm font-semibold text-slate-700">{label}</span>
       <input
-        className="mt-1.5 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+        className="mt-1.5 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm outline-none transition focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
         type={type}
         value={value ?? ""}
         required={required}
@@ -77,7 +77,7 @@ function ConnectProviderModal({ provider, onConnected, onClose }) {
       <Card className="w-full max-w-md bg-white shadow-xl">
         <CardHeader className="border-b">
           <CardTitle className="text-lg flex items-center gap-2">
-            <Truck className="text-teal-700" size={20} />
+            <Truck className="text-indigo-700" size={20} />
             Connect {provider.name}
           </CardTitle>
           <p className="text-xs text-[var(--muted)]">
@@ -120,7 +120,7 @@ function ConnectProviderModal({ provider, onConnected, onClose }) {
                   onChange={(val) => setForm({ ...form, password: val, secretKey: val })}
                   required
                 />
-                <p className="text-[11px] text-teal-800 bg-teal-50 p-2.5 rounded border border-teal-200 leading-snug">
+                <p className="text-[11px] text-indigo-800 bg-indigo-50 p-2.5 rounded border border-indigo-200 leading-snug">
                   <strong>🔑 Finding License Key:</strong> In your Shipway Portal, go to <strong>Profile &rarr; Manage Profile</strong> to copy your License Key.
                 </p>
               </>
@@ -163,7 +163,7 @@ function ConnectProviderModal({ provider, onConnected, onClose }) {
               <Button type="button" variant="outline" onClick={onClose}>
                 Cancel
               </Button>
-              <Button disabled={isConnecting} className="bg-teal-700 hover:bg-teal-800 text-white">
+              <Button disabled={isConnecting} className="bg-indigo-700 hover:bg-indigo-800 text-white">
                 <PlugZap size={16} className="mr-1" />
                 {isConnecting ? "Connecting & Syncing..." : "Connect & Auto-Sync"}
               </Button>
@@ -294,7 +294,7 @@ export function ShippingView() {
       {/* Header */}
       <section className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <Badge tone="teal">Multi-Carrier Shipping Engine</Badge>
+          <Badge tone="indigo">Multi-Carrier Shipping Engine</Badge>
           <h1 className="mt-2 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
             Shipping Channels & Logistics
           </h1>
@@ -310,7 +310,7 @@ export function ShippingView() {
           const connected = channels.find((c) => c.provider === p.provider && c.status === "connected");
 
           return (
-            <Card key={p.provider} className={`transition ${connected ? "border-teal-500 bg-teal-50/20" : "border-slate-200"}`}>
+            <Card key={p.provider} className={`transition ${connected ? "border-indigo-500 bg-indigo-50/20" : "border-slate-200"}`}>
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div>
@@ -320,7 +320,7 @@ export function ShippingView() {
                     </p>
                   </div>
                   {connected ? (
-                    <CheckCircle2 size={20} className="text-teal-600" />
+                    <CheckCircle2 size={20} className="text-indigo-600" />
                   ) : (
                     <Truck size={20} className="text-slate-400" />
                   )}
@@ -341,7 +341,7 @@ export function ShippingView() {
                     <Button
                       size="sm"
                       onClick={() => setActiveProviderModal(p)}
-                      className="bg-teal-700 hover:bg-teal-800 text-white"
+                      className="bg-indigo-700 hover:bg-indigo-800 text-white"
                     >
                       <PlugZap size={14} className="mr-1" />
                       Connect {p.name}
@@ -383,7 +383,7 @@ export function ShippingView() {
               <div className="flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={() => setSelectedProviderFilter("")}
-                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${!selectedProviderFilter ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                  className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${!selectedProviderFilter ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                 >
                   All ({warehouses.length})
                 </button>
@@ -393,7 +393,7 @@ export function ShippingView() {
                     <button
                       key={p.provider}
                       onClick={() => setSelectedProviderFilter(p.provider)}
-                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${selectedProviderFilter === p.provider ? "bg-teal-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                      className={`px-2.5 py-1 rounded-md text-xs font-medium transition ${selectedProviderFilter === p.provider ? "bg-indigo-700 text-white" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
                     >
                       {p.name} ({count})
                     </button>
@@ -458,7 +458,7 @@ export function ShippingView() {
                   <select
                     value={targetCarrier || (channels[0]?.provider || "velocity")}
                     onChange={(e) => setTargetCarrier(e.target.value)}
-                    className="mt-1.5 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100"
+                    className="mt-1.5 h-10 w-full rounded-md border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-800 outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
                   >
                     {channels.map((c) => (
                       <option key={c.provider} value={c.provider}>
@@ -548,12 +548,12 @@ export function ShippingView() {
                   required
                 />
                 <div className="sm:col-span-2 pt-2">
-                  <Button disabled={isCreatingWh} className="bg-teal-700 hover:bg-teal-800 text-white">
+                  <Button disabled={isCreatingWh} className="bg-indigo-700 hover:bg-indigo-800 text-white">
                     <Save size={16} className="mr-1" />
                     {isCreatingWh ? "Creating..." : "Create Warehouse on Provider"}
                   </Button>
                 </div>
-                {whMessage ? <p className="text-xs font-semibold text-teal-800 sm:col-span-2">{whMessage}</p> : null}
+                {whMessage ? <p className="text-xs font-semibold text-indigo-800 sm:col-span-2">{whMessage}</p> : null}
               </form>
             </CardContent>
           </Card>
@@ -565,7 +565,7 @@ export function ShippingView() {
             <CardHeader className="border-b pb-4">
               <CardTitle className="text-lg flex items-center justify-between">
                 <span>Check Serviceability</span>
-                <Search size={18} className="text-teal-700" />
+                <Search size={18} className="text-indigo-700" />
               </CardTitle>
             </CardHeader>
             <CardContent className="p-4">
@@ -598,9 +598,9 @@ export function ShippingView() {
                   {Object.entries(serviceResults).map(([provKey, resItem]) => (
                     <div key={provKey} className="rounded border bg-white p-2.5 shadow-sm space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold uppercase text-[11px] text-teal-800">{provKey}</span>
+                        <span className="font-bold uppercase text-[11px] text-indigo-800">{provKey}</span>
                         {resItem.success ? (
-                          <Badge tone="teal" className="text-[10px]">Serviceable</Badge>
+                          <Badge tone="indigo" className="text-[10px]">Serviceable</Badge>
                         ) : (
                           <Badge tone="amber" className="text-[10px]">Error</Badge>
                         )}

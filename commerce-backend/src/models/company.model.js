@@ -50,6 +50,18 @@ const companySchema = new mongoose.Schema(
         draftMode: { type: Boolean, default: true },
       },
     },
+    taxSettings: {
+      gstRate: { type: Number, default: 5 },        // applicable GST % for invoices/reports
+      invoicePrefix: { type: String, default: "INV" },
+      invoiceStartNumber: { type: Number, default: 1 },
+      placeOfSupply: String,
+    },
+    notificationSettings: {
+      lowStockAlerts: { type: Boolean, default: true },
+      newOrderAlerts: { type: Boolean, default: true },
+      dailySummaryEmail: { type: Boolean, default: false },
+      lowStockThreshold: { type: Number, default: 5 },
+    },
   },
   { timestamps: true },
 );

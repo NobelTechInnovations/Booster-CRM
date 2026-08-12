@@ -10,6 +10,9 @@ import {
   getCompany,
   getStoreMode,
   getUserAndCompany,
+  listUserCompanies,
+  createAdditionalCompany,
+  findUserForCompanySwitch,
 } from "../../repositories/store.js";
 import { permissionsForRole } from "./permissions.js";
 
@@ -30,6 +33,15 @@ function requireField(value, label) {
   if (!String(value || "").trim()) {
     throw new HttpError(400, `${label} is required`);
   }
+}
+
+// Tokens issued before the "email" claim was added to the JWT payload won't have
+// req.auth.email — fall back to a DB lookup by userId so old sessions don't have
+// to re-login just to use brand-switching.
+async function resolveAuthEmail(req) {
+  if (req.auth.email) return req.auth.email;
+  const { user } = await getUserAndCompany({ userId: req.auth.sub, companyId: req.auth.companyId });
+  return user?.email || "";
 }
 
 authRoutes.post(
@@ -163,5 +175,71 @@ authRoutes.get(
     });
 
     res.json({ user: user ? publicUser(user) : null, company, store: getStoreMode() });
+  }),
+);
+
+// ─── Multi-brand: same login email, multiple companies ─────────────────────
+
+authRoutes.get(
+  "/companies",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const email = await resolveAuthEmail(req);
+    const companies = await listUserCompanies(email);
+    res.json({ companies });
+  }),
+);
+
+authRoutes.post(
+  "/companies",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { companyName } = req.body;
+    requireField(companyName, "Brand name");
+
+    const email = await resolveAuthEmail(req);
+    if (!email) {
+      throw new HttpError(401, "Your session is out of date — please log out and log back in.");
+    }
+
+    const result = await createAdditionalCompany({ email, companyName });
+
+    if (result.error) {
+      throw new HttpError(409, result.error);
+    }
+
+    res.status(201).json({
+      token: signAuthToken(result.user),
+      store: getStoreMode(),
+      user: publicUser(result.user),
+      company: result.company,
+    });
+  }),
+);
+
+authRoutes.post(
+  "/switch-company",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { companyId } = req.body;
+    requireField(companyId, "companyId");
+
+    const email = await resolveAuthEmail(req);
+    if (!email) {
+      throw new HttpError(401, "Your session is out of date — please log out and log back in.");
+    }
+
+    const result = await findUserForCompanySwitch({ email, companyId });
+
+    if (!result) {
+      throw new HttpError(403, "You do not have access to this brand");
+    }
+
+    res.json({
+      token: signAuthToken(result.user),
+      store: getStoreMode(),
+      user: publicUser(result.user),
+      company: result.company,
+    });
   }),
 );

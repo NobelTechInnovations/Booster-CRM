@@ -7,6 +7,12 @@ import { CompanyView } from "@/components/company-view";
 import { UsersView } from "@/components/users-view";
 import { FulfillmentView } from "@/components/fulfillment-view";
 import { ShippingView } from "@/components/shipping-view";
+import { FinanceView } from "@/components/finance-view";
+import { OrdersView } from "@/components/orders-view";
+import { InventoryView } from "@/components/inventory-view";
+import { ReportsView } from "@/components/reports-view";
+import { AutomationView } from "@/components/automation-view";
+import { SettingsView } from "@/components/settings-view";
 import { listChannels, getChannelDashboard, syncChannel } from "@/lib/api";
 
 export default function ModulePage({ params }) {
@@ -120,6 +126,34 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Shipping") {
     return <ShippingView />;
+  }
+
+  if (activeViewName === "Orders") {
+    return <OrdersView />;
+  }
+
+  if (activeViewName === "Inventory") {
+    return <InventoryView />;
+  }
+
+  if (activeViewName === "Reports") {
+    return <ReportsView />;
+  }
+
+  if (activeViewName === "Automation") {
+    return <AutomationView />;
+  }
+
+  if (activeViewName === "Settings") {
+    return <SettingsView />;
+  }
+
+  if (activeViewName === "Finance") {
+    return <FinanceView defaultTab="overview" />;
+  }
+
+  if (activeViewName === "Ads") {
+    return <FinanceView defaultTab="ads" />;
   }
 
   // Fallback to ModuleView for unimplemented modules

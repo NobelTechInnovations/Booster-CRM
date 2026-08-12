@@ -114,7 +114,7 @@ channelRoutes.get(
   "/dashboard",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const dashboard = await getDashboardSummary(req.auth.companyId);
+    const dashboard = await getDashboardSummary(req.auth.companyId, { period: req.query.period });
 
     res.json({ dashboard, store: getStoreMode() });
   }),

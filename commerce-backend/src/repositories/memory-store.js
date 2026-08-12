@@ -14,6 +14,12 @@ export const memory = {
   productMappings: new Map(),
   warehouses:     new Map(),
   shipments:      new Map(),
+  vendors:        new Map(),
+  purchases:      new Map(),
+  expenses:       new Map(),
+  adInsights:     new Map(),
+  skuCosts:       new Map(),
+  automationRules: new Map(),
 };
 
 export function id() {

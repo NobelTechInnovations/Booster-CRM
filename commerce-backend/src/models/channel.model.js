@@ -6,9 +6,10 @@ const channelSchema = new mongoose.Schema(
 
     // "sales" = Shopify, Amazon, WooCommerce etc.
     // "shipping" = Velocity, Shiprocket, Shipmozo etc.
+    // "ads" = Meta Ads etc.
     channelType: {
       type: String,
-      enum: ["sales", "shipping"],
+      enum: ["sales", "shipping", "ads"],
       required: true,
       default: "sales",
       index: true,
@@ -21,6 +22,8 @@ const channelSchema = new mongoose.Schema(
         "shopify", "amazon", "woocommerce", "flipkart", "meesho", "myntra", "ajio", "etsy",
         // Shipping providers
         "velocity", "shiprocket", "shipmozo", "shipway", "ithink", "nimbuspost", "pickrr", "delhivery",
+        // Ads providers
+        "meta",
       ],
       required: true,
       index: true,
@@ -47,6 +50,7 @@ const channelSchema = new mongoose.Schema(
       tokenExpiresAt: { type: Date,   select: false },
       apiKey:         { type: String, select: false },
       apiSecret:      { type: String, select: false },
+      longLivedTokenExpiresAt: { type: Date, select: false },
     },
 
     external: {
@@ -62,6 +66,11 @@ const channelSchema = new mongoose.Schema(
       // Shipping provider fields
       accountId:         String,
       companyName:       String,
+      // Ads provider fields
+      adAccountId:       String,
+      adAccountName:     String,
+      adAccountCurrency: String,
+      businessId:        String,
     },
 
     // Sales channel sync state

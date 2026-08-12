@@ -84,7 +84,35 @@ export function normalizeOrder({ companyId, channelId, provider, shop, order }) 
     shopifyCreatedAt: toDate(order.created_at),
     processedAt:      toDate(order.processed_at),
     cancelledAt:      toDate(order.cancelled_at),
+    ...extractShopifyTracking(order),
     raw:              order,
+  };
+}
+
+// Pulls tracking number/url/courier from Shopify's fulfillments array — covers orders
+// fulfilled via the Shopify admin or another channel/app, not just our own ship flow.
+function extractShopifyTracking(order) {
+  const fulfillments = Array.isArray(order.fulfillments) ? order.fulfillments : [];
+  if (!fulfillments.length) return { fulfillments: [] };
+
+  const events = fulfillments.map((f) => ({
+    status:          f.status,
+    shipmentStatus:  f.shipment_status,
+    trackingNumber:  f.tracking_number || (f.tracking_numbers || [])[0],
+    trackingUrl:     f.tracking_url || (f.tracking_urls || [])[0],
+    trackingCompany: f.tracking_company,
+    createdAt:       toDate(f.created_at),
+    updatedAt:       toDate(f.updated_at),
+  }));
+
+  // Most recent fulfillment carries the tracking info we surface at the top level.
+  const latest = events[events.length - 1];
+
+  return {
+    fulfillments: events,
+    ...(latest?.trackingNumber ? { trackingNumber: latest.trackingNumber } : {}),
+    ...(latest?.trackingUrl ? { trackingUrl: latest.trackingUrl } : {}),
+    ...(latest?.trackingCompany ? { trackingCompany: latest.trackingCompany } : {}),
   };
 }
 
@@ -264,15 +292,29 @@ function recordFilter(r) {
   };
 }
 
-async function bulkUpsert(model, records, filterForRecord) {
+async function bulkUpsert(model, records, filterForRecord, { preserveOnUpdate = [] } = {}) {
   if (!records.length) return;
   await model.bulkWrite(
     records.map((record) => {
       const updateDoc = { ...record };
       delete updateDoc._id;
 
+      // Fields we own in our own OMS (e.g. omsStatus) should only be set on first
+      // insert — a re-sync from Shopify must never stomp on shipped/cancelled state
+      // we've already recorded locally.
+      const setOnInsert = {};
+      for (const field of preserveOnUpdate) {
+        if (field in updateDoc) {
+          setOnInsert[field] = updateDoc[field];
+          delete updateDoc[field];
+        }
+      }
+
+      const update = { $set: updateDoc };
+      if (Object.keys(setOnInsert).length) update.$setOnInsert = setOnInsert;
+
       return {
-        updateOne: { filter: filterForRecord(record), update: { $set: updateDoc }, upsert: true },
+        updateOne: { filter: filterForRecord(record), update, upsert: true },
       };
     }),
     { ordered: false },
@@ -309,14 +351,25 @@ const orderFilter    = recordFilter;
 const productFilter  = recordFilter;
 const customerFilter = recordFilter;
 
+// Defense-in-depth: if two documents ever exist for the same (companyId, externalId)
+// — e.g. a webhook-created partial record racing a full sync, or any residual data
+// from before the Mixed-type companyId/channelId write-filter fix — prefer the one
+// with a fuller Shopify payload (note_attributes present, needed for UTM/ad
+// attribution) instead of whichever happened to come first in sort order.
 function deduplicateRecords(records) {
-  const seen = new Set();
-  return records.filter((r) => {
+  const bestByKey = new Map();
+  for (const r of records) {
     const key = `${String(r.companyId)}::${String(r.externalId || r.id || r._id)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+    const existing = bestByKey.get(key);
+    if (!existing) {
+      bestByKey.set(key, r);
+      continue;
+    }
+    const existingScore = existing.raw?.note_attributes?.length ? 1 : 0;
+    const candidateScore = r.raw?.note_attributes?.length ? 1 : 0;
+    if (candidateScore > existingScore) bestByKey.set(key, r);
+  }
+  return [...bestByKey.values()];
 }
 
 // ─── Shopify Sync ─────────────────────────────────────────────────────────────
@@ -329,7 +382,7 @@ export async function saveSyncedShopifyData({ companyId, channelId, shop, orders
 
   if (isMongoConnected()) {
     await Promise.all([
-      bulkUpsert(SyncedOrder, normOrders, orderFilter),
+      bulkUpsert(SyncedOrder, normOrders, orderFilter, { preserveOnUpdate: ["omsStatus"] }),
       bulkUpsert(SyncedProduct, normProds, productFilter),
       customerBulkUpsert(normCusts, customerFilter),
     ]);
@@ -365,23 +418,33 @@ export async function upsertSingleOrder({ companyId, channelId, provider, shop, 
     ? normalizeOrder({ companyId, channelId, provider, shop, order })
     : normalizeAmazonOrder({ companyId, channelId, shop, order });
 
+  // omsStatus is owned by our own fulfillment flow (shipped/cancelled/etc) — never
+  // let a webhook re-sync stomp on it after the first insert.
+  const { omsStatus, ...updateFields } = normalized;
+
   if (isMongoConnected()) {
     return SyncedOrder.findOneAndUpdate(
       orderFilter(normalized),
-      { $set: normalized },
+      { $set: updateFields, $setOnInsert: { omsStatus } },
       { new: true, upsert: true },
     ).lean();
   }
 
-  const stored = { _id: id(), ...normalized };
-  memory.orders.set(`${companyId}:${channelId}:${normalized.externalId}`, clone(stored));
+  const key = `${companyId}:${channelId}:${normalized.externalId}`;
+  const existing = memory.orders.get(key);
+  const stored = existing ? { ...existing, ...updateFields } : { _id: id(), ...normalized };
+  memory.orders.set(key, clone(stored));
   return clone(stored);
 }
 
 export async function updateOrderOmsStatus({ companyId, shopifyOrderId, update }) {
   if (isMongoConnected()) {
+    const compIdStr = String(companyId || "");
+    const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
+      ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
+      : compIdStr;
     return SyncedOrder.findOneAndUpdate(
-      { companyId, externalId: shopifyOrderId },
+      { companyId: compFilter, externalId: shopifyOrderId },
       { $set: update },
       { new: true },
     ).lean();
@@ -413,7 +476,7 @@ export async function saveSyncedAmazonData({ companyId, channelId, shop, orders 
 
   if (isMongoConnected()) {
     await Promise.all([
-      bulkUpsert(SyncedOrder, normOrders, orderFilter),
+      bulkUpsert(SyncedOrder, normOrders, orderFilter, { preserveOnUpdate: ["omsStatus"] }),
       bulkUpsert(SyncedProduct, normProds, productFilter),
       bulkUpsert(SyncedCustomer, normCusts, customerFilter),
     ]);
@@ -555,7 +618,13 @@ export async function getOrderById({ companyId, orderId }) {
 
 export async function listPendingOrders(companyId, { page = 1, limit = 100 } = {}) {
   if (isMongoConnected()) {
-    const orders = await SyncedOrder.find({ companyId, omsStatus: { $in: ["pending", "awaiting_shipment"] }, cancelledAt: null })
+    const orders = await SyncedOrder.find({
+      companyId,
+      omsStatus: { $in: ["pending", "awaiting_shipment"] },
+      cancelledAt: null,
+      // Exclude orders that Shopify already marked as fulfilled (e.g. fulfilled via another channel or Shopify admin)
+      fulfillmentStatus: { $nin: ["fulfilled", "partial"] },
+    })
       .sort({ shopifyCreatedAt: -1 })
       .skip((page - 1) * limit)
       .limit(limit)
@@ -564,7 +633,37 @@ export async function listPendingOrders(companyId, { page = 1, limit = 100 } = {
   }
   return deduplicateRecords(
     [...memory.orders.values()]
-      .filter((o) => String(o.companyId) === String(companyId) && ["pending", "awaiting_shipment"].includes(o.omsStatus) && !o.cancelledAt)
+      .filter((o) =>
+        String(o.companyId) === String(companyId) &&
+        ["pending", "awaiting_shipment"].includes(o.omsStatus) &&
+        !o.cancelledAt &&
+        !["fulfilled", "partial"].includes(o.fulfillmentStatus),
+      )
+      .sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0)),
+  );
+}
+
+export async function listFulfilledOrders(companyId, { page = 1, limit = 200 } = {}) {
+  if (isMongoConnected()) {
+    const orders = await SyncedOrder.find({
+      companyId,
+      $or: [
+        { fulfillmentStatus: { $in: ["fulfilled", "partial"] } },
+        { omsStatus: "shipped" },
+      ],
+    })
+      .sort({ shopifyCreatedAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .lean();
+    return deduplicateRecords(orders);
+  }
+  return deduplicateRecords(
+    [...memory.orders.values()]
+      .filter((o) =>
+        String(o.companyId) === String(companyId) &&
+        (["fulfilled", "partial"].includes(o.fulfillmentStatus) || o.omsStatus === "shipped"),
+      )
       .sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0)),
   );
 }
@@ -602,7 +701,34 @@ function dayLabel(date) {
   return new Intl.DateTimeFormat("en-IN", { weekday: "short" }).format(date);
 }
 
-export async function getDashboardSummary(companyId) {
+// Maps the topbar period selector to a concrete date range. The trend chart /
+// channel mix / recent orders sections scope to this range — the Today /
+// Yesterday / Monthly KPI cards stay fixed since those are inherently
+// period-labeled and shouldn't rename themselves when the selector changes.
+function resolvePeriodRange(period, today) {
+  const end = new Date(today);
+  end.setHours(23, 59, 59, 999);
+
+  if (period === "yesterday") {
+    const y = new Date(today);
+    y.setDate(y.getDate() - 1);
+    const yEnd = new Date(y);
+    yEnd.setHours(23, 59, 59, 999);
+    return { start: y, end: yEnd };
+  }
+  if (period === "month") {
+    return { start: new Date(today.getFullYear(), today.getMonth(), 1), end };
+  }
+  if (period === "last90") {
+    const start = new Date(today);
+    start.setDate(start.getDate() - 89);
+    return { start, end };
+  }
+  // "today" / default
+  return { start: today, end };
+}
+
+export async function getDashboardSummary(companyId, { period } = {}) {
   const { orders, products, customers, channels } = await getSavedCommerceData(companyId);
   const today = startOfDay(new Date());
   const yesterday = new Date(today);
@@ -610,14 +736,28 @@ export async function getDashboardSummary(companyId) {
   const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
   const currency = orders.find((order) => order.currency)?.currency || channels.find((channel) => channel.metrics?.currency)?.metrics?.currency || "INR";
 
-  const salesTotal = orders.reduce((total, order) => total + toNumber(order.totalPrice), 0);
-  const todaySales = orders
+  const periodRange = resolvePeriodRange(period, today);
+  // Trend chart needs at least a handful of points to be readable — a single-day
+  // period (Today/Yesterday) falls back to a 7-day trailing window ending on
+  // that day instead of rendering one lonely bar.
+  const rangeSpanDays = Math.round((periodRange.end - periodRange.start) / 86400000) + 1;
+  const trendStart = rangeSpanDays >= 3
+    ? periodRange.start
+    : (() => { const d = new Date(periodRange.end); d.setDate(d.getDate() - 6); d.setHours(0, 0, 0, 0); return d; })();
+  const trendDays = Math.max(1, Math.round((periodRange.end - trendStart) / 86400000) + 1);
+
+  // Exclude cancelled/voided/refunded orders from revenue — Shopify analytics does the same
+  const revenueOrders = orders.filter(
+    (o) => !o.cancelledAt && o.financialStatus !== "voided" && o.financialStatus !== "refunded",
+  );
+  const salesTotal = revenueOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0);
+  const todaySales = revenueOrders
     .filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), today))
     .reduce((total, order) => total + toNumber(order.totalPrice), 0);
-  const yesterdaySales = orders
+  const yesterdaySales = revenueOrders
     .filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), yesterday))
     .reduce((total, order) => total + toNumber(order.totalPrice), 0);
-  const monthlySales = orders
+  const monthlySales = revenueOrders
     .filter((order) => order.shopifyCreatedAt && new Date(order.shopifyCreatedAt) >= monthStart)
     .reduce((total, order) => total + toNumber(order.totalPrice), 0);
   const pendingOrders = orders.filter((order) => order.fulfillmentStatus === "unfulfilled" && !order.cancelledAt).length;
@@ -625,22 +765,44 @@ export async function getDashboardSummary(companyId) {
   const deliveredOrders = orders.filter((order) => order.fulfillmentStatus === "fulfilled").length;
   const lowStockProducts = products.filter((product) => toNumber(product.totalInventory) <= 5).length;
 
-  const salesTrend = [...Array(7)].map((_, index) => {
-    const date = new Date(today);
-    date.setDate(today.getDate() - (6 - index));
-    const dayOrders = orders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), date));
-    const sales = dayOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0);
+  // Trend chart: daily buckets for shorter windows, weekly buckets once the
+  // selected period gets wide (Last 90 Days) so the chart stays readable.
+  const useWeeklyBuckets = trendDays > 31;
+  const trendBucketCount = useWeeklyBuckets ? Math.ceil(trendDays / 7) : trendDays;
+  const salesTrend = [...Array(trendBucketCount)].map((_, index) => {
+    const bucketStart = new Date(trendStart);
+    bucketStart.setDate(trendStart.getDate() + index * (useWeeklyBuckets ? 7 : 1));
+    const bucketEnd = new Date(bucketStart);
+    bucketEnd.setDate(bucketStart.getDate() + (useWeeklyBuckets ? 6 : 0));
+    bucketEnd.setHours(23, 59, 59, 999);
+
+    // Use revenueOrders so cancelled orders don't skew the chart
+    const bucketOrders = revenueOrders.filter((order) => {
+      if (!order.shopifyCreatedAt) return false;
+      const d = new Date(order.shopifyCreatedAt);
+      return d >= bucketStart && d <= bucketEnd;
+    });
+    const sales = bucketOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0);
 
     return {
-      day: dayLabel(date),
+      day: useWeeklyBuckets
+        ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(bucketStart)
+        : (trendDays <= 7 ? dayLabel(bucketStart) : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(bucketStart)),
       sales,
       profit: Math.round(sales * 0.18),
-      orders: dayOrders.length,
+      orders: bucketOrders.length,
     };
   });
 
+  // Channel mix + recent orders scope to the selected period (defaults to "today").
+  const periodOrders = revenueOrders.filter((order) => {
+    if (!order.shopifyCreatedAt) return false;
+    const d = new Date(order.shopifyCreatedAt);
+    return d >= periodRange.start && d <= periodRange.end;
+  });
+
   const salesByChannel = channels.map((channel) => {
-    const channelOrders = orders.filter((order) => String(order.channelId) === String(channel._id));
+    const channelOrders = periodOrders.filter((order) => String(order.channelId) === String(channel._id));
     return {
       name: channel.name || channel.provider,
       value: channelOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0),
@@ -676,18 +838,21 @@ export async function getDashboardSummary(companyId) {
         .at(-1),
     },
     kpis: [
-      { label: "Today's Sales", value: formatMoney(todaySales, currency), change: `${orders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), today)).length} orders`, tone: "green" },
-      { label: "Yesterday Sales", value: formatMoney(yesterdaySales, currency), change: `${orders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), yesterday)).length} orders`, tone: "blue" },
-      { label: "Monthly Sales", value: formatMoney(monthlySales, currency), change: `${orders.length} synced total`, tone: "green" },
+      { label: "Today's Sales", value: formatMoney(todaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), today)).length} orders`, tone: "green" },
+      { label: "Yesterday Sales", value: formatMoney(yesterdaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), yesterday)).length} orders`, tone: "blue" },
+      { label: "Monthly Revenue", value: formatMoney(monthlySales, currency), change: `${revenueOrders.length} paid orders`, tone: "green" },
       { label: "Total Orders", value: orders.length.toLocaleString("en-IN"), change: `${pendingOrders} pending`, tone: "blue" },
       { label: "Products", value: products.length.toLocaleString("en-IN"), change: `${lowStockProducts} low stock`, tone: lowStockProducts ? "amber" : "green" },
       { label: "Customers", value: customers.length.toLocaleString("en-IN"), change: `${channels.filter((channel) => channel.status === "connected").length} channels`, tone: "teal" },
       { label: "Delivered", value: deliveredOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((deliveredOrders / orders.length) * 100) : 0}% fulfilment`, tone: "green" },
       { label: "Cancelled", value: cancelledOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((cancelledOrders / orders.length) * 100) : 0}% orders`, tone: cancelledOrders ? "rose" : "green" },
     ],
+    period: period || "today",
+    periodSales: periodOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0),
+    periodOrderCount: periodOrders.length,
     salesTrend,
     channelMix: channelMix.length ? channelMix : [{ name: "No synced sales", value: 100 }],
-    recentOrders: orders.slice(0, 8).map((order) => ({
+    recentOrders: periodOrders.slice(0, 8).map((order) => ({
       id: order.name || order.externalId,
       customer: order.customerName || "Guest customer",
       channel: channels.find((channel) => String(channel._id) === String(order.channelId))?.name || order.provider,
@@ -706,6 +871,150 @@ export async function getDashboardSummary(companyId) {
       alert: toNumber(product.totalInventory) <= 0 ? "Low" : toNumber(product.totalInventory) <= 5 ? "Watch" : "Healthy",
     })),
   };
+}
+
+// ─── Sales Analytics (Finance module) ───────────────────────────────────────
+
+function parseDateRange({ from, to }) {
+  const end = to ? new Date(to) : new Date();
+  end.setHours(23, 59, 59, 999);
+  const start = from ? new Date(from) : new Date(end.getFullYear(), end.getMonth(), end.getDate() - 29);
+  start.setHours(0, 0, 0, 0);
+  return { start, end };
+}
+
+function bucketKey(date, groupBy) {
+  const d = new Date(date);
+  if (groupBy === "month") {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+  }
+  if (groupBy === "week") {
+    const firstDayOfYear = new Date(d.getFullYear(), 0, 1);
+    const pastDays = (d - firstDayOfYear) / 86400000;
+    const week = Math.ceil((pastDays + firstDayOfYear.getDay() + 1) / 7);
+    return `${d.getFullYear()}-W${String(week).padStart(2, "0")}`;
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+function bucketLabel(key, groupBy) {
+  if (groupBy === "month") {
+    const [year, month] = key.split("-");
+    return new Intl.DateTimeFormat("en-IN", { month: "short", year: "2-digit" }).format(new Date(Number(year), Number(month) - 1, 1));
+  }
+  if (groupBy === "week") return key;
+  return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(new Date(key));
+}
+
+export async function getOrdersInRange({ companyId, from, to, channelId }) {
+  const { start, end } = parseDateRange({ from, to });
+
+  if (isMongoConnected()) {
+    const compIdStr = String(companyId);
+    const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
+      ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
+      : compIdStr;
+    const filter = {
+      companyId: compFilter,
+      shopifyCreatedAt: { $gte: start, $lte: end },
+      ...(channelId ? { channelId } : {}),
+    };
+    const orders = await SyncedOrder.find(filter).sort({ shopifyCreatedAt: 1 }).limit(20000).lean();
+    return { orders: deduplicateRecords(orders), start, end };
+  }
+
+  const owned = (o) =>
+    String(o.companyId) === String(companyId) &&
+    o.shopifyCreatedAt &&
+    new Date(o.shopifyCreatedAt) >= start &&
+    new Date(o.shopifyCreatedAt) <= end &&
+    (!channelId || String(o.channelId) === String(channelId));
+
+  const orders = deduplicateRecords([...memory.orders.values()].filter(owned)).sort(
+    (a, b) => new Date(a.shopifyCreatedAt) - new Date(b.shopifyCreatedAt),
+  );
+
+  return { orders, start, end };
+}
+
+export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", channelId }) {
+  const { orders, start, end } = await getOrdersInRange({ companyId, from, to, channelId });
+  const validOrders = orders.filter((o) => !o.cancelledAt);
+
+  const currency = orders.find((o) => o.currency)?.currency || "INR";
+  const revenue = validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
+  const orderCount = validOrders.length;
+  const aov = orderCount ? revenue / orderCount : 0;
+
+  const buckets = new Map();
+  for (const order of validOrders) {
+    const key = bucketKey(order.shopifyCreatedAt, groupBy);
+    const bucket = buckets.get(key) || { key, revenue: 0, orders: 0 };
+    bucket.revenue += toNumber(order.totalPrice);
+    bucket.orders += 1;
+    buckets.set(key, bucket);
+  }
+
+  const trend = [...buckets.values()]
+    .sort((a, b) => (a.key > b.key ? 1 : -1))
+    .map((bucket) => ({
+      period: bucketLabel(bucket.key, groupBy),
+      key: bucket.key,
+      revenue: Math.round(bucket.revenue),
+      orders: bucket.orders,
+      aov: bucket.orders ? Math.round(bucket.revenue / bucket.orders) : 0,
+    }));
+
+  const productTotals = new Map();
+  const channelTotals = new Map();
+  for (const order of validOrders) {
+    for (const item of order.lineItems || []) {
+      const key = item.title || item.sku || "Unknown";
+      const entry = productTotals.get(key) || { title: key, revenue: 0, quantity: 0 };
+      entry.revenue += toNumber(item.price) * toNumber(item.quantity || 1);
+      entry.quantity += toNumber(item.quantity || 1);
+      productTotals.set(key, entry);
+    }
+
+    const channelKey = String(order.channelId || "unknown");
+    const channelEntry = channelTotals.get(channelKey) || { channelId: channelKey, revenue: 0, orders: 0 };
+    channelEntry.revenue += toNumber(order.totalPrice);
+    channelEntry.orders += 1;
+    channelTotals.set(channelKey, channelEntry);
+  }
+
+  const topProducts = [...productTotals.values()]
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10)
+    .map((product) => ({ ...product, revenue: Math.round(product.revenue) }));
+
+  return {
+    range: { from: start.toISOString(), to: end.toISOString(), groupBy },
+    totals: { currency, revenue: Math.round(revenue), orders: orderCount, aov: Math.round(aov) },
+    trend,
+    topProducts,
+    channelBreakdown: [...channelTotals.values()].map((channel) => ({ ...channel, revenue: Math.round(channel.revenue) })),
+  };
+}
+
+export async function getSalesTotal({ companyId, from, to }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to });
+  const validOrders = orders.filter((o) => !o.cancelledAt);
+
+  return {
+    revenue: validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0),
+    orders: validOrders.length,
+  };
+}
+
+// Sum of the actual courier rate captured at ship time for orders shipped in
+// this period — the real per-order freight cost, since it varies by
+// destination/weight rather than being a fixed per-SKU number.
+export async function getShippingCostTotal({ companyId, from, to }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to });
+  return orders
+    .filter((o) => !o.cancelledAt)
+    .reduce((sum, o) => sum + toNumber(o.shippingCost), 0);
 }
 
 // ─── Product Mappings ─────────────────────────────────────────────────────────
