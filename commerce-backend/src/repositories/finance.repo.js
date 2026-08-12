@@ -4,8 +4,8 @@ import { Vendor } from "../models/vendor.model.js";
 import { Purchase } from "../models/purchase.model.js";
 import { Expense } from "../models/expense.model.js";
 import { memory, id, clone, now, toNumber } from "./memory-store.js";
-import { getSalesTotal, getShippingCostTotal, getRefundedRevenueTotal, getMfgCostTotal } from "./order.repo.js";
-import { getAdSpendTotal } from "./ad-insight.repo.js";
+import { getSalesTotal, getShippingCostTotal, getRefundedRevenueTotal, getMfgCostTotal, getSalesAnalytics, bucketKey, bucketLabel } from "./order.repo.js";
+import { getAdSpendTotal, AD_GST_RATE, listAdInsights } from "./ad-insight.repo.js";
 
 // companyId is stored as Schema.Types.Mixed across these models, so the same id
 // can end up saved as a string or an ObjectId depending on the write path —
@@ -325,6 +325,109 @@ export async function deleteExpense({ companyId, expenseId }) {
   return { expense: clone(expense) };
 }
 
+// ─── Meta ad spend → Expense ledger sync ───────────────────────────────────
+
+function toLocalDayKey(date) {
+  const d = new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+// Mirrors every day of live Meta ad spend into the Expense ledger (GST-inclusive)
+// so it shows up alongside every other cost — filterable, reportable, and
+// assignable to a partner via the existing splitBetween UI. One row per calendar
+// day, upserted on (companyId, source, syncDay) so re-syncing just refreshes the
+// amount instead of piling up duplicates. These rows are tagged source:"meta-ad-sync"
+// and are excluded from getFinanceSummary's expense totals below — the ad spend is
+// already counted once via getAdSpendTotal, so summing this too would double it.
+export async function syncMetaAdSpendToExpenses({ companyId, records }) {
+  if (!records?.length) return { synced: 0, days: 0 };
+
+  const byDay = new Map();
+  for (const record of records) {
+    const day = toLocalDayKey(record.date);
+    byDay.set(day, (byDay.get(day) || 0) + toNumber(record.spend));
+  }
+
+  let synced = 0;
+  for (const [syncDay, rawSpend] of byDay) {
+    const amount = Math.round(rawSpend * (1 + AD_GST_RATE) * 100) / 100;
+    if (!amount) continue;
+    const date = new Date(`${syncDay}T12:00:00`);
+    const set = {
+      companyId,
+      category: "marketing",
+      description: `Meta Ads spend — ${syncDay} (incl. 18% GST)`,
+      amount,
+      currency: "INR",
+      date,
+      source: "meta-ad-sync",
+      syncDay,
+    };
+
+    if (isMongoConnected()) {
+      await Expense.findOneAndUpdate({ companyId: mixedIdFilter(companyId), source: "meta-ad-sync", syncDay }, { $set: set }, { upsert: true, new: true });
+    } else {
+      const existing = [...memory.expenses.values()].find(
+        (e) => String(e.companyId) === String(companyId) && e.source === "meta-ad-sync" && e.syncDay === syncDay,
+      );
+      if (existing) {
+        Object.assign(existing, set, { updatedAt: now() });
+      } else {
+        const expense = { _id: id(), ...set, paymentMethod: "", vendorId: undefined, splitBetween: [], notes: "", createdAt: now(), updatedAt: now() };
+        memory.expenses.set(expense._id, expense);
+      }
+    }
+    synced += 1;
+  }
+
+  return { synced, days: byDay.size };
+}
+
+// ─── Combined trend (revenue + expenses + ad spend, same period buckets) ──────
+
+// Merges revenue (from sales analytics), general expenses (ledger only — excludes
+// the meta-ad-sync mirror rows so ad spend isn't counted twice), and Meta ad spend
+// (GST-inclusive) into one array of {period, revenue, orders, expenses, adSpend}
+// bucketed the same day/week/month way as the Sales Analytics trend, so a single
+// chart can plot all three series against the same x-axis.
+export async function getFinanceTrend({ companyId, from, to, groupBy = "day" }) {
+  const [analytics, expenses, adInsights] = await Promise.all([
+    getSalesAnalytics({ companyId, from, to, groupBy }),
+    listExpenses({ companyId, from, to }),
+    listAdInsights({ companyId, from, to }),
+  ]);
+
+  const buckets = new Map();
+  for (const point of analytics.trend) {
+    buckets.set(point.key, { key: point.key, period: point.period, revenue: point.revenue, orders: point.orders, expenses: 0, adSpend: 0 });
+  }
+
+  const getOrInitBucket = (date) => {
+    const key = bucketKey(date, groupBy);
+    let bucket = buckets.get(key);
+    if (!bucket) {
+      bucket = { key, period: bucketLabel(key, groupBy), revenue: 0, orders: 0, expenses: 0, adSpend: 0 };
+      buckets.set(key, bucket);
+    }
+    return bucket;
+  };
+
+  for (const expense of expenses) {
+    if (expense.source === "meta-ad-sync") continue;
+    getOrInitBucket(expense.date).expenses += toNumber(expense.amount);
+  }
+
+  for (const row of adInsights) {
+    getOrInitBucket(row.date).adSpend += toNumber(row.spend) * (1 + AD_GST_RATE);
+  }
+
+  const trend = [...buckets.values()]
+    .sort((a, b) => (a.key > b.key ? 1 : -1))
+    .map((b) => ({ ...b, expenses: Math.round(b.expenses), adSpend: Math.round(b.adSpend) }));
+
+  return { trend, currency: analytics.totals.currency };
+}
+
 // ─── Finance Summary ─────────────────────────────────────────────────────────
 
 export async function getFinanceSummary({ companyId, from, to }) {
@@ -338,16 +441,23 @@ export async function getFinanceSummary({ companyId, from, to }) {
     getMfgCostTotal({ companyId, from, to }),
   ]);
 
+  // Meta-ad-sync rows mirror live ad spend into the ledger for visibility/partner
+  // attribution only — the spend itself is already counted via adSpend below, so
+  // they're excluded here to avoid double counting.
+  const ledgerExpenses = expenses.filter((e) => e.source !== "meta-ad-sync");
   const cogs = purchases.reduce((sum, purchase) => sum + toNumber(purchase.totalAmount), 0);
-  const expenseTotal = expenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
-  const marketingExpenseTotal = expenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);
+  const expenseTotal = ledgerExpenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const marketingExpenseTotal = ledgerExpenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);
   const otherExpenseTotal = expenseTotal - marketingExpenseTotal;
-  // "Marketing Spend" combines live Meta ad spend with any manually-logged/historical
-  // marketing expenses — the two are always disjoint periods/sources, never double-counted.
-  const marketingSpend = adSpend.spend + marketingExpenseTotal;
+  // Ad spend is grossed up by Meta's 18% GST here — that's the real cash outflow,
+  // even though Meta's own dashboard only shows the pre-GST "spend" figure.
+  const adSpendWithGst = adSpend.spendWithGst ?? adSpend.spend * (1 + AD_GST_RATE);
+  // "Marketing Spend" combines live Meta ad spend (GST-inclusive) with any
+  // manually-logged/historical marketing expenses — always disjoint sources, never double-counted.
+  const marketingSpend = adSpendWithGst + marketingExpenseTotal;
   const revenue = toNumber(sales.revenue);
   const grossProfit = revenue - cogs;
-  const netProfit = revenue - cogs - expenseTotal - adSpend.spend - shippingCost;
+  const netProfit = revenue - cogs - expenseTotal - adSpendWithGst - shippingCost;
   const margin = revenue ? (netProfit / revenue) * 100 : 0;
 
   return {
@@ -361,6 +471,8 @@ export async function getFinanceSummary({ companyId, from, to }) {
     marketingSpend: Math.round(marketingSpend),
     shippingCost: Math.round(shippingCost),
     adSpend: Math.round(adSpend.spend),
+    adSpendGst: Math.round(adSpend.gstAmount ?? adSpend.spend * AD_GST_RATE),
+    adSpendWithGst: Math.round(adSpendWithGst),
     attributedAdRevenue: Math.round(adSpend.attributedRevenue),
     refundedRevenue: Math.round(refundedRevenue),
     mfgCost: Math.round(mfgCost.total),

@@ -15,6 +15,11 @@ function dayKey(date) {
   return new Date(date).toISOString().slice(0, 10);
 }
 
+// Meta invoices ad spend plus 18% GST in India — the number Meta's own dashboard
+// shows is pre-GST "spend", so every cost/profit calculation that treats ad spend
+// as real cash outflow needs to gross it up by this rate.
+export const AD_GST_RATE = 0.18;
+
 // companyId/channelId are stored as Schema.Types.Mixed, so the same logical id
 // can end up saved as either a plain string or an ObjectId depending on what
 // the caller passed at write time. An exact-match filter on a Mixed field only
@@ -94,8 +99,12 @@ export async function listAdInsights({ companyId, from, to, campaignId, channelI
 
 export async function getAdSpendTotal({ companyId, from, to }) {
   const rows = await listAdInsights({ companyId, from, to });
+  const spend = rows.reduce((sum, row) => sum + toNumber(row.spend), 0);
+  const gstAmount = spend * AD_GST_RATE;
   return {
-    spend: rows.reduce((sum, row) => sum + toNumber(row.spend), 0),
+    spend,
+    gstAmount,
+    spendWithGst: spend + gstAmount,
     attributedRevenue: rows.reduce((sum, row) => sum + toNumber(row.attributedRevenue), 0),
     attributedOrders: rows.reduce((sum, row) => sum + toNumber(row.attributedOrders), 0),
   };
@@ -173,10 +182,16 @@ export async function getAdsSummary({ companyId, from, to }) {
 
   const withRoas = (entry) => ({ ...entry, roas: entry.spend ? Math.round((entry.revenue / entry.spend) * 100) / 100 : 0 });
 
+  const gstAmount = spend * AD_GST_RATE;
+
   return {
     totals: {
       currency,
       spend: Math.round(spend),
+      // Meta invoices spend + 18% GST in India; "spend" above is what Meta's own
+      // dashboard shows, these two add the real cash cost on top of it.
+      gstAmount: Math.round(gstAmount),
+      spendWithGst: Math.round(spend + gstAmount),
       impressions,
       reach,
       frequency: Math.round(frequency * 100) / 100,

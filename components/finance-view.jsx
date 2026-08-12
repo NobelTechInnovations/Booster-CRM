@@ -39,6 +39,8 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  ComposedChart,
+  Legend,
   Line,
   ResponsiveContainer,
   Tooltip,
@@ -59,6 +61,7 @@ import {
   getAdsSummary,
   getExpensesByPartner,
   getFinanceSummary,
+  getFinanceTrend,
   getSalesAnalytics,
   linkAdProduct,
   listAdsChannels,
@@ -300,7 +303,7 @@ const fieldClass =
 
 // ─── Overview Tab ────────────────────────────────────────────────────────────
 
-function OverviewTab({ range, groupBy, summary, analytics, isLoading }) {
+function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading }) {
   const currency = analytics?.totals?.currency || "INR";
 
   return (
@@ -351,14 +354,16 @@ function OverviewTab({ range, groupBy, summary, analytics, isLoading }) {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Revenue Trend</CardTitle>
-            <p className="mt-1 text-sm text-[var(--muted)]">{range.from} to {range.to}, grouped {groupBy}-wise.</p>
+            <CardTitle>Revenue vs. Expenses vs. Ad Spend</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              {range.from} to {range.to}, grouped {groupBy}-wise. Ad spend includes Meta's 18% GST.
+            </p>
           </div>
         </CardHeader>
         <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={analytics?.trend || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
+              <ComposedChart data={trend || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="financeSalesGradient" x1="0" x2="0" y1="0" y2="1">
                     <stop offset="5%" stopColor="#3730a3" stopOpacity={0.3} />
@@ -369,8 +374,11 @@ function OverviewTab({ range, groupBy, summary, analytics, isLoading }) {
                 <XAxis dataKey="period" tickLine={false} axisLine={false} />
                 <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={56} />
                 <Tooltip content={<ChartTooltip />} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#3730a3" fill="url(#financeSalesGradient)" strokeWidth={3} />
-              </AreaChart>
+                <Line type="monotone" dataKey="expenses" name="Expenses" stroke="#e11d48" strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="adSpend" name="Ad Spend (incl. GST)" stroke="#0891b2" strokeWidth={2} dot={false} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
@@ -700,7 +708,14 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
                   <td className="py-3 pr-4">
                     <Badge tone="slate">{expense.category}</Badge>
                   </td>
-                  <td className="py-3 pr-4">{expense.description || "-"}</td>
+                  <td className="py-3 pr-4">
+                    {expense.description || "-"}
+                    {expense.source === "meta-ad-sync" ? (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-cyan-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-cyan-700">
+                        <Megaphone size={10} /> Auto (Meta)
+                      </span>
+                    ) : null}
+                  </td>
                   <td className="py-3 pr-4">
                     {expense.splitBetween?.length ? (
                       <div className="flex flex-wrap gap-1">
@@ -728,8 +743,9 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
                       <button
                         className="rounded-md p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
                         onClick={() => handleDelete(expense._id || expense.id)}
-                        disabled={deletingId === (expense._id || expense.id)}
+                        disabled={deletingId === (expense._id || expense.id) || expense.source === "meta-ad-sync"}
                         aria-label="Delete expense"
+                        title={expense.source === "meta-ad-sync" ? "Auto-synced from Meta — reappears on the next sync. Disconnect the Ads channel to stop it." : undefined}
                       >
                         <Trash2 size={16} />
                       </button>
@@ -1380,9 +1396,18 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
       </Card>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Spend" value={formatMoney(totals.spend, totals.currency)} sub={`${(totals.clicks || 0).toLocaleString("en-IN")} clicks`} tone="indigo" icon={Megaphone} />
+        <KpiTile label="Spend (Meta-reported)" value={formatMoney(totals.spend, totals.currency)} sub={`${(totals.clicks || 0).toLocaleString("en-IN")} clicks`} tone="indigo" icon={Megaphone} />
+        <KpiTile
+          label="Total Cost (incl. 18% GST)"
+          value={formatMoney(totals.spendWithGst, totals.currency)}
+          sub={`+${formatMoney(totals.gstAmount, totals.currency)} GST — mirrored into Expenses`}
+          tone="rose"
+          icon={Coins}
+        />
         <KpiTile label="Attributed Revenue" value={formatMoney(totals.attributedRevenue, totals.currency)} sub={`${totals.attributedOrders || 0} orders`} tone="green" icon={BadgeIndianRupee} />
-        <KpiTile label="ROAS" value={`${totals.roas || 0}x`} sub="revenue / spend" tone={totals.roas >= 1 ? "green" : "rose"} icon={Target} />
+        <KpiTile label="ROAS" value={`${totals.roas || 0}x`} sub="on Meta-reported spend" tone={totals.roas >= 1 ? "green" : "rose"} icon={Target} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile label="CPA" value={formatMoney(totals.cpa, totals.currency)} sub={`per attributed order`} tone="blue" icon={Activity} />
       </div>
 
@@ -1500,6 +1525,7 @@ export function FinanceView({ defaultTab = "overview" }) {
 
   const [summary, setSummary] = useState(null);
   const [analytics, setAnalytics] = useState(null);
+  const [trend, setTrend] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [purchases, setPurchases] = useState([]);
@@ -1536,9 +1562,10 @@ export function FinanceView({ defaultTab = "overview" }) {
     setIsLoading(true);
     setError("");
     try {
-      const [summaryRes, analyticsRes, expensesRes, vendorsRes, purchasesRes, channelsRes] = await Promise.all([
+      const [summaryRes, analyticsRes, trendRes, expensesRes, vendorsRes, purchasesRes, channelsRes] = await Promise.all([
         getFinanceSummary(range),
         getSalesAnalytics({ ...range, groupBy }),
+        getFinanceTrend({ ...range, groupBy }),
         listExpenses(range),
         listVendors(),
         listPurchases(range),
@@ -1551,6 +1578,7 @@ export function FinanceView({ defaultTab = "overview" }) {
 
       setSummary(summaryRes.summary);
       setAnalytics(analyticsRes.analytics);
+      setTrend(trendRes.trend || []);
       setExpenses(expensesRes.expenses || []);
       setVendors(vendorsRes.vendors || []);
       setPurchases(purchasesRes.purchases || []);
@@ -1624,7 +1652,7 @@ export function FinanceView({ defaultTab = "overview" }) {
       ) : null}
       {error ? <p className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
 
-      {activeTab === "overview" ? <OverviewTab range={range} groupBy={groupBy} summary={summary} analytics={analytics} isLoading={isLoading} /> : null}
+      {activeTab === "overview" ? <OverviewTab range={range} groupBy={groupBy} summary={summary} analytics={analytics} trend={trend} isLoading={isLoading} /> : null}
       {activeTab === "sales" ? <SalesAnalyticsTab analytics={analytics} groupBy={groupBy} /> : null}
       {activeTab === "expenses" ? <ExpensesTab expenses={expenses} isLoading={isLoading} onRefresh={refreshAll} range={range} /> : null}
       {activeTab === "purchases" ? <VendorsPurchasesTab vendors={vendors} purchases={purchases} isLoading={isLoading} onRefresh={refreshAll} /> : null}

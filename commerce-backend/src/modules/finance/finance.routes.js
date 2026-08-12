@@ -12,6 +12,7 @@ import {
   deleteVendor,
   getExpensesByPartner,
   getFinanceSummary,
+  getFinanceTrend,
   listExpenses,
   listPurchases,
   listVendors,
@@ -51,6 +52,20 @@ financeRoutes.get(
     });
 
     res.json({ analytics });
+  }),
+);
+
+financeRoutes.get(
+  "/trend",
+  asyncHandler(async (req, res) => {
+    const result = await getFinanceTrend({
+      companyId: req.auth.companyId,
+      from: req.query.from,
+      to: req.query.to,
+      groupBy: req.query.groupBy || "day",
+    });
+
+    res.json(result);
   }),
 );
 

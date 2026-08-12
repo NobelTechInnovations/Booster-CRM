@@ -891,7 +891,7 @@ function parseDateRange({ from, to }) {
   return { start, end };
 }
 
-function bucketKey(date, groupBy) {
+export function bucketKey(date, groupBy) {
   const d = new Date(date);
   if (groupBy === "month") {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -905,7 +905,7 @@ function bucketKey(date, groupBy) {
   return d.toISOString().slice(0, 10);
 }
 
-function bucketLabel(key, groupBy) {
+export function bucketLabel(key, groupBy) {
   if (groupBy === "month") {
     const [year, month] = key.split("-");
     return new Intl.DateTimeFormat("en-IN", { month: "short", year: "2-digit" }).format(new Date(Number(year), Number(month) - 1, 1));

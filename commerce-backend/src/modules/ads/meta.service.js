@@ -8,6 +8,7 @@ import {
 } from "../../repositories/channel.repo.js";
 import { getOrdersInRange } from "../../repositories/order.repo.js";
 import { listAdInsights, setAttribution, upsertAdInsights } from "../../repositories/ad-insight.repo.js";
+import { syncMetaAdSpendToExpenses } from "../../repositories/finance.repo.js";
 import { orderMatchesAd } from "../../utils/utm.js";
 import { HttpError } from "../../utils/http-error.js";
 import { createOauthState, readOauthState } from "../../utils/oauth-state.js";
@@ -210,6 +211,14 @@ export async function syncAdInsights({ companyId, channelId, days = 30 }) {
 
     await upsertAdInsights(records);
     await runAttribution({ companyId, channelId, from: since, to: until });
+    // Mirror this batch of ad spend into the Expense ledger (GST-inclusive) so it's
+    // visible/reportable/attributable-to-a-partner like every other cost. Best-effort —
+    // a failure here shouldn't fail the sync itself, the AdInsight data is already saved.
+    try {
+      await syncMetaAdSpendToExpenses({ companyId, records });
+    } catch (syncError) {
+      console.error("[meta] failed to mirror ad spend into expenses:", syncError.message);
+    }
 
     const updatedChannel = await updateChannelSyncState({
       channelId,

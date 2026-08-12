@@ -31,11 +31,24 @@ const expenseSchema = new mongoose.Schema(
 
     notes: { type: String, trim: true },
     createdBy: { type: mongoose.Schema.Types.Mixed },
+
+    // Where this row came from. "manual" = typed in by a user (default).
+    // "meta-ad-sync" = auto-generated/updated from live Meta ad spend so it shows
+    // up in the expense ledger without double counting — these rows are excluded
+    // from getFinanceSummary's marketing-expense sum since ad spend is already
+    // totalled separately from AdInsight, and they're upserted per calendar day
+    // (not re-created) so a resync just refreshes the amount.
+    source: { type: String, enum: ["manual", "meta-ad-sync"], default: "manual", index: true },
+    // For source:"meta-ad-sync" rows, the calendar day (YYYY-MM-DD, local) the spend
+    // belongs to — used as the upsert key alongside companyId so re-syncing updates
+    // the same row instead of creating duplicates.
+    syncDay: { type: String },
   },
   { timestamps: true },
 );
 
 expenseSchema.index({ companyId: 1, date: -1 });
 expenseSchema.index({ companyId: 1, category: 1 });
+expenseSchema.index({ companyId: 1, source: 1, syncDay: 1 });
 
 export const Expense = mongoose.model("Expense", expenseSchema);
