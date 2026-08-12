@@ -49,7 +49,7 @@ export function SignupForm() {
           <Field
             icon={Building2}
             label="Company name"
-            placeholder="Sukirti Naturals Pvt. Ltd."
+            placeholder="Wokbook."
             value={form.companyName}
             onChange={(companyName) => setForm({ ...form, companyName })}
           />

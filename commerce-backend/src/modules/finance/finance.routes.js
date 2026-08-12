@@ -10,6 +10,7 @@ import {
   deleteExpense,
   deletePurchase,
   deleteVendor,
+  getExpensesByPartner,
   getFinanceSummary,
   listExpenses,
   listPurchases,
@@ -150,6 +151,18 @@ financeRoutes.get(
       category: req.query.category,
     });
     res.json({ expenses });
+  }),
+);
+
+financeRoutes.get(
+  "/expenses/by-partner",
+  asyncHandler(async (req, res) => {
+    const result = await getExpensesByPartner({
+      companyId: req.auth.companyId,
+      from: req.query.from,
+      to: req.query.to,
+    });
+    res.json(result);
   }),
 );
 

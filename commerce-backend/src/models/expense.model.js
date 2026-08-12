@@ -6,7 +6,7 @@ const expenseSchema = new mongoose.Schema(
 
     category: {
       type: String,
-      enum: ["rent", "salary", "utilities", "packaging", "shipping", "software", "marketing", "other"],
+      enum: ["rent", "salary", "utilities", "packaging", "shipping", "software", "marketing", "misc", "other"],
       default: "other",
       index: true,
     },
@@ -16,6 +16,18 @@ const expenseSchema = new mongoose.Schema(
     date: { type: Date, required: true, default: Date.now, index: true },
     paymentMethod: { type: String, trim: true },
     vendorId: { type: mongoose.Schema.Types.Mixed },
+
+    // Who paid — supports splitting one expense across multiple partners/directors
+    // (e.g. one spent ₹1,000 and another ₹734 of the same ₹1,734 expense) as well as
+    // the simple case of a single spender. Each entry's userId is a User _id; amounts
+    // should sum to `amount` but this isn't enforced so partial/unassigned data is fine.
+    splitBetween: [
+      {
+        userId: { type: mongoose.Schema.Types.Mixed, required: true },
+        userName: String, // denormalized for display even if the user is later removed
+        amount: { type: Number, required: true, min: 0 },
+      },
+    ],
 
     notes: { type: String, trim: true },
     createdBy: { type: mongoose.Schema.Types.Mixed },

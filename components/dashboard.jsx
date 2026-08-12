@@ -155,8 +155,8 @@ function Sidebar({ open, setOpen, activeView, setActiveView }) {
               <Layers3 size={21} />
             </div>
             <div>
-              <p className="text-sm font-bold leading-5">CommerceOS</p>
-              <p className="text-xs text-[var(--muted)]">Sukirti Commerce Hub</p>
+              <p className="text-sm font-bold leading-5">Wokbook</p>
+              <p className="text-xs text-[var(--muted)]">Commerce Operations Platform</p>
             </div>
           </div>
           <button className="rounded-md p-2 text-slate-500 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)} aria-label="Close">
@@ -299,7 +299,7 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-const PERIOD_LABELS = { today: "Today", yesterday: "Yesterday", month: "This Month", last90: "Last 90 Days" };
+const PERIOD_LABELS = { today: "Today", yesterday: "Yesterday", month: "This Month", last90: "Last 90 Days", lifetime: "Lifetime" };
 
 function formatPeriodMoney(value) {
   const n = Math.round(value || 0);
@@ -662,12 +662,12 @@ function AmazonConnectForm({ compact = false }) {
 
 // Provider brand colours (bg, text, ring)
 const PROVIDER_COLORS = {
-  shopify:    { bg: "bg-emerald-600", ring: "ring-emerald-200", label: "S" },
-  amazon:     { bg: "bg-amber-500",   ring: "ring-amber-200",   label: "A" },
-  woocommerce:{ bg: "bg-violet-600",  ring: "ring-violet-200",  label: "W" },
-  flipkart:   { bg: "bg-blue-600",    ring: "ring-blue-200",    label: "F" },
-  meesho:     { bg: "bg-pink-600",    ring: "ring-pink-200",    label: "M" },
-  default:    { bg: "bg-slate-500",   ring: "ring-slate-200",   label: "?" },
+  shopify: { bg: "bg-emerald-600", ring: "ring-emerald-200", label: "S" },
+  amazon: { bg: "bg-amber-500", ring: "ring-amber-200", label: "A" },
+  woocommerce: { bg: "bg-violet-600", ring: "ring-violet-200", label: "W" },
+  flipkart: { bg: "bg-blue-600", ring: "ring-blue-200", label: "F" },
+  meesho: { bg: "bg-pink-600", ring: "ring-pink-200", label: "M" },
+  default: { bg: "bg-slate-500", ring: "ring-slate-200", label: "?" },
 };
 
 function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
@@ -855,7 +855,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
           <CardHeader>
             <div>
               <CardTitle>Channel Guide</CardTitle>
-              <p className="mt-1 text-sm text-[var(--muted)]">How channel data flows into CommerceOS.</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">How channel data flows into Wokbook.</p>
             </div>
           </CardHeader>
           <CardContent className="space-y-4">
@@ -1278,21 +1278,21 @@ function RecordFilters({ resource, records, filters, setFilters }) {
   const quickOptions =
     resource === "orders"
       ? [
-          ["all", "All"],
-          ["pending", "Pending"],
-          ["paid", "Paid"],
-        ]
+        ["all", "All"],
+        ["pending", "Pending"],
+        ["paid", "Paid"],
+      ]
       : resource === "products"
         ? [
-            ["all", "All"],
-            ["low-stock", "Low Stock"],
-            ["draft", "Draft"],
-          ]
+          ["all", "All"],
+          ["low-stock", "Low Stock"],
+          ["draft", "Draft"],
+        ]
         : [
-            ["all", "All"],
-            ["with-orders", "Has Orders"],
-            ["missing-email", "Missing Email"],
-          ];
+          ["all", "All"],
+          ["with-orders", "Has Orders"],
+          ["missing-email", "Missing Email"],
+        ];
 
   function setFilter(field, value) {
     setFilters((current) => ({ ...current, [field]: value }));
@@ -1430,11 +1430,11 @@ function ProductCells({ record }) {
 }
 
 const FOLLOWUP_STATUS_STYLES = {
-  new:                 "bg-slate-100 text-slate-600",
+  new: "bg-slate-100 text-slate-600",
   follow_up_scheduled: "bg-violet-100 text-violet-700",
-  converted:           "bg-green-100 text-green-700",
-  no_response:         "bg-amber-100 text-amber-700",
-  closed:              "bg-rose-100 text-rose-700",
+  converted: "bg-green-100 text-green-700",
+  no_response: "bg-amber-100 text-amber-700",
+  closed: "bg-rose-100 text-rose-700",
 };
 
 const FOLLOWUP_STATUS_LABELS = {
@@ -2220,7 +2220,7 @@ export function ModuleView({ name, setActiveView }) {
 }
 
 export function DashboardView() {
-  const { dashboardData, connectedChannels, setConnectedChannels, channelsError, setChannelsError, isLoadingChannels } = useCommerceStore();
+  const { dashboardData, connectedChannels, setConnectedChannels, channelsError, setChannelsError, isLoadingChannels, session } = useCommerceStore();
 
   const kpiItems = withKpiIcons(dashboardData?.kpis?.length ? dashboardData.kpis : zeroKpis);
   const chartSalesTrend = dashboardData?.salesTrend?.length ? dashboardData.salesTrend : zeroSalesTrend;
@@ -2235,7 +2235,7 @@ export function DashboardView() {
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone="indigo">Live</Badge>
           </div>
-          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Sukirti Commerce Hub</h1>
+          <h1 className="mt-3 text-xl font-bold tracking-normal text-slate-950 md:text-2xl">{session?.company?.name || "Wokbook"} Dashboard</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
             One operational view for multi-channel sales, orders, inventory, raw materials, shipping, CRM, finance, ads, analytics, and automations.
           </p>
@@ -2276,7 +2276,7 @@ export function DashboardView() {
           channelsError={channelsError}
           setChannelsError={setChannelsError}
           isLoadingChannels={isLoadingChannels}
-          onRefreshData={() => {}}
+          onRefreshData={() => { }}
         />
       </section>
 
@@ -2289,7 +2289,7 @@ export function DashboardView() {
       </section>
 
       <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] py-5 text-sm text-[var(--muted)]">
-        <span>CommerceOS — real-time multi-channel commerce operations.</span>
+        <span>Wokbook — real-time multi-channel commerce operations.</span>
       </footer>
     </div>
   );

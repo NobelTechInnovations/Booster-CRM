@@ -37,8 +37,8 @@ export function AuthLayout({ eyebrow, title, text, children }) {
             <Layers3 size={20} />
           </div>
           <div>
-            <p className="text-sm font-bold text-white">CommerceOS</p>
-            <p className="text-[11px] font-medium text-indigo-200/60">Sukirti Commerce Hub</p>
+            <p className="text-sm font-bold text-white">Wokbook</p>
+            <p className="text-[11px] font-medium text-indigo-200/60">Commerce Operations Platform</p>
           </div>
         </Link>
 
@@ -81,7 +81,7 @@ export function AuthLayout({ eyebrow, title, text, children }) {
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-[var(--navy)] text-white">
               <Layers3 size={18} />
             </div>
-            <span className="text-sm font-bold text-slate-900">CommerceOS</span>
+            <span className="text-sm font-bold text-slate-900">Wokbook</span>
           </Link>
           {children}
         </div>

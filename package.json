@@ -1,7 +1,7 @@
 {
   "name": "commerce-os",
   "version": "1.0.0",
-  "description": "Sukirti Commerce Hub frontend dashboard",
+  "description": "Wokbook dashboard",
   "scripts": {
     "dev": "next dev",
     "build": "next build",

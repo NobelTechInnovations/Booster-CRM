@@ -54,7 +54,13 @@ const RANGE_PRESETS = [
   ["30", "Last 30 Days"],
   ["90", "Last 90 Days"],
   ["365", "This Year"],
+  ["lifetime", "Lifetime"],
+  ["custom", "Custom Range"],
 ];
+
+// Arbitrarily early — no real business data predates this, so it's a safe
+// stand-in for "no lower bound" without a separate backend code path.
+const LIFETIME_START = "2000-01-01";
 
 // toISOString() converts to UTC first — for any timezone ahead of UTC (e.g. IST,
 // +5:30), local midnight becomes the *previous* day in UTC, silently shifting the
@@ -91,6 +97,7 @@ function downloadCsv(filename, csv) {
 export function ReportsView() {
   const [activeType, setActiveType] = useState("sales");
   const [rangeDays, setRangeDays] = useState("30");
+  const [custom, setCustom] = useState({ from: LIFETIME_START, to: isoDate(new Date()) });
   const [report, setReport] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
@@ -98,10 +105,12 @@ export function ReportsView() {
 
   const { from, to } = useMemo(() => {
     const end = new Date();
+    if (rangeDays === "lifetime") return { from: LIFETIME_START, to: isoDate(end) };
+    if (rangeDays === "custom") return { from: custom.from || LIFETIME_START, to: custom.to || isoDate(end) };
     const start = new Date();
     start.setDate(end.getDate() - Number(rangeDays));
     return { from: isoDate(start), to: isoDate(end) };
-  }, [rangeDays]);
+  }, [rangeDays, custom]);
 
   async function loadReport() {
     setIsLoading(true);
@@ -170,6 +179,25 @@ export function ReportsView() {
               <option key={val} value={val}>{label}</option>
             ))}
           </select>
+          {rangeDays === "custom" ? (
+            <div className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-2 py-1">
+              <input
+                type="date"
+                className="h-7 rounded border-0 bg-transparent px-1 text-xs font-semibold text-slate-700 outline-none"
+                value={custom.from}
+                max={custom.to}
+                onChange={(e) => setCustom((c) => ({ ...c, from: e.target.value }))}
+              />
+              <span className="text-xs text-slate-400">to</span>
+              <input
+                type="date"
+                className="h-7 rounded border-0 bg-transparent px-1 text-xs font-semibold text-slate-700 outline-none"
+                value={custom.to}
+                min={custom.from}
+                onChange={(e) => setCustom((c) => ({ ...c, to: e.target.value }))}
+              />
+            </div>
+          ) : null}
           <button
             onClick={handleExport}
             disabled={!report || !report.rows.length}

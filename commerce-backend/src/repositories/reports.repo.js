@@ -215,10 +215,15 @@ async function channelReport({ companyId, from, to }) {
   const validOrders = orders.filter((o) => !o.cancelledAt);
   const totalRevenue = validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
 
+  // Historical/manually-imported orders (see the "historical" provider values on
+  // SyncedOrder) have no live channelId to look up — group those by provider
+  // instead so they still show up with a readable label instead of "Unknown".
+  const PROVIDER_LABELS = { local: "Local Shop", website: "Website (Historical)", flipkart: "Flipkart", shopdeck: "Shopdeck", amazon: "Amazon", shopify: "Shopify" };
+
   const byChannel = new Map();
   for (const o of validOrders) {
-    const key = String(o.channelId || "unknown");
-    const entry = byChannel.get(key) || { channelId: key, orders: 0, revenue: 0 };
+    const key = o.channelId ? String(o.channelId) : `provider:${o.provider}`;
+    const entry = byChannel.get(key) || { channelId: o.channelId ? String(o.channelId) : null, provider: o.provider, orders: 0, revenue: 0 };
     entry.orders += 1;
     entry.revenue += toNumber(o.totalPrice);
     byChannel.set(key, entry);
@@ -229,7 +234,7 @@ async function channelReport({ companyId, from, to }) {
   const rows = [...byChannel.values()]
     .sort((a, b) => b.revenue - a.revenue)
     .map((r) => ({
-      channel: channelNameById.get(r.channelId) || "Unknown",
+      channel: (r.channelId && channelNameById.get(r.channelId)) || PROVIDER_LABELS[r.provider] || "Unknown",
       orders: r.orders,
       revenue: round(r.revenue),
       share: totalRevenue ? round((r.revenue / totalRevenue) * 100) : 0,

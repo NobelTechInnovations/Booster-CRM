@@ -90,8 +90,8 @@ function Sidebar({ open, setOpen }) {
               <Layers3 size={19} />
             </div>
             <div>
-              <p className="text-sm font-bold leading-5 tracking-tight text-white">CommerceOS</p>
-              <p className="text-[11px] font-medium text-indigo-200/60">Sukirti Commerce Hub</p>
+              <p className="text-sm font-bold leading-5 tracking-tight text-white">Wokbook</p>
+              <p className="text-[11px] font-medium text-indigo-200/60">Commerce Operations Platform</p>
             </div>
           </div>
           <button className="rounded-md p-2 text-indigo-200/70 hover:bg-white/5 lg:hidden" onClick={() => setOpen(false)} aria-label="Close">
@@ -305,6 +305,7 @@ function periodToKey(period) {
     case "Yesterday": return "yesterday";
     case "This Month": return "month";
     case "Last 90 Days": return "last90";
+    case "Lifetime": return "lifetime";
     default: return "today";
   }
 }
@@ -350,6 +351,7 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
           <option>Yesterday</option>
           <option>This Month</option>
           <option>Last 90 Days</option>
+          <option>Lifetime</option>
         </select>
         <Button variant="secondary" className="hidden h-9 sm:inline-flex" onClick={onSyncAll} disabled={!canSync}>
           <RefreshCw size={14} className="mr-1" />

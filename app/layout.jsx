@@ -2,7 +2,7 @@ import "./globals.css";
 import { AppProviders } from "@/components/providers";
 
 export const metadata = {
-  title: "CommerceOS | Sukirti Commerce Hub",
+  title: "Wokbook | Commerce Operations Platform",
   description: "One operational platform for orders, inventory, CRM, finance, ads, and fulfillment.",
 };
 

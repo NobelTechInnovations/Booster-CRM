@@ -10,15 +10,19 @@ import {
   ChevronsUpDown,
   Coins,
   Eye,
+  Factory,
   Image as ImageIcon,
   Link2,
   Megaphone,
   MousePointerClick,
   Package,
+  Pencil,
   Percent,
+  PiggyBank,
   Plus,
   RefreshCw,
   Repeat,
+  RotateCcw,
   Store,
   Target,
   Trash2,
@@ -53,6 +57,7 @@ import {
   deletePurchase,
   deleteVendor,
   getAdsSummary,
+  getExpensesByPartner,
   getFinanceSummary,
   getSalesAnalytics,
   linkAdProduct,
@@ -60,10 +65,12 @@ import {
   listExpenses,
   listMetaAdAccounts,
   listPurchases,
+  listUsers,
   listVendors,
   recomputeAdAttribution,
   selectMetaAdAccount,
   syncAdInsights,
+  updateExpense,
 } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
@@ -83,7 +90,13 @@ const rangePresets = [
   { key: "7d", label: "Last 7 Days" },
   { key: "30d", label: "Last 30 Days" },
   { key: "90d", label: "Last 90 Days" },
+  { key: "lifetime", label: "Lifetime" },
+  { key: "custom", label: "Custom Range" },
 ];
+
+// Arbitrarily early — no real business data predates this, so it's a safe
+// stand-in for "no lower bound" without needing a separate backend code path.
+const LIFETIME_START = "2000-01-01";
 
 // toISOString() converts to UTC first — for any timezone ahead of UTC (e.g. IST,
 // +5:30), local midnight becomes the *previous* day in UTC, silently shifting every
@@ -95,7 +108,7 @@ function isoDay(date) {
   return `${y}-${m}-${d}`;
 }
 
-function resolveRange(preset) {
+function resolveRange(preset, custom) {
   const now = new Date();
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
@@ -116,6 +129,12 @@ function resolveRange(preset) {
   if (preset === "month") {
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
     return { from: isoDay(start), to: isoDay(today) };
+  }
+
+  if (preset === "lifetime") return { from: LIFETIME_START, to: isoDay(today) };
+
+  if (preset === "custom") {
+    return { from: custom?.from || LIFETIME_START, to: custom?.to || isoDay(today) };
   }
 
   const days = preset === "7d" ? 7 : preset === "90d" ? 90 : 30;
@@ -193,7 +212,7 @@ function ChartTooltip({ active, payload, label }) {
   );
 }
 
-function RangeControls({ preset, setPreset, groupBy, setGroupBy, onRefresh, isLoading }) {
+function RangeControls({ preset, setPreset, custom, setCustom, groupBy, setGroupBy, onRefresh, isLoading }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div className="flex flex-wrap gap-1 rounded-xl border border-[var(--line)] bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -212,6 +231,25 @@ function RangeControls({ preset, setPreset, groupBy, setGroupBy, onRefresh, isLo
           </button>
         ))}
       </div>
+      {preset === "custom" ? (
+        <div className="flex items-center gap-1.5 rounded-xl border border-[var(--line)] bg-white p-1 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+          <input
+            type="date"
+            className="h-8 rounded-lg border-0 bg-transparent px-2 text-xs font-semibold text-slate-700 outline-none"
+            value={custom.from}
+            max={custom.to}
+            onChange={(event) => setCustom((c) => ({ ...c, from: event.target.value }))}
+          />
+          <span className="text-xs text-slate-400">to</span>
+          <input
+            type="date"
+            className="h-8 rounded-lg border-0 bg-transparent px-2 text-xs font-semibold text-slate-700 outline-none"
+            value={custom.to}
+            min={custom.from}
+            onChange={(event) => setCustom((c) => ({ ...c, to: event.target.value }))}
+          />
+        </div>
+      ) : null}
       <select
         className="h-9 rounded-md border border-[var(--line)] bg-white px-2.5 text-xs font-semibold outline-none focus:border-[var(--primary)]"
         value={groupBy}
@@ -268,15 +306,38 @@ function OverviewTab({ range, groupBy, summary, analytics, isLoading }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Revenue" value={formatMoney(summary?.revenue, currency)} sub={`${summary?.orders ?? 0} orders`} tone="green" icon={BadgeIndianRupee} />
-        <KpiTile label="COGS (Purchases)" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes} />
-        <KpiTile label="Shipping Cost" value={formatMoney(summary?.shippingCost, currency)} sub="courier rate at ship time" tone="blue" icon={Truck} />
-        <KpiTile label="Expenses" value={formatMoney(summary?.expenses, currency)} sub={`${summary?.expenseCount ?? 0} entries`} tone="rose" icon={Wallet} />
+        <KpiTile label="Total Revenue" value={formatMoney(summary?.revenue, currency)} sub={`${summary?.orders ?? 0} orders`} tone="green" icon={BadgeIndianRupee} />
+        <KpiTile label="Inventory Purchases" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes} />
+        <KpiTile
+          label="Gross Profit (on sales)"
+          value={formatMoney(summary?.grossProfit, currency)}
+          sub="revenue − purchases"
+          tone={Number(summary?.grossProfit) >= 0 ? "green" : "rose"}
+          icon={PiggyBank}
+        />
+        <KpiTile
+          label="Mfg Cost (Items Sold)"
+          value={formatMoney(summary?.mfgCost, currency)}
+          sub={summary?.mfgUncostedUnits ? `${summary.mfgUncostedUnits} units missing cost` : `${summary?.mfgCostedUnits ?? 0} units costed`}
+          tone={summary?.mfgUncostedUnits ? "amber" : "slate"}
+          icon={Factory}
+        />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Meta Ad Spend" value={formatMoney(summary?.adSpend, currency)} sub="Ads tab for ROAS" tone="indigo" icon={Target} />
+        <KpiTile label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="Meta ads + logged marketing expenses" tone="indigo" icon={Megaphone} />
+        <KpiTile label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="rose" icon={Wallet} />
+        <KpiTile label="Shipping Cost" value={formatMoney(summary?.shippingCost, currency)} sub="courier rate at ship time" tone="blue" icon={Truck} />
         <KpiTile
-          label="Net Profit"
+          label="Refunded/Returned Revenue"
+          value={formatMoney(summary?.refundedRevenue, currency)}
+          sub="excluded from Total Revenue"
+          tone={summary?.refundedRevenue ? "amber" : "slate"}
+          icon={RotateCcw}
+        />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <KpiTile
+          label="Net Period Profit (cash flow)"
           value={formatMoney(summary?.netProfit, currency)}
           sub={`${summary?.margin ?? 0}% margin`}
           tone={Number(summary?.netProfit) >= 0 ? "green" : "rose"}
@@ -284,6 +345,7 @@ function OverviewTab({ range, groupBy, summary, analytics, isLoading }) {
         />
         <KpiTile label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined} />
         <KpiTile label="Total Orders" value={(analytics?.totals?.orders ?? 0).toLocaleString("en-IN")} sub="in selected range" tone="blue" icon={Package} />
+        <KpiTile label="Meta Ad Spend" value={formatMoney(summary?.adSpend, currency)} sub="Ads tab for ROAS" tone="indigo" icon={Target} />
       </div>
 
       <Card>
@@ -401,23 +463,70 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
 
 // ─── Expenses Tab ────────────────────────────────────────────────────────────
 
-const expenseCategories = ["rent", "salary", "utilities", "packaging", "shipping", "software", "marketing", "other"];
+const expenseCategories = ["rent", "salary", "utilities", "packaging", "shipping", "software", "marketing", "misc", "other"];
 
-function ExpenseFormModal({ onClose, onSaved }) {
-  const [form, setForm] = useState({ category: "other", description: "", amount: "", date: isoDay(new Date()), paymentMethod: "" });
+function ExpenseFormModal({ onClose, onSaved, initial }) {
+  const [form, setForm] = useState(
+    initial
+      ? {
+          category: initial.category || "other",
+          description: initial.description || "",
+          amount: initial.amount ?? "",
+          date: isoDay(new Date(initial.date)),
+          paymentMethod: initial.paymentMethod || "",
+        }
+      : { category: "other", description: "", amount: "", date: isoDay(new Date()), paymentMethod: "" },
+  );
+  const [splits, setSplits] = useState(initial?.splitBetween?.length ? initial.splitBetween : []);
+  const [users, setUsers] = useState([]);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    listUsers().then((res) => setUsers(res.users || [])).catch(() => {});
+  }, []);
 
   function setField(key, value) {
     setForm((current) => ({ ...current, [key]: value }));
   }
+
+  function addSplitRow() {
+    const used = new Set(splits.map((s) => String(s.userId)));
+    const nextUser = users.find((u) => !used.has(String(u._id || u.id)));
+    if (!nextUser) return;
+    setSplits((current) => [...current, { userId: nextUser._id || nextUser.id, userName: nextUser.name, amount: "" }]);
+  }
+
+  function updateSplit(index, field, value) {
+    setSplits((current) =>
+      current.map((s, i) => {
+        if (i !== index) return s;
+        if (field === "userId") {
+          const user = users.find((u) => String(u._id || u.id) === value);
+          return { ...s, userId: value, userName: user?.name || "" };
+        }
+        return { ...s, [field]: value };
+      }),
+    );
+  }
+
+  function removeSplit(index) {
+    setSplits((current) => current.filter((_, i) => i !== index));
+  }
+
+  const splitTotal = splits.reduce((sum, s) => sum + (Number(s.amount) || 0), 0);
+  const amountNum = Number(form.amount) || 0;
+  const splitMismatch = splits.length > 0 && Math.abs(splitTotal - amountNum) > 0.5;
 
   async function submit(event) {
     event.preventDefault();
     setError("");
     setSaving(true);
     try {
-      const result = await createExpense(form);
+      const payload = { ...form, splitBetween: splits.filter((s) => s.userId && Number(s.amount) > 0) };
+      const result = initial?._id
+        ? await updateExpense(initial._id, payload)
+        : await createExpense(payload);
       onSaved(result.expense);
       onClose();
     } catch (err) {
@@ -428,7 +537,7 @@ function ExpenseFormModal({ onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Add Expense" onClose={onClose}>
+    <Modal title={initial ? "Edit Expense" : "Add Expense"} onClose={onClose}>
       <form onSubmit={submit} className="space-y-3">
         <Field label="Category">
           <select className={fieldClass} value={form.category} onChange={(event) => setField("category", event.target.value)}>
@@ -453,6 +562,57 @@ function ExpenseFormModal({ onClose, onSaved }) {
         <Field label="Payment Method">
           <input className={fieldClass} value={form.paymentMethod} onChange={(event) => setField("paymentMethod", event.target.value)} placeholder="UPI, Bank Transfer, Cash..." />
         </Field>
+
+        {/* Spent by — split across partners */}
+        <div className="rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] p-3">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold uppercase tracking-wide text-slate-600">Spent By (optional)</span>
+            <button
+              type="button"
+              onClick={addSplitRow}
+              disabled={splits.length >= users.length}
+              className="text-xs font-semibold text-indigo-700 hover:underline disabled:opacity-40"
+            >
+              + Add person
+            </button>
+          </div>
+          {splits.length === 0 ? (
+            <p className="mt-1.5 text-xs text-[var(--muted)]">Not assigned yet — leave blank to tag later, or add who paid.</p>
+          ) : (
+            <div className="mt-2 space-y-2">
+              {splits.map((split, index) => (
+                <div key={index} className="flex items-center gap-2">
+                  <select
+                    className="h-9 flex-1 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-indigo-600"
+                    value={split.userId}
+                    onChange={(e) => updateSplit(index, "userId", e.target.value)}
+                  >
+                    {users.map((u) => (
+                      <option key={u._id || u.id} value={u._id || u.id}>{u.name} ({u.role})</option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="₹ amount"
+                    className="h-9 w-28 rounded-md border border-[var(--line)] bg-white px-2 text-sm outline-none focus:border-indigo-600"
+                    value={split.amount}
+                    onChange={(e) => updateSplit(index, "amount", e.target.value)}
+                  />
+                  <button type="button" onClick={() => removeSplit(index)} className="rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600">
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+              {splitMismatch ? (
+                <p className="text-xs font-medium text-amber-700">
+                  Split total ₹{splitTotal.toLocaleString("en-IN")} doesn&rsquo;t match expense amount ₹{amountNum.toLocaleString("en-IN")} — that&rsquo;s fine if intentional.
+                </p>
+              ) : null}
+            </div>
+          )}
+        </div>
+
         {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
         <Button type="submit" className="w-full" disabled={saving}>
           {saving ? "Saving..." : "Save Expense"}
@@ -462,9 +622,16 @@ function ExpenseFormModal({ onClose, onSaved }) {
   );
 }
 
-function ExpensesTab({ expenses, isLoading, onRefresh }) {
+function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
   const [deletingId, setDeletingId] = useState("");
+  const [partnerSummary, setPartnerSummary] = useState(null);
+
+  useEffect(() => {
+    if (!range) return;
+    getExpensesByPartner(range).then(setPartnerSummary).catch(() => {});
+  }, [range, expenses]);
 
   async function handleDelete(expenseId) {
     setDeletingId(expenseId);
@@ -485,21 +652,42 @@ function ExpensesTab({ expenses, isLoading, onRefresh }) {
           <CardTitle>Expenses</CardTitle>
           <p className="mt-1 text-sm text-[var(--muted)]">{expenses.length} entries, {formatMoney(total)} in this range.</p>
         </div>
-        <Button onClick={() => setShowForm(true)}>
+        <Button onClick={() => { setEditingExpense(null); setShowForm(true); }}>
           <Plus size={16} />
           Add Expense
         </Button>
       </CardHeader>
       <CardContent className="overflow-x-auto">
+        {/* Spend by partner summary */}
+        {partnerSummary ? (
+          <div className="mb-4 grid gap-2 sm:grid-cols-3">
+            {partnerSummary.byPartner.map((p) => (
+              <div key={p.userId} className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">{p.userName}</p>
+                <p className="mt-0.5 text-lg font-bold text-slate-900">{formatMoney(p.total)}</p>
+                <p className="text-[11px] text-[var(--muted)]">{p.count} expense{p.count !== 1 ? "s" : ""}</p>
+              </div>
+            ))}
+            {partnerSummary.unassigned.count > 0 ? (
+              <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Unassigned</p>
+                <p className="mt-0.5 text-lg font-bold text-slate-900">{formatMoney(partnerSummary.unassigned.total)}</p>
+                <p className="text-[11px] text-[var(--muted)]">{partnerSummary.unassigned.count} not tagged yet</p>
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
         {isLoading ? <p className="text-sm text-[var(--muted)]">Loading expenses...</p> : null}
         {!isLoading && !expenses.length ? <p className="text-sm text-[var(--muted)]">No expenses recorded in this range yet.</p> : null}
         {expenses.length ? (
-          <table className="w-full min-w-[640px] border-collapse text-sm">
+          <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
                 <th className="py-3 pr-4 font-semibold">Date</th>
                 <th className="py-3 pr-4 font-semibold">Category</th>
                 <th className="py-3 pr-4 font-semibold">Description</th>
+                <th className="py-3 pr-4 font-semibold">Spent By</th>
                 <th className="py-3 pr-4 font-semibold">Payment</th>
                 <th className="py-3 pr-0 text-right font-semibold">Amount</th>
                 <th className="py-3 pl-4 text-right font-semibold"></th>
@@ -513,17 +701,39 @@ function ExpensesTab({ expenses, isLoading, onRefresh }) {
                     <Badge tone="slate">{expense.category}</Badge>
                   </td>
                   <td className="py-3 pr-4">{expense.description || "-"}</td>
+                  <td className="py-3 pr-4">
+                    {expense.splitBetween?.length ? (
+                      <div className="flex flex-wrap gap-1">
+                        {expense.splitBetween.map((s, i) => (
+                          <span key={i} className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
+                            {s.userName} ₹{Number(s.amount).toLocaleString("en-IN")}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-slate-400">Unassigned</span>
+                    )}
+                  </td>
                   <td className="py-3 pr-4">{expense.paymentMethod || "-"}</td>
                   <td className="py-3 pr-0 text-right font-bold text-rose-700">{formatMoney(expense.amount)}</td>
                   <td className="py-3 pl-4 text-right">
-                    <button
-                      className="rounded-md p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
-                      onClick={() => handleDelete(expense._id || expense.id)}
-                      disabled={deletingId === (expense._id || expense.id)}
-                      aria-label="Delete expense"
-                    >
-                      <Trash2 size={16} />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        className="rounded-md p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700"
+                        onClick={() => { setEditingExpense(expense); setShowForm(true); }}
+                        aria-label="Edit expense"
+                      >
+                        <Pencil size={15} />
+                      </button>
+                      <button
+                        className="rounded-md p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+                        onClick={() => handleDelete(expense._id || expense.id)}
+                        disabled={deletingId === (expense._id || expense.id)}
+                        aria-label="Delete expense"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -533,7 +743,8 @@ function ExpensesTab({ expenses, isLoading, onRefresh }) {
       </CardContent>
       {showForm ? (
         <ExpenseFormModal
-          onClose={() => setShowForm(false)}
+          initial={editingExpense}
+          onClose={() => { setShowForm(false); setEditingExpense(null); }}
           onSaved={() => onRefresh()}
         />
       ) : null}
@@ -1283,8 +1494,9 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
 export function FinanceView({ defaultTab = "overview" }) {
   const [activeTab, setActiveTab] = useState(tabs.some((t) => t.key === defaultTab) ? defaultTab : "overview");
   const [preset, setPreset] = useState("30d");
+  const [custom, setCustom] = useState({ from: LIFETIME_START, to: isoDay(new Date()) });
   const [groupBy, setGroupBy] = useState("day");
-  const range = useMemo(() => resolveRange(preset), [preset]);
+  const range = useMemo(() => resolveRange(preset, custom), [preset, custom]);
 
   const [summary, setSummary] = useState(null);
   const [analytics, setAnalytics] = useState(null);
@@ -1364,7 +1576,7 @@ export function FinanceView({ defaultTab = "overview" }) {
   useEffect(() => {
     refreshAll();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset, groupBy]);
+  }, [range.from, range.to, groupBy]);
 
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
@@ -1376,7 +1588,7 @@ export function FinanceView({ defaultTab = "overview" }) {
             Sales, expenses, vendor & raw-material purchases, and Meta ad spend with ROAS — all in one place.
           </p>
         </div>
-        <RangeControls preset={preset} setPreset={setPreset} groupBy={groupBy} setGroupBy={setGroupBy} onRefresh={refreshAll} isLoading={isLoading} />
+        <RangeControls preset={preset} setPreset={setPreset} custom={custom} setCustom={setCustom} groupBy={groupBy} setGroupBy={setGroupBy} onRefresh={refreshAll} isLoading={isLoading} />
       </section>
 
       <div className="mb-6 flex flex-wrap gap-1 rounded-xl border border-[var(--line)] bg-white p-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
@@ -1414,7 +1626,7 @@ export function FinanceView({ defaultTab = "overview" }) {
 
       {activeTab === "overview" ? <OverviewTab range={range} groupBy={groupBy} summary={summary} analytics={analytics} isLoading={isLoading} /> : null}
       {activeTab === "sales" ? <SalesAnalyticsTab analytics={analytics} groupBy={groupBy} /> : null}
-      {activeTab === "expenses" ? <ExpensesTab expenses={expenses} isLoading={isLoading} onRefresh={refreshAll} /> : null}
+      {activeTab === "expenses" ? <ExpensesTab expenses={expenses} isLoading={isLoading} onRefresh={refreshAll} range={range} /> : null}
       {activeTab === "purchases" ? <VendorsPurchasesTab vendors={vendors} purchases={purchases} isLoading={isLoading} onRefresh={refreshAll} /> : null}
       {activeTab === "ads" ? <AdsTab adsChannel={adsChannel} adsSummary={adsSummary} isLoading={isLoading} onRefresh={refreshAll} range={range} /> : null}
     </div>

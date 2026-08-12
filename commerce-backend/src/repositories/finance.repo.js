@@ -1,10 +1,20 @@
+import mongoose from "mongoose";
 import { isMongoConnected } from "../config/database.js";
 import { Vendor } from "../models/vendor.model.js";
 import { Purchase } from "../models/purchase.model.js";
 import { Expense } from "../models/expense.model.js";
 import { memory, id, clone, now, toNumber } from "./memory-store.js";
-import { getSalesTotal, getShippingCostTotal } from "./order.repo.js";
+import { getSalesTotal, getShippingCostTotal, getRefundedRevenueTotal, getMfgCostTotal } from "./order.repo.js";
 import { getAdSpendTotal } from "./ad-insight.repo.js";
+
+// companyId is stored as Schema.Types.Mixed across these models, so the same id
+// can end up saved as a string or an ObjectId depending on the write path —
+// an exact-match filter only catches one type. See the identical fix already
+// applied to order.repo.js / ad-insight.repo.js for the bug this caused there.
+function mixedIdFilter(idValue) {
+  const str = String(idValue || "");
+  return mongoose.Types.ObjectId.isValid(str) ? { $in: [str, new mongoose.Types.ObjectId(str)] } : str;
+}
 
 // ─── Vendors ─────────────────────────────────────────────────────────────────
 
@@ -24,7 +34,7 @@ function cleanVendorPayload(payload = {}) {
 
 export async function listVendors(companyId) {
   if (isMongoConnected()) {
-    return Vendor.find({ companyId }).sort({ name: 1 }).lean();
+    return Vendor.find({ companyId: mixedIdFilter(companyId) }).sort({ name: 1 }).lean();
   }
   return [...memory.vendors.values()].filter((v) => String(v.companyId) === String(companyId)).sort((a, b) => a.name.localeCompare(b.name)).map(clone);
 }
@@ -48,7 +58,7 @@ export async function updateVendor({ companyId, vendorId, payload }) {
   if (!clean.name) return { error: "Vendor name is required" };
 
   if (isMongoConnected()) {
-    const vendor = await Vendor.findOneAndUpdate({ _id: vendorId, companyId }, { $set: clean }, { new: true }).lean();
+    const vendor = await Vendor.findOneAndUpdate({ _id: vendorId, companyId: mixedIdFilter(companyId) }, { $set: clean }, { new: true }).lean();
     if (!vendor) return { error: "Vendor not found" };
     return { vendor };
   }
@@ -61,7 +71,7 @@ export async function updateVendor({ companyId, vendorId, payload }) {
 
 export async function deleteVendor({ companyId, vendorId }) {
   if (isMongoConnected()) {
-    const vendor = await Vendor.findOneAndDelete({ _id: vendorId, companyId }).lean();
+    const vendor = await Vendor.findOneAndDelete({ _id: vendorId, companyId: mixedIdFilter(companyId) }).lean();
     return { vendor };
   }
 
@@ -112,7 +122,7 @@ function cleanPurchasePayload(payload = {}) {
 
 export async function listPurchases({ companyId, from, to, vendorId }) {
   const filter = {
-    companyId,
+    companyId: mixedIdFilter(companyId),
     ...(vendorId ? { vendorId } : {}),
     ...(from || to
       ? {
@@ -160,7 +170,7 @@ export async function updatePurchase({ companyId, purchaseId, payload }) {
   if (!clean.items.length) return { error: "Add at least one purchased item" };
 
   if (isMongoConnected()) {
-    const purchase = await Purchase.findOneAndUpdate({ _id: purchaseId, companyId }, { $set: clean }, { new: true }).lean();
+    const purchase = await Purchase.findOneAndUpdate({ _id: purchaseId, companyId: mixedIdFilter(companyId) }, { $set: clean }, { new: true }).lean();
     if (!purchase) return { error: "Purchase not found" };
     return { purchase };
   }
@@ -173,7 +183,7 @@ export async function updatePurchase({ companyId, purchaseId, payload }) {
 
 export async function deletePurchase({ companyId, purchaseId }) {
   if (isMongoConnected()) {
-    const purchase = await Purchase.findOneAndDelete({ _id: purchaseId, companyId }).lean();
+    const purchase = await Purchase.findOneAndDelete({ _id: purchaseId, companyId: mixedIdFilter(companyId) }).lean();
     return { purchase };
   }
 
@@ -185,9 +195,20 @@ export async function deletePurchase({ companyId, purchaseId }) {
 
 // ─── Expenses ────────────────────────────────────────────────────────────────
 
+function cleanSplitBetween(split) {
+  if (!Array.isArray(split)) return [];
+  return split
+    .filter((s) => s && s.userId && toNumber(s.amount) > 0)
+    .map((s) => ({
+      userId: s.userId,
+      userName: String(s.userName || "").trim(),
+      amount: toNumber(s.amount),
+    }));
+}
+
 function cleanExpensePayload(payload = {}) {
   return {
-    category: ["rent", "salary", "utilities", "packaging", "shipping", "software", "marketing", "other"].includes(payload.category)
+    category: ["rent", "salary", "utilities", "packaging", "shipping", "software", "marketing", "misc", "other"].includes(payload.category)
       ? payload.category
       : "other",
     description: String(payload.description || "").trim(),
@@ -196,13 +217,14 @@ function cleanExpensePayload(payload = {}) {
     date: payload.date ? new Date(payload.date) : new Date(),
     paymentMethod: String(payload.paymentMethod || "").trim(),
     vendorId: payload.vendorId || undefined,
+    splitBetween: cleanSplitBetween(payload.splitBetween),
     notes: String(payload.notes || "").trim(),
   };
 }
 
 export async function listExpenses({ companyId, from, to, category }) {
   const filter = {
-    companyId,
+    companyId: mixedIdFilter(companyId),
     ...(category ? { category } : {}),
     ...(from || to
       ? {
@@ -230,6 +252,37 @@ export async function listExpenses({ companyId, from, to, category }) {
     .map(clone);
 }
 
+// Totals per partner/director across the given period — sums each person's
+// share from splitBetween. An expense with no split contributes nothing here
+// (shows up as "unassigned" in the UI) rather than being guessed at.
+export async function getExpensesByPartner({ companyId, from, to }) {
+  const expenses = await listExpenses({ companyId, from, to });
+  const byUser = new Map();
+  let unassignedTotal = 0;
+  let unassignedCount = 0;
+
+  for (const expense of expenses) {
+    const splits = expense.splitBetween || [];
+    if (!splits.length) {
+      unassignedTotal += toNumber(expense.amount);
+      unassignedCount += 1;
+      continue;
+    }
+    for (const split of splits) {
+      const key = String(split.userId);
+      const entry = byUser.get(key) || { userId: split.userId, userName: split.userName || "Unknown", total: 0, count: 0 };
+      entry.total += toNumber(split.amount);
+      entry.count += 1;
+      byUser.set(key, entry);
+    }
+  }
+
+  return {
+    byPartner: [...byUser.values()].sort((a, b) => b.total - a.total),
+    unassigned: { total: unassignedTotal, count: unassignedCount },
+  };
+}
+
 export async function createExpense({ companyId, payload, createdBy }) {
   const clean = cleanExpensePayload(payload);
   if (!clean.amount) return { error: "Expense amount is required" };
@@ -249,7 +302,7 @@ export async function updateExpense({ companyId, expenseId, payload }) {
   if (!clean.amount) return { error: "Expense amount is required" };
 
   if (isMongoConnected()) {
-    const expense = await Expense.findOneAndUpdate({ _id: expenseId, companyId }, { $set: clean }, { new: true }).lean();
+    const expense = await Expense.findOneAndUpdate({ _id: expenseId, companyId: mixedIdFilter(companyId) }, { $set: clean }, { new: true }).lean();
     if (!expense) return { error: "Expense not found" };
     return { expense };
   }
@@ -262,7 +315,7 @@ export async function updateExpense({ companyId, expenseId, payload }) {
 
 export async function deleteExpense({ companyId, expenseId }) {
   if (isMongoConnected()) {
-    const expense = await Expense.findOneAndDelete({ _id: expenseId, companyId }).lean();
+    const expense = await Expense.findOneAndDelete({ _id: expenseId, companyId: mixedIdFilter(companyId) }).lean();
     return { expense };
   }
 
@@ -275,17 +328,25 @@ export async function deleteExpense({ companyId, expenseId }) {
 // ─── Finance Summary ─────────────────────────────────────────────────────────
 
 export async function getFinanceSummary({ companyId, from, to }) {
-  const [sales, purchases, expenses, adSpend, shippingCost] = await Promise.all([
+  const [sales, purchases, expenses, adSpend, shippingCost, refundedRevenue, mfgCost] = await Promise.all([
     getSalesTotal({ companyId, from, to }),
     listPurchases({ companyId, from, to }),
     listExpenses({ companyId, from, to }),
     getAdSpendTotal({ companyId, from, to }),
     getShippingCostTotal({ companyId, from, to }),
+    getRefundedRevenueTotal({ companyId, from, to }),
+    getMfgCostTotal({ companyId, from, to }),
   ]);
 
   const cogs = purchases.reduce((sum, purchase) => sum + toNumber(purchase.totalAmount), 0);
   const expenseTotal = expenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const marketingExpenseTotal = expenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);
+  const otherExpenseTotal = expenseTotal - marketingExpenseTotal;
+  // "Marketing Spend" combines live Meta ad spend with any manually-logged/historical
+  // marketing expenses — the two are always disjoint periods/sources, never double-counted.
+  const marketingSpend = adSpend.spend + marketingExpenseTotal;
   const revenue = toNumber(sales.revenue);
+  const grossProfit = revenue - cogs;
   const netProfit = revenue - cogs - expenseTotal - adSpend.spend - shippingCost;
   const margin = revenue ? (netProfit / revenue) * 100 : 0;
 
@@ -293,10 +354,18 @@ export async function getFinanceSummary({ companyId, from, to }) {
     revenue: Math.round(revenue),
     orders: sales.orders,
     cogs: Math.round(cogs),
+    grossProfit: Math.round(grossProfit),
     expenses: Math.round(expenseTotal),
+    marketingExpenses: Math.round(marketingExpenseTotal),
+    otherExpenses: Math.round(otherExpenseTotal),
+    marketingSpend: Math.round(marketingSpend),
     shippingCost: Math.round(shippingCost),
     adSpend: Math.round(adSpend.spend),
     attributedAdRevenue: Math.round(adSpend.attributedRevenue),
+    refundedRevenue: Math.round(refundedRevenue),
+    mfgCost: Math.round(mfgCost.total),
+    mfgCostedUnits: mfgCost.costedUnits,
+    mfgUncostedUnits: mfgCost.uncostedUnits,
     netProfit: Math.round(netProfit),
     margin: Math.round(margin * 10) / 10,
     purchaseCount: purchases.length,

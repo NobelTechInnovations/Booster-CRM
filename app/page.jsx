@@ -93,8 +93,8 @@ export default function Home() {
               <Layers3 size={20} />
             </div>
             <div>
-              <p className="text-sm font-bold leading-5 text-slate-900">CommerceOS</p>
-              <p className="text-[11px] font-medium text-[var(--muted)]">Sukirti Commerce Hub</p>
+              <p className="text-sm font-bold leading-5 text-slate-900">Wokbook</p>
+              <p className="text-[11px] font-medium text-[var(--muted)]">Commerce Operations Platform</p>
             </div>
           </Link>
           <nav className="hidden items-center gap-6 md:flex">
@@ -183,7 +183,7 @@ export default function Home() {
                 <div className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-indigo-600 to-[var(--navy)] text-white">
                   <Layers3 size={14} />
                 </div>
-                <span className="text-xs font-bold text-slate-800">CommerceOS Panel</span>
+                <span className="text-xs font-bold text-slate-800">Wokbook Panel</span>
               </div>
               <div className="flex gap-1">
                 <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
@@ -271,7 +271,7 @@ export default function Home() {
             One platform for your entire operation
           </h2>
           <p className="mt-3 mx-auto max-w-xl text-base text-slate-600">
-            From order intake to shipping to finance — CommerceOS replaces five tools with one.
+            From order intake to shipping to finance — Wokbook replaces five tools with one.
           </p>
         </div>
 
@@ -334,9 +334,9 @@ export default function Home() {
             <div className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--navy)] text-white">
               <Layers3 size={14} />
             </div>
-            <span className="text-sm font-bold text-slate-700">CommerceOS</span>
+            <span className="text-sm font-bold text-slate-700">Wokbook</span>
           </div>
-          <p className="text-xs text-slate-400">Sukirti Naturals · Sukirti Spices · Kaleva — All rights reserved.</p>
+          <p className="text-xs text-slate-400">Wokbook · Ecommerce Operating System — All rights reserved.</p>
         </div>
       </footer>
     </main>

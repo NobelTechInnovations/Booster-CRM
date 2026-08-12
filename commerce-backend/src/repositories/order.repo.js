@@ -6,6 +6,7 @@ import { SyncedProduct } from "../models/synced-product.model.js";
 import { SyncedCustomer } from "../models/synced-customer.model.js";
 import { ProductMapping } from "../models/product-mapping.model.js";
 import { memory, id, clone, now, toDate, toNumber, fullName } from "./memory-store.js";
+import { listSkuCosts } from "./sku-cost.repo.js";
 
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
@@ -724,6 +725,9 @@ function resolvePeriodRange(period, today) {
     start.setDate(start.getDate() - 89);
     return { start, end };
   }
+  if (period === "lifetime") {
+    return { start: new Date("2000-01-01"), end };
+  }
   // "today" / default
   return { start: today, end };
 }
@@ -841,9 +845,13 @@ export async function getDashboardSummary(companyId, { period } = {}) {
       { label: "Today's Sales", value: formatMoney(todaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), today)).length} orders`, tone: "green" },
       { label: "Yesterday Sales", value: formatMoney(yesterdaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), yesterday)).length} orders`, tone: "blue" },
       { label: "Monthly Revenue", value: formatMoney(monthlySales, currency), change: `${revenueOrders.length} paid orders`, tone: "green" },
+      { label: "Lifetime Revenue", value: formatMoney(salesTotal, currency), change: `${revenueOrders.length} paid orders all-time`, tone: "indigo" },
       { label: "Total Orders", value: orders.length.toLocaleString("en-IN"), change: `${pendingOrders} pending`, tone: "blue" },
+      { label: "Avg Order Value", value: formatMoney(revenueOrders.length ? salesTotal / revenueOrders.length : 0, currency), change: "lifetime AOV", tone: "indigo" },
+      { label: "Pending Orders", value: pendingOrders.toLocaleString("en-IN"), change: pendingOrders ? "needs shipping" : "all clear", tone: pendingOrders ? "amber" : "green" },
       { label: "Products", value: products.length.toLocaleString("en-IN"), change: `${lowStockProducts} low stock`, tone: lowStockProducts ? "amber" : "green" },
       { label: "Customers", value: customers.length.toLocaleString("en-IN"), change: `${channels.filter((channel) => channel.status === "connected").length} channels`, tone: "teal" },
+      { label: "Connected Channels", value: channels.filter((channel) => channel.status === "connected").length.toLocaleString("en-IN"), change: `${channels.length} total linked`, tone: "teal" },
       { label: "Delivered", value: deliveredOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((deliveredOrders / orders.length) * 100) : 0}% fulfilment`, tone: "green" },
       { label: "Cancelled", value: cancelledOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((cancelledOrders / orders.length) * 100) : 0}% orders`, tone: cancelledOrders ? "rose" : "green" },
     ],
@@ -1015,6 +1023,45 @@ export async function getShippingCostTotal({ companyId, from, to }) {
   return orders
     .filter((o) => !o.cancelledAt)
     .reduce((sum, o) => sum + toNumber(o.shippingCost), 0);
+}
+
+// Revenue that was refunded/cancelled/returned in this period — kept separate
+// from the main revenue total so it can be shown as its own line item.
+export async function getRefundedRevenueTotal({ companyId, from, to }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to });
+  return orders
+    .filter((o) => o.cancelledAt || o.financialStatus === "refunded" || o.financialStatus === "voided")
+    .reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
+}
+
+// Manufacturing/procurement cost of items actually sold in this period, using
+// each SKU's buying price from Inventory & Costing. SKUs the user hasn't
+// costed yet contribute ₹0 — this number gets more accurate as costs are
+// filled in, it never guesses a cost that wasn't explicitly set.
+export async function getMfgCostTotal({ companyId, from, to }) {
+  const [{ orders }, skuCosts] = await Promise.all([
+    getOrdersInRange({ companyId, from, to }),
+    listSkuCosts(companyId),
+  ]);
+  const costBySku = new Map(skuCosts.map((c) => [c.sku, toNumber(c.buyingPrice)]));
+
+  let total = 0;
+  let costedUnits = 0;
+  let uncostedUnits = 0;
+  for (const order of orders) {
+    if (order.cancelledAt) continue;
+    for (const item of order.lineItems || []) {
+      const qty = toNumber(item.quantity) || 1;
+      const unitCost = item.sku ? costBySku.get(item.sku) : undefined;
+      if (unitCost) {
+        total += unitCost * qty;
+        costedUnits += qty;
+      } else {
+        uncostedUnits += qty;
+      }
+    }
+  }
+  return { total, costedUnits, uncostedUnits };
 }
 
 // ─── Product Mappings ─────────────────────────────────────────────────────────
