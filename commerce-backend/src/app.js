@@ -3,6 +3,7 @@ import express from "express";
 import helmet from "helmet";
 import morgan from "morgan";
 import { env } from "./config/env.js";
+import { ensureDatabaseConnected } from "./config/database.js";
 import { getStoreMode } from "./repositories/channel.repo.js";
 import { authRoutes } from "./modules/auth/auth.routes.js";
 import { channelRoutes } from "./modules/channels/channel.routes.js";
@@ -37,6 +38,21 @@ export function createApp() {
       phase: "production-oms-automated",
       store: getStoreMode(),
     });
+  });
+
+  // On Vercel this Express app is invoked directly per-request with no bootstrap
+  // step (unlike local dev, where server.js awaits connectDatabase() once before
+  // app.listen()) — so every request must make sure a DB connection exists before
+  // reaching a route. ensureDatabaseConnected() is a no-op once connected (warm
+  // container) and shares one in-flight connect() across concurrent cold requests.
+  // Kept below /health so health checks still respond even if Mongo is unreachable.
+  app.use(async (req, res, next) => {
+    try {
+      await ensureDatabaseConnected();
+      next();
+    } catch (error) {
+      next(error);
+    }
   });
 
   app.use("/api/auth", authRoutes);
