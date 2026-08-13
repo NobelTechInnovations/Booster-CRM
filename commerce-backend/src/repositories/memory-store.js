@@ -20,6 +20,8 @@ export const memory = {
   adInsights:     new Map(),
   skuCosts:       new Map(),
   automationRules: new Map(),
+  webhookEndpoints: new Map(),
+  webhookEvents:  new Map(),
 };
 
 export function id() {

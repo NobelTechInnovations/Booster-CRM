@@ -5,23 +5,40 @@ import {
   Bell,
   Building2,
   Check,
+  ChevronDown,
+  Copy,
+  CreditCard,
   KeyRound,
   Package,
   Percent,
   PlugZap,
+  Plus,
   Receipt,
+  RefreshCw,
   ShieldCheck,
+  ShoppingCart,
+  Trash2,
+  Truck,
   Users,
+  Webhook,
+  X,
 } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { cn } from "@/lib/utils";
 import {
   getCompanyProfile,
   updateTaxSettings,
   updateNotificationSettings,
   changeOwnPassword,
+  listWebhookEndpoints,
+  createWebhookEndpoint,
+  updateWebhookEndpoint,
+  deleteWebhookEndpoint,
+  listWebhookEvents,
+  webhookInboundUrl,
 } from "@/lib/api";
 
 function SectionCard({ icon: Icon, title, desc, children }) {
@@ -71,7 +88,354 @@ function Toggle({ checked, onChange, label, desc }) {
   );
 }
 
+// ─── Webhooks tab ────────────────────────────────────────────────────────────
+
+const WEBHOOK_TYPE_ICON_TONE = {
+  payment: "bg-emerald-50 text-emerald-700",
+  "cart-recovery": "bg-amber-50 text-amber-700",
+  shipping: "bg-blue-50 text-blue-700",
+  other: "bg-slate-100 text-slate-600",
+};
+
+const WEBHOOK_TYPE_META = {
+  payment: { label: "Payment", icon: CreditCard, tone: "green" },
+  "cart-recovery": { label: "Cart Recovery", icon: ShoppingCart, tone: "amber" },
+  shipping: { label: "Shipping", icon: Truck, tone: "blue" },
+  other: { label: "Other", icon: Webhook, tone: "slate" },
+};
+
+const PROVIDER_PRESETS = [
+  { value: "razorpay", label: "Razorpay", type: "payment" },
+  { value: "cashfree", label: "Cashfree", type: "payment" },
+  { value: "payu", label: "PayU", type: "payment" },
+  { value: "stripe", label: "Stripe", type: "payment" },
+  { value: "shiprocket-checkout", label: "Shiprocket Checkout", type: "cart-recovery" },
+  { value: "fastrr", label: "Fastrr", type: "cart-recovery" },
+  { value: "shiprocket", label: "Shiprocket (Shipping)", type: "shipping" },
+  { value: "custom", label: "Custom / Other", type: "other" },
+];
+
+function WebhookModal({ title, onClose, children, wide = false }) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm" onClick={onClose}>
+      <div
+        className={cn("max-h-[90vh] w-full overflow-y-auto rounded-lg border border-[var(--line)] bg-white shadow-xl", wide ? "max-w-2xl" : "max-w-md")}
+        onClick={(event) => event.stopPropagation()}
+      >
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3">
+          <h3 className="text-base font-semibold text-slate-950">{title}</h3>
+          <button className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" onClick={onClose} aria-label="Close">
+            <X size={18} />
+          </button>
+        </div>
+        <div className="p-4">{children}</div>
+      </div>
+    </div>
+  );
+}
+
+function CopyField({ value, mono = true }) {
+  const [copied, setCopied] = useState(false);
+  function copy() {
+    navigator.clipboard?.writeText(value);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+  return (
+    <div className="flex items-center gap-1.5">
+      <code className={cn("flex-1 truncate rounded bg-slate-100 px-2 py-1.5 text-[11px]", mono && "font-mono")}>{value}</code>
+      <button type="button" onClick={copy} className="shrink-0 rounded-md bg-slate-100 px-2 py-1.5 text-[11px] font-semibold hover:bg-slate-200">
+        {copied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
+      </button>
+    </div>
+  );
+}
+
+function AddEndpointModal({ onClose, onCreated }) {
+  const [provider, setProvider] = useState("razorpay");
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [created, setCreated] = useState(null); // holds { endpoint, inboundUrl } after successful create — one-time secret reveal
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setError("");
+    setSaving(true);
+    const preset = PROVIDER_PRESETS.find((p) => p.value === provider);
+    try {
+      const result = await createWebhookEndpoint({
+        name: name.trim() || preset?.label || provider,
+        provider,
+        type: preset?.type || "other",
+      });
+      setCreated(result);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (created) {
+    return (
+      <WebhookModal title="Webhook endpoint created" onClose={() => { onCreated(); onClose(); }}>
+        <div className="space-y-3">
+          <p className="rounded-md bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+            Copy the secret now — it won&apos;t be shown again. If you lose it, delete this endpoint and create a new one.
+          </p>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Webhook URL — paste into {created.endpoint.name}&apos;s dashboard</p>
+            <CopyField value={created.inboundUrl} />
+          </div>
+          <div>
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-slate-500">Signing secret — paste wherever that dashboard asks for one</p>
+            <CopyField value={created.endpoint.secret} />
+          </div>
+          <Button className="w-full" onClick={() => { onCreated(); onClose(); }}>Done</Button>
+        </div>
+      </WebhookModal>
+    );
+  }
+
+  return (
+    <WebhookModal title="Add webhook endpoint" onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <label className="block text-sm font-semibold text-slate-700">
+          Source
+          <select
+            className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            value={provider}
+            onChange={(e) => setProvider(e.target.value)}
+          >
+            {PROVIDER_PRESETS.map((p) => (
+              <option key={p.value} value={p.value}>{p.label}</option>
+            ))}
+          </select>
+        </label>
+        <label className="block text-sm font-semibold text-slate-700">
+          Label (optional)
+          <input
+            className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            placeholder="e.g. Razorpay — main account"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </label>
+        {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
+        <Button type="submit" className="w-full" disabled={saving}>{saving ? "Creating…" : "Create Endpoint"}</Button>
+      </form>
+    </WebhookModal>
+  );
+}
+
+function EndpointCard({ endpoint, onRefresh }) {
+  const meta = WEBHOOK_TYPE_META[endpoint.type] || WEBHOOK_TYPE_META.other;
+  const [busy, setBusy] = useState(false);
+
+  async function toggleStatus() {
+    setBusy(true);
+    try {
+      await updateWebhookEndpoint(endpoint._id || endpoint.id, { status: endpoint.status === "active" ? "inactive" : "active" });
+      await onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Remove "${endpoint.name}"? Events already received stay in the log, but new calls to its URL will be rejected.`)) return;
+    setBusy(true);
+    try {
+      await deleteWebhookEndpoint(endpoint._id || endpoint.id);
+      await onRefresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+      <div className="flex items-start justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <div className={cn("grid h-9 w-9 shrink-0 place-items-center rounded-lg", WEBHOOK_TYPE_ICON_TONE[endpoint.type] || WEBHOOK_TYPE_ICON_TONE.other)}>
+            <meta.icon size={16} />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate font-semibold text-slate-900">{endpoint.name}</p>
+            <p className="text-xs text-[var(--muted)]">{endpoint.provider}</p>
+          </div>
+        </div>
+        <Badge tone={endpoint.status === "active" ? "green" : "slate"}>{endpoint.status}</Badge>
+      </div>
+      <div className="mt-3">
+        <CopyField value={webhookInboundUrl(endpoint.token)} />
+      </div>
+      <div className="mt-2.5 flex items-center justify-between text-xs text-[var(--muted)]">
+        <span>{endpoint.eventCount || 0} event{endpoint.eventCount === 1 ? "" : "s"} received</span>
+        <span>{endpoint.lastEventAt ? new Date(endpoint.lastEventAt).toLocaleString("en-IN") : "never triggered"}</span>
+      </div>
+      <div className="mt-3 flex gap-2">
+        <Button variant="secondary" className="h-8 flex-1 text-xs" onClick={toggleStatus} disabled={busy}>
+          {endpoint.status === "active" ? "Pause" : "Activate"}
+        </Button>
+        <button
+          className="rounded-md p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
+          onClick={handleDelete}
+          disabled={busy}
+          aria-label="Delete endpoint"
+        >
+          <Trash2 size={15} />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EventRow({ event }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <>
+      <tr className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50/60" onClick={() => setExpanded((v) => !v)}>
+        <td className="py-2.5 pr-3 text-xs text-slate-500">{new Date(event.receivedAt).toLocaleString("en-IN")}</td>
+        <td className="py-2.5 pr-3"><Badge tone="slate">{event.provider}</Badge></td>
+        <td className="py-2.5 pr-3 text-xs font-medium text-slate-700">{event.type}</td>
+        <td className="py-2.5 pr-3 text-sm text-slate-800">{event.summary}</td>
+        <td className="py-2.5 pr-0 text-right">
+          <Badge tone={event.verified ? "green" : "amber"}>{event.verified ? "Verified" : "Unverified"}</Badge>
+        </td>
+      </tr>
+      {expanded ? (
+        <tr className="border-b border-slate-100 bg-slate-50/60">
+          <td colSpan={5} className="p-3">
+            <pre className="max-h-64 overflow-auto rounded-md bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
+              {JSON.stringify(event.payload, null, 2)}
+            </pre>
+          </td>
+        </tr>
+      ) : null}
+    </>
+  );
+}
+
+function WebhooksTab() {
+  const [endpoints, setEndpoints] = useState([]);
+  const [events, setEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [showAdd, setShowAdd] = useState(false);
+  const [filterEndpoint, setFilterEndpoint] = useState("");
+
+  async function refresh() {
+    setIsLoading(true);
+    try {
+      const [endpointsRes, eventsRes] = await Promise.all([
+        listWebhookEndpoints(),
+        listWebhookEvents(filterEndpoint ? { endpointId: filterEndpoint } : {}),
+      ]);
+      setEndpoints(endpointsRes.endpoints || []);
+      setEvents(eventsRes.events || []);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterEndpoint]);
+
+  return (
+    <div className="space-y-5">
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Webhook Endpoints</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Payment gateways, Shiprocket Checkout/Fastrr abandoned carts, or anything else that can push you a webhook — one URL per source, scoped to this brand only.
+            </p>
+          </div>
+          <Button onClick={() => setShowAdd(true)}>
+            <Plus size={16} />
+            Add Endpoint
+          </Button>
+        </CardHeader>
+        <CardContent>
+          {isLoading && !endpoints.length ? (
+            <p className="text-sm text-[var(--muted)]">Loading…</p>
+          ) : !endpoints.length ? (
+            <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--line)] bg-[var(--panel-soft)] px-4 py-8 text-center">
+              <Webhook size={22} className="text-slate-400" />
+              <p className="font-semibold text-slate-700">No webhook endpoints yet</p>
+              <p className="text-sm text-[var(--muted)]">Add one for Razorpay, Shiprocket Checkout, or any other source.</p>
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {endpoints.map((endpoint) => (
+                <EndpointCard key={endpoint._id || endpoint.id} endpoint={endpoint} onRefresh={refresh} />
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Recent Events</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">Latest first. Click a row for the raw payload.</p>
+          </div>
+          <div className="flex items-center gap-2">
+            <select
+              className="h-9 rounded-md border border-[var(--line)] bg-white px-2.5 text-xs outline-none focus:border-indigo-500"
+              value={filterEndpoint}
+              onChange={(e) => setFilterEndpoint(e.target.value)}
+            >
+              <option value="">All endpoints</option>
+              {endpoints.map((endpoint) => (
+                <option key={endpoint._id || endpoint.id} value={endpoint._id || endpoint.id}>{endpoint.name}</option>
+              ))}
+            </select>
+            <button onClick={refresh} className="rounded-md p-2 text-slate-500 hover:bg-slate-100" aria-label="Refresh">
+              <RefreshCw size={15} className={isLoading ? "animate-spin" : ""} />
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="overflow-x-auto">
+          {!events.length ? (
+            <p className="py-6 text-center text-sm text-[var(--muted)]">No events received yet.</p>
+          ) : (
+            <table className="w-full min-w-[720px] border-collapse text-sm">
+              <thead>
+                <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
+                  <th className="py-2.5 pr-3 font-semibold">Received</th>
+                  <th className="py-2.5 pr-3 font-semibold">Provider</th>
+                  <th className="py-2.5 pr-3 font-semibold">Type</th>
+                  <th className="py-2.5 pr-3 font-semibold">Summary</th>
+                  <th className="py-2.5 pr-0 text-right font-semibold">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {events.map((event) => (
+                  <EventRow key={event._id || event.id} event={event} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </CardContent>
+      </Card>
+
+      {showAdd ? <AddEndpointModal onClose={() => setShowAdd(false)} onCreated={refresh} /> : null}
+    </div>
+  );
+}
+
+const SETTINGS_TABS = [
+  { key: "general", label: "General", icon: Building2 },
+  { key: "webhooks", label: "Webhooks", icon: Webhook },
+];
+
 export function SettingsView() {
+  const [activeTab, setActiveTab] = useState("general");
   const [company, setCompany] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -162,7 +526,27 @@ export function SettingsView() {
         </p>
       </section>
 
-      {isLoading ? (
+      <div className="mb-6 flex flex-wrap gap-1 rounded-xl border border-[var(--line)] bg-white p-1.5 shadow-[0_1px_2px_rgba(15,23,42,0.04)]">
+        {SETTINGS_TABS.map((tab) => (
+          <button
+            key={tab.key}
+            onClick={() => setActiveTab(tab.key)}
+            className={cn(
+              "flex h-10 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-all",
+              activeTab === tab.key
+                ? "bg-gradient-to-b from-[#4338ca] to-[var(--primary)] text-white shadow-[0_4px_10px_-3px_rgba(55,48,163,0.55)]"
+                : "text-slate-600 hover:bg-slate-100",
+            )}
+          >
+            <tab.icon size={16} />
+            {tab.label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === "webhooks" ? <WebhooksTab /> : null}
+
+      {activeTab !== "general" ? null : isLoading ? (
         <div className="rounded-xl border border-[var(--line)] bg-white p-10 text-center text-sm text-[var(--muted)]">Loading settings…</div>
       ) : (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">

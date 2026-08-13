@@ -11,6 +11,7 @@ import { companyRoutes } from "./modules/company/company.routes.js";
 import { userRoutes } from "./modules/users/user.routes.js";
 import { shippingRoutes } from "./modules/shipping/shipping.routes.js";
 import { shopifyWebhookRoutes } from "./modules/webhooks/shopify-webhook.routes.js";
+import { webhookInboxRoutes } from "./modules/webhooks/webhook-inbox.routes.js";
 import { fulfillmentRoutes } from "./modules/fulfillment/fulfillment.routes.js";
 import { financeRoutes } from "./modules/finance/finance.routes.js";
 import { adsRoutes } from "./modules/ads/ads.routes.js";
@@ -28,7 +29,11 @@ export function createApp() {
     }),
   );
   app.use(helmet());
-  app.use(express.json({ limit: "1mb" }));
+  // Captures the exact raw bytes alongside the parsed body — needed for inbound
+  // webhook signature verification (webhook.service.js's verifyWebhookSignature),
+  // since HMAC must be computed over the exact bytes the sender signed, not a
+  // re-serialized JSON.stringify(req.body) which can differ in whitespace/key order.
+  app.use(express.json({ limit: "1mb", verify: (req, _res, buf) => { req.rawBody = buf.toString("utf8"); } }));
   app.use(morgan(env.nodeEnv === "production" ? "combined" : "dev"));
 
   app.get("/health", (_req, res) => {
@@ -61,6 +66,7 @@ export function createApp() {
   app.use("/api/channels", channelRoutes);
   app.use("/api/shipping", shippingRoutes);
   app.use("/api/webhooks/shopify", shopifyWebhookRoutes);
+  app.use("/api/webhooks", webhookInboxRoutes);
   app.use("/api/fulfillment", fulfillmentRoutes);
   app.use("/api/finance", financeRoutes);
   app.use("/api/ads", adsRoutes);
