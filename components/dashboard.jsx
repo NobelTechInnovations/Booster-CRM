@@ -66,6 +66,8 @@ import {
   createAmazonConnection,
   createAmazonPrivateConnection,
   createShopifyConnection,
+  saveShopifySetup,
+  SHOPIFY_OAUTH_REDIRECT_URI,
   getChannelDashboard,
   getProductMappingOptions,
   getSession,
@@ -535,16 +537,30 @@ function ChannelsPanel({
   );
 }
 
+// Every brand connects with their OWN Shopify app's Client ID + Secret (Dev
+// Dashboard, dev.shopify.com — Shopify no longer offers a static-token
+// "custom app" option on newer stores, so this OAuth path is the only
+// reliable one). Falls back to the shared app on the backend if a brand
+// hasn't set their own — see getEffectiveShopifyAppConfig() server-side.
 function ShopifyConnectForm({ compact = false }) {
   const [shop, setShop] = useState(defaultShopifyShop);
+  const [appKey, setAppKey] = useState("");
+  const [appSecret, setAppSecret] = useState("");
   const [connectError, setConnectError] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   async function handleConnect(event) {
     event.preventDefault();
     setConnectError("");
     setIsConnecting(true);
     try {
+      // Only saves credentials when both are filled in — an empty submit
+      // falls back to the shared app on the backend, unchanged behaviour.
+      if (appKey.trim() && appSecret.trim()) {
+        await saveShopifySetup({ apiKey: appKey.trim(), apiSecret: appSecret.trim() });
+      }
       const result = await createShopifyConnection(shop);
       window.location.href = result.installUrl;
     } catch (error) {
@@ -553,29 +569,67 @@ function ShopifyConnectForm({ compact = false }) {
     }
   }
 
+  function copyRedirectUri() {
+    navigator.clipboard?.writeText(SHOPIFY_OAUTH_REDIRECT_URI);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
   return (
-    <form onSubmit={handleConnect} className="space-y-3">
+    <form onSubmit={handleConnect} className="space-y-2.5">
+      <input
+        id={compact ? "shopify-shop-compact" : "shopify-shop"}
+        className="h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 placeholder:text-slate-400"
+        placeholder="your-store.myshopify.com"
+        value={shop}
+        onChange={(event) => setShop(event.target.value)}
+      />
+      <input
+        className="h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 placeholder:text-slate-400"
+        placeholder="Client ID (leave blank to use the shared app)"
+        value={appKey}
+        onChange={(event) => setAppKey(event.target.value)}
+      />
+      <input
+        type="password"
+        className="h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 placeholder:text-slate-400"
+        placeholder="Client Secret"
+        value={appSecret}
+        onChange={(event) => setAppSecret(event.target.value)}
+      />
+      <button
+        type="button"
+        onClick={() => setShowHelp((v) => !v)}
+        className="flex items-center gap-1 text-[11px] font-semibold text-emerald-700 hover:underline"
+      >
+        {showHelp ? "Hide" : "Where do I get this?"}
+        <ChevronDown size={12} className={cn("transition-transform", showHelp && "rotate-180")} />
+      </button>
+      {showHelp ? (
+        <div className="space-y-1.5 rounded-lg bg-slate-50 p-3 text-[11px] leading-5 text-slate-600">
+          <p>
+            In this brand&apos;s own Shopify <strong>Dev Dashboard</strong> app (dev.shopify.com) → Settings → URLs — set:
+          </p>
+          <p><strong>App URL</strong>: <code className="rounded bg-slate-200 px-1">https://booster-backend-steel.vercel.app</code></p>
+          <p><strong>Redirect URL</strong>:</p>
+          <div className="flex items-center gap-1.5">
+            <code className="flex-1 truncate rounded bg-slate-200 px-2 py-1 text-[10px]">{SHOPIFY_OAUTH_REDIRECT_URI}</code>
+            <button type="button" onClick={copyRedirectUri} className="shrink-0 rounded bg-slate-200 px-2 py-1 text-[10px] font-semibold hover:bg-slate-300">
+              {copied ? "Copied" : "Copy"}
+            </button>
+          </div>
+          <p>Then paste that app&apos;s Client ID/Secret (Settings → Credentials) above — saved once, reused every sync.</p>
+        </div>
+      ) : null}
       <Button type="submit" className="w-full h-10 font-semibold" disabled={isConnecting}>
         <PlugZap size={16} />
         {isConnecting ? "Opening Shopify…" : "Connect with Shopify"}
       </Button>
-      <div className="relative">
-        <input
-          id={compact ? "shopify-shop-compact" : "shopify-shop"}
-          className="h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-100 placeholder:text-slate-400"
-          placeholder="Dev store: your-store.myshopify.com"
-          value={shop}
-          onChange={(event) => setShop(event.target.value)}
-        />
-      </div>
       {connectError ? (
         <p className="flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-2 text-xs font-medium text-rose-700">
           <span>⚠</span>{connectError}
         </p>
       ) : null}
-      <p className="text-[11px] leading-4 text-slate-500">
-        Installs the public app via Shopify OAuth. For dev stores, enter the domain above.
-      </p>
     </form>
   );
 }

@@ -8,8 +8,24 @@ import {
   addShopifyWebhookRecord,
 } from "../../repositories/channel.repo.js";
 import { saveSyncedShopifyData, getCommerceRecordForUpdate } from "../../repositories/order.repo.js";
+import { getShopifyConfig } from "../../repositories/company.repo.js";
 import { HttpError } from "../../utils/http-error.js";
 import { createOauthState, readOauthState } from "../../utils/oauth-state.js";
+
+// Every brand can OAuth through THEIR OWN Shopify app (Dev Dashboard →
+// "Custom" distribution) instead of the one shared app in env.shopify.* —
+// falls back to the shared app when a company hasn't set up its own, so
+// existing OAuth connections (e.g. Sukirti) are unaffected. The redirect URI
+// is always the same single backend callback regardless of which app is
+// used — each brand just needs to whitelist that one URL inside their own
+// app's "Redirect URLs" field once, no coordination with us needed.
+async function getEffectiveShopifyAppConfig(companyId) {
+  const custom = await getShopifyConfig(companyId, { includeSecret: true });
+  if (custom?.apiKey && custom?.apiSecret) {
+    return { apiKey: custom.apiKey, apiSecret: custom.apiSecret, custom: true };
+  }
+  return { apiKey: env.shopify.apiKey, apiSecret: env.shopify.apiSecret, custom: false };
+}
 
 export function normalizeShop(shop) {
   const cleaned = String(shop || "")
@@ -29,15 +45,16 @@ export function normalizeShop(shop) {
   return cleaned;
 }
 
-export function buildShopifyInstallUrl({ shop, companyId, userId }) {
+export async function buildShopifyInstallUrl({ shop, companyId, userId }) {
   if (!shop && env.shopify.installUrl) {
     return env.shopify.installUrl;
   }
 
-  if (!env.shopify.apiKey || !env.shopify.apiSecret) {
+  const config = await getEffectiveShopifyAppConfig(companyId);
+  if (!config.apiKey || !config.apiSecret) {
     throw new HttpError(
       500,
-      "Shopify app credentials are not configured. Add SHOPIFY_API_KEY and SHOPIFY_API_SECRET in commerce-backend/.env, then restart the backend.",
+      "Shopify app credentials are not configured. Either set up this brand's own app (Client ID/Secret) on the Shopify card, or add SHOPIFY_API_KEY and SHOPIFY_API_SECRET in commerce-backend/.env for the shared app.",
     );
   }
 
@@ -45,7 +62,7 @@ export function buildShopifyInstallUrl({ shop, companyId, userId }) {
   const state = createOauthState({ companyId, userId, shop: normalizedShop });
   const redirectUri = `${env.shopify.appUrl}/api/channels/shopify/callback`;
   const params = new URLSearchParams({
-    client_id: env.shopify.apiKey,
+    client_id: config.apiKey,
     scope: env.shopify.scopes,
     redirect_uri: redirectUri,
     state,
@@ -54,8 +71,8 @@ export function buildShopifyInstallUrl({ shop, companyId, userId }) {
   return `https://${normalizedShop}/admin/oauth/authorize?${params.toString()}`;
 }
 
-export function verifyShopifyHmac(query) {
-  if (!env.shopify.apiSecret) {
+export function verifyShopifyHmac(query, apiSecret) {
+  if (!apiSecret) {
     throw new HttpError(500, "Shopify API secret is not configured");
   }
 
@@ -70,7 +87,7 @@ export function verifyShopifyHmac(query) {
     .map((key) => `${key}=${Array.isArray(rest[key]) ? rest[key].join(",") : rest[key]}`)
     .join("&");
 
-  const digest = crypto.createHmac("sha256", env.shopify.apiSecret).update(message).digest("hex");
+  const digest = crypto.createHmac("sha256", apiSecret).update(message).digest("hex");
   const expected = Buffer.from(digest, "utf8");
   const actual = Buffer.from(String(hmac), "utf8");
 
@@ -145,13 +162,13 @@ function getNextPageInfo(linkHeader) {
   return match ? decodeURIComponent(match[1]) : "";
 }
 
-export async function exchangeCodeForAccessToken(shop, code) {
+export async function exchangeCodeForAccessToken(shop, code, config = { apiKey: env.shopify.apiKey, apiSecret: env.shopify.apiSecret }) {
   const response = await fetch(`https://${shop}/admin/oauth/access_token`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      client_id: env.shopify.apiKey,
-      client_secret: env.shopify.apiSecret,
+      client_id: config.apiKey,
+      client_secret: config.apiSecret,
       code,
     }),
   });
@@ -625,16 +642,21 @@ export async function registerShopifyWebhooks(shop, accessToken, channelId, comp
 }
 
 export async function completeShopifyConnection(query) {
-  verifyShopifyHmac(query);
-
   const shop = normalizeShop(query.shop);
+  // Read (and signature-verify, via our own JWT_SECRET) our state token first —
+  // it's independent of Shopify's HMAC below and tells us which company/brand
+  // initiated this, which in turn tells us WHICH app's secret to verify the
+  // Shopify HMAC against (the brand's own app, or the shared one as fallback).
   const state = readOauthState(query.state);
 
   if (state.shop !== shop) {
     throw new HttpError(400, "Shopify state does not match shop");
   }
 
-  const { accessToken, scopes } = await exchangeCodeForAccessToken(shop, query.code);
+  const config = await getEffectiveShopifyAppConfig(state.companyId);
+  verifyShopifyHmac(query, config.apiSecret);
+
+  const { accessToken, scopes } = await exchangeCodeForAccessToken(shop, query.code, config);
   const shopDetails = await fetchShopDetails(shop, accessToken);
 
   const channel = await upsertShopifyChannel({

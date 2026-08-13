@@ -49,6 +49,14 @@ const companySchema = new mongoose.Schema(
         syncDays: { type: Number, default: 30 },
         draftMode: { type: Boolean, default: true },
       },
+      // Per-brand Shopify app credentials — lets each company OAuth through
+      // their OWN Shopify app (Dev Dashboard, "Custom" distribution) instead
+      // of the one shared app in env.shopify.*. Falls back to the shared app
+      // when unset, so existing companies (e.g. Sukirti) are unaffected.
+      shopify: {
+        apiKey: String,
+        apiSecret: { type: String, select: false },
+      },
     },
     taxSettings: {
       gstRate: { type: Number, default: 5 },        // applicable GST % for invoices/reports

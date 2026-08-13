@@ -15,7 +15,7 @@ import {
   getSavedCommerceData,
   getDashboardSummary,
 } from "../../repositories/order.repo.js";
-import { updateAmazonConfig } from "../../repositories/company.repo.js";
+import { updateAmazonConfig, updateShopifyConfig } from "../../repositories/company.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
@@ -27,7 +27,13 @@ import {
   createAmazonPendingState,
   syncAmazonData,
 } from "./amazon.service.js";
-import { buildShopifyInstallUrl, completeShopifyConnection, syncShopifyData, updateShopifyRecord, createShopifyOrderDirect } from "./shopify.service.js";
+import {
+  buildShopifyInstallUrl,
+  completeShopifyConnection,
+  syncShopifyData,
+  updateShopifyRecord,
+  createShopifyOrderDirect,
+} from "./shopify.service.js";
 import { isMongoConnected } from "../../config/database.js";
 import { SyncedCustomer } from "../../models/synced-customer.model.js";
 import { upsertSingleOrder } from "../../repositories/order.repo.js";
@@ -351,13 +357,30 @@ channelRoutes.post(
   "/shopify/connect",
   requireAuth,
   asyncHandler(async (req, res) => {
-    const installUrl = buildShopifyInstallUrl({
+    const installUrl = await buildShopifyInstallUrl({
       shop: req.body.shop || "",
       companyId: req.auth.companyId,
       userId: req.auth.sub,
     });
 
     res.json({ provider: "shopify", installUrl });
+  }),
+);
+
+channelRoutes.put(
+  "/shopify/setup",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await updateShopifyConfig({
+      companyId: req.auth.companyId,
+      payload: req.body || {},
+    });
+
+    if (result.error) {
+      throw new HttpError(400, result.error);
+    }
+
+    res.json({ message: "Shopify app credentials saved", config: result.config });
   }),
 );
 

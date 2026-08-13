@@ -175,6 +175,39 @@ export async function updateAmazonConfig({ companyId, payload }) {
   return { config: { ...amazon, clientSecret: undefined } };
 }
 
+export async function getShopifyConfig(companyId, { includeSecret = false } = {}) {
+  if (isMongoConnected()) {
+    const query = Company.findById(companyId);
+    if (includeSecret) query.select("+integrations.shopify.apiSecret");
+    const company = await query.lean();
+    return company?.integrations?.shopify || null;
+  }
+  return clone(memory.companies.get(companyId)?.integrations?.shopify || null);
+}
+
+export async function updateShopifyConfig({ companyId, payload }) {
+  const existing = await getShopifyConfig(companyId, { includeSecret: true });
+  const shopify = {
+    apiKey: String(payload.apiKey || "").trim(),
+    apiSecret: String(payload.apiSecret || existing?.apiSecret || "").trim(),
+  };
+
+  if (!shopify.apiKey || !shopify.apiSecret) {
+    return { error: "Shopify Client ID and Client Secret are required" };
+  }
+
+  if (isMongoConnected()) {
+    const company = await Company.findByIdAndUpdate(companyId, { $set: { "integrations.shopify": shopify } }, { returnDocument: "after" }).lean();
+    return { config: { ...company.integrations.shopify, apiSecret: undefined } };
+  }
+
+  const company = memory.companies.get(companyId);
+  if (!company) return { error: "Company not found" };
+  company.integrations = { ...company.integrations, shopify };
+  company.updatedAt = now();
+  return { config: { ...shopify, apiSecret: undefined } };
+}
+
 export async function updateCompanyProfile({ companyId, payload }) {
   const update = cleanCompanyPayload(payload);
   if (!update.name) return { error: "Company name is required" };
