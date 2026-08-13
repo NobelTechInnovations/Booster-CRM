@@ -88,7 +88,6 @@ const tabs = [
 const rangePresets = [
   { key: "today", label: "Today" },
   { key: "yesterday", label: "Yesterday" },
-  { key: "week", label: "This Week" },
   { key: "month", label: "This Month" },
   { key: "7d", label: "Last 7 Days" },
   { key: "30d", label: "Last 30 Days" },
@@ -477,12 +476,12 @@ function ExpenseFormModal({ onClose, onSaved, initial }) {
   const [form, setForm] = useState(
     initial
       ? {
-          category: initial.category || "other",
-          description: initial.description || "",
-          amount: initial.amount ?? "",
-          date: isoDay(new Date(initial.date)),
-          paymentMethod: initial.paymentMethod || "",
-        }
+        category: initial.category || "other",
+        description: initial.description || "",
+        amount: initial.amount ?? "",
+        date: isoDay(new Date(initial.date)),
+        paymentMethod: initial.paymentMethod || "",
+      }
       : { category: "other", description: "", amount: "", date: isoDay(new Date()), paymentMethod: "" },
   );
   const [splits, setSplits] = useState(initial?.splitBetween?.length ? initial.splitBetween : []);
@@ -491,7 +490,7 @@ function ExpenseFormModal({ onClose, onSaved, initial }) {
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    listUsers().then((res) => setUsers(res.users || [])).catch(() => {});
+    listUsers().then((res) => setUsers(res.users || [])).catch(() => { });
   }, []);
 
   function setField(key, value) {
@@ -638,7 +637,7 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
 
   useEffect(() => {
     if (!range) return;
-    getExpensesByPartner(range).then(setPartnerSummary).catch(() => {});
+    getExpensesByPartner(range).then(setPartnerSummary).catch(() => { });
   }, [range, expenses]);
 
   async function handleDelete(expenseId) {
