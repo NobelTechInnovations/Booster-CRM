@@ -11,6 +11,19 @@ import { listSkuCosts } from "./sku-cost.repo.js";
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
 function isCodPayment(order) {
+  // financial_status is Shopify's own authoritative record of whether money has
+  // actually been collected. "paid" (or refunded/voided, which implies it WAS
+  // paid) must win over every heuristic below, no matter what the checkout app
+  // is called — apps like Fastrr specifically exist to convert COD orders to
+  // prepaid, but can leave "cod" in their gateway name / tags even on orders
+  // they successfully converted. Trusting that substring over financial_status
+  // was flagging real prepaid orders as COD, which fed COD-tier (higher)
+  // freight rates into the Ship Order rate check for orders that were never
+  // actually COD.
+  if (["paid", "partially_paid", "refunded", "partially_refunded", "voided"].includes(order.financial_status)) {
+    return false;
+  }
+
   const paymentGatewayNames = order.payment_gateway_names || [];
   const gatewayMatch = paymentGatewayNames.some((name) =>
     String(name).toLowerCase().includes("cod") ||

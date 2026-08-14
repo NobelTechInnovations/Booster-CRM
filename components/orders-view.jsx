@@ -96,31 +96,53 @@ function InvoiceModal({ order, company, onClose }) {
   const taxableValue = Math.round((total / (1 + gstRate / 100)) * 100) / 100;
   const taxAmount = Math.round((total - taxableValue) * 100) / 100;
   const itemsTotal = lineItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
+  const discount = Number(order.totalDiscounts || 0);
 
+  // Printing via the page's own CSS ("hide everything except the invoice")
+  // turned out unreliable — a display:none/revert combo that should work per
+  // spec rendered a fully blank page in practice. This sidesteps that whole
+  // class of bug: open a bare new window, copy over the app's actual compiled
+  // stylesheets (so Tailwind classes still apply), write ONLY the invoice's
+  // markup into it, and print that in total isolation from the rest of the app.
   function handlePrint() {
-    window.print();
+    const invoiceEl = document.getElementById("invoice-printable");
+    if (!invoiceEl) return;
+
+    const printWindow = window.open("", "_blank", "width=800,height=1100");
+    if (!printWindow) {
+      // Popup blocked — fall back to printing the current page as-is.
+      window.print();
+      return;
+    }
+
+    const styleTags = [...document.querySelectorAll('link[rel="stylesheet"], style')].map((el) => el.outerHTML).join("\n");
+
+    printWindow.document.write(`<!DOCTYPE html>
+<html>
+  <head>
+    <title>${invoiceNumber}</title>
+    ${styleTags}
+    <style>
+      @page { size: A4; margin: 10mm; }
+      html, body { margin: 0; padding: 0; background: #fff; }
+      #invoice-printable { border: none !important; border-radius: 0 !important; box-shadow: none !important; }
+    </style>
+  </head>
+  <body>${invoiceEl.outerHTML}</body>
+</html>`);
+    printWindow.document.close();
+
+    // Give the copied stylesheets a moment to actually apply before printing —
+    // printing immediately on write can catch the page unstyled.
+    printWindow.onload = () => {
+      printWindow.focus();
+      printWindow.print();
+      printWindow.close();
+    };
   }
 
   return (
-    <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm print:static print:bg-white print:p-0 print:backdrop-blur-none">
-      <style>{`
-        @page { size: A4; margin: 10mm; }
-        @media print {
-          /* display:none (not visibility:hidden) actually removes hidden nodes from
-             layout — visibility:hidden keeps their box height, so Chrome paginated
-             the entire (long, scrollable) dashboard behind the modal as blank pages. */
-          body * { display: none !important; }
-          #invoice-printable, #invoice-printable * { display: revert !important; }
-          #invoice-printable {
-            position: static !important;
-            width: 100% !important;
-            box-shadow: none !important;
-            border: none !important;
-            border-radius: 0 !important;
-            font-size: 11px !important;
-          }
-        }
-      `}</style>
+    <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm">
       <div className="mx-auto w-full max-w-xl">
         {/* Screen-only toolbar */}
         <div className="no-print mb-3 flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-lg">
@@ -222,6 +244,11 @@ function InvoiceModal({ order, company, onClose }) {
                   <div className="flex justify-between text-slate-500">
                     <span>Items Total</span><span className="font-medium text-slate-700">₹{itemsTotal.toFixed(2)}</span>
                   </div>
+                  {discount > 0 ? (
+                    <div className="flex justify-between text-slate-500">
+                      <span>Discount</span><span className="font-medium text-rose-600">−₹{discount.toFixed(2)}</span>
+                    </div>
+                  ) : null}
                   <div className="flex justify-between text-slate-500">
                     <span>Taxable Value</span><span className="font-medium text-slate-700">₹{taxableValue.toFixed(2)}</span>
                   </div>

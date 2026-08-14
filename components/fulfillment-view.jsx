@@ -86,100 +86,46 @@ function CourierSelectModal({
         codAmount: order?.totalPrice || 0,
       });
 
+      // Only ever show what the provider actually returned — no invented
+      // rates, courier names, or ETDs when a field is missing. This used to
+      // fabricate a plausible-looking price whenever `rate` was absent
+      // (base 48-65 + made-up per-courier-name additions), and invented
+      // entire fake couriers ("{provider} Express Delivery" etc, later
+      // caught as "no company with this name") whenever parsing failed or
+      // the request errored outright. A courier entry with no usable rate
+      // is dropped rather than guessed; if the provider returns nothing
+      // usable at all, that's shown as a real empty/error state below.
       const raw = res.result?.serviceability_results || res.data || res.courier_companies || res || [];
-      let list = [];
+      const rawList = Array.isArray(raw) ? raw : (raw.available_couriers || raw.couriers || (typeof raw === "object" ? Object.values(raw) : []));
 
-      if (Array.isArray(raw)) {
-        list = raw.map((c, index) => {
-          const nameStr = c.carrier_name || c.courier_name || c.name || `${provider.toUpperCase()} Carrier ${index + 1}`;
-          const nameLower = nameStr.toLowerCase();
-          let baseRate = Number(c.rate || c.freight_charge || c.total_charge || c.price);
-
-          if (!baseRate || isNaN(baseRate)) {
-            baseRate = order?.isCOD ? 65 : 48;
-            if (nameLower.includes("bluedart") || nameLower.includes("air")) baseRate += 32;
-            else if (nameLower.includes("delhivery")) baseRate += 18;
-            else if (nameLower.includes("dtdc")) baseRate += 12;
-            else if (nameLower.includes("ekart")) baseRate += 6;
-            else if (nameLower.includes("special") || nameLower.includes("fast")) baseRate += 22;
-            else if (nameLower.includes("surface") || nameLower.includes("economy")) baseRate = Math.max(35, baseRate - 10);
-            baseRate += (index * 4); // Slight variance for distinct visual rates
-          }
-
-          let modeStr = c.mode;
-          if (!modeStr) {
-            if (nameLower.includes("air") || nameLower.includes("bluedart")) modeStr = "Air Express";
-            else if (nameLower.includes("surface")) modeStr = "Surface Standard";
-            else modeStr = order?.isCOD ? "COD Priority" : "Express Ground";
-          }
+      const list = (Array.isArray(rawList) ? rawList : [])
+        .map((c, index) => {
+          const rate = Number(c.rate ?? c.freight_charge ?? c.total_charge ?? c.price);
+          const name = c.carrier_name || c.courier_name || c.name;
+          if (!name || !Number.isFinite(rate) || rate <= 0) return null; // incomplete entry — don't guess, don't show it
 
           return {
-            courierId: String(c.carrier_id || c.id || c.courier_company_id || c.carrier_name || `carrier_${index}`),
-            name: nameStr,
-            rate: Math.round(baseRate),
-            etd: c.etd || c.estimated_delivery_days || c.expected_delivery_date || (nameLower.includes("air") ? "1-2 Days" : "3-5 Days"),
-            mode: modeStr,
+            courierId: String(c.carrier_id || c.id || c.courier_company_id || `carrier_${index}`),
+            name,
+            rate: Math.round(rate),
+            ratePreGst: c.rate_pre_gst,
+            gstAmount: c.gst_amount,
+            etd: c.etd || c.estimated_delivery_days || c.expected_delivery_date || "",
+            mode: c.mode || "",
             raw: c,
           };
-        });
-      } else if (typeof raw === "object") {
-        const items = raw.available_couriers || raw.couriers || Object.values(raw);
-        if (Array.isArray(items) && items.length > 0) {
-          list = items.map((c) => ({
-            courierId: String(c.id || c.courier_company_id || c.courier_name || "standard"),
-            name: c.courier_name || c.name || "Standard Courier",
-            rate: Number(c.rate || c.freight_charge || c.total_charge) || 55,
-            etd: c.etd || c.estimated_delivery_days || "2-3 Days",
-            mode: c.mode || "Surface",
-            raw: c,
-          }));
-        } else {
-          list = [
-            {
-              courierId: "express",
-              name: `${provider.toUpperCase()} Express Delivery`,
-              rate: order?.isCOD ? 65 : 49,
-              etd: "2-3 Business Days",
-              mode: order?.isCOD ? "COD Priority" : "Prepaid Express",
-            },
-            {
-              courierId: "surface",
-              name: `${provider.toUpperCase()} Surface Economy`,
-              rate: order?.isCOD ? 45 : 35,
-              etd: "4-6 Business Days",
-              mode: "Surface Standard",
-            },
-          ];
-        }
-      }
-
-      if (!list.length) {
-        list = [
-          {
-            courierId: "standard",
-            name: `${provider.toUpperCase()} Standard Delivery`,
-            rate: order?.isCOD ? 55 : 45,
-            etd: "3-5 Days",
-            mode: order?.isCOD ? "COD" : "Prepaid",
-          },
-        ];
-      }
+        })
+        .filter(Boolean);
 
       setCourierOptions(list);
-      setSelectedCourier(list[0]);
+      setSelectedCourier(list[0] || null);
+      if (!list.length) {
+        setRateError(`${provider} returned no usable courier rate for this route. Try a different provider, or re-check the pickup/delivery PIN codes.`);
+      }
     } catch (err) {
-      setRateError(`Notice: ${err.message}`);
-      const fallbackList = [
-        {
-          courierId: "standard_express",
-          name: `${provider.toUpperCase()} Direct Shipping`,
-          rate: order?.isCOD ? 60 : 50,
-          etd: "3-4 Days",
-          mode: order?.isCOD ? "COD" : "Prepaid",
-        },
-      ];
-      setCourierOptions(fallbackList);
-      setSelectedCourier(fallbackList[0]);
+      setCourierOptions([]);
+      setSelectedCourier(null);
+      setRateError(err.message);
     } finally {
       setRatesLoading(false);
     }

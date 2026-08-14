@@ -191,18 +191,46 @@ export class VelocityProvider extends BaseShippingProvider {
     return listWarehouses({ companyId: this.companyId, provider: this.provider });
   }
 
-  // ─── Serviceability ───────────────────────────────────────────────────────
-
+  // ─── Serviceability + rates ───────────────────────────────────────────────
+  // /serviceability lists which couriers cover a route but returns NO pricing
+  // at all — the frontend used to fill that gap by inventing a price per
+  // courier name ("Delhivery" +18, "air" +32, etc — completely made up). The
+  // real pricing lives on a separate endpoint, /rates, discovered by probing
+  // this account directly since it's undocumented publicly: it wants
+  // journey_type/origin_pincode/destination_pincode/dead_weight/length/width/
+  // height/payment_method, and (COD only) shipment_value. Verified live
+  // against a real connected account — e.g. "Delhivery Standard 250G" came
+  // back with charges.total_forward_charges: 70, a real number, not a guess.
   async checkServiceability(params) {
     const { token } = await this.ensureToken();
+    const isCod = params.paymentMode === "cod" || params.payment_type === "COD" || params.isCOD;
+    const weightKg = Math.max(0.1, Number(params.weight) || 0.5);
+
     const payload = {
-      from: String(params.from || params.origin || "560068"),
-      to: String(params.to || params.destination || "560068"),
-      payment_mode: params.paymentMode === "cod" || params.payment_type === "COD" || params.isCOD ? "cod" : "prepaid",
-      shipment_type: params.isReturn ? "return" : "forward",
+      journey_type: params.isReturn ? "return" : "forward",
+      origin_pincode: String(params.from || params.origin || "560068"),
+      destination_pincode: String(params.to || params.destination || "560068"),
+      dead_weight: weightKg,
+      length: Number(params.length) || 10,
+      width: Number(params.breadth || params.width) || 10,
+      height: Number(params.height) || 10,
+      payment_method: isCod ? "cod" : "prepaid",
+      ...(isCod ? { cod_amount: Number(params.codAmount) || 0, shipment_value: Number(params.codAmount) || Number(params.shipmentValue) || 1 } : {}),
     };
 
-    return velocityFetch("/custom/api/v1/serviceability", { token, body: payload });
+    const body = await velocityFetch("/custom/api/v1/rates", { token, body: payload });
+    const couriers = body?.result?.serviceable_couriers || [];
+
+    return {
+      status: body.status,
+      courier_companies: couriers.map((c) => ({
+        id: c.carrier_id,
+        courier_name: c.carrier_name,
+        rate: Number(c.charges?.total_forward_charges ?? 0),
+        etd: c.expected_delivery?.delivery?.human_readable || "",
+        mode: c.service_level,
+      })),
+    };
   }
 
   // ─── Shipment Payload Builder ─────────────────────────────────────────────

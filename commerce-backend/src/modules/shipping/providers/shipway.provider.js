@@ -172,46 +172,37 @@ export class ShipwayProvider extends BaseShippingProvider {
       payment_type: paymentMode === "cod" ? "COD" : "Prepaid",
     };
 
-    try {
-      const query = new URLSearchParams(payload);
-      const res = await shipwayFetch(`/checkserviceability?${query.toString()}`, {
-        method: "GET",
-        username,
-        password,
-      });
-      if (res) return res;
-    } catch (err) {
+    // Shipway's exact public endpoint for this isn't consistently documented
+    // (their docs portal is JS-rendered, not crawlable) — these are the
+    // candidate paths found across their PDF docs and third-party SDK
+    // references. Tried in order; the first one that actually returns
+    // courier/rate data wins. IMPORTANT: this previously fell back to
+    // hardcoded fake data ("Shipway Express Air" / "Shipway Surface Economy",
+    // rates that were never real) when every attempt failed — that's removed.
+    // If nothing here is right for this account, it now fails loudly with the
+    // real error instead of quietly showing invented numbers.
+    const attempts = [
+      { method: "GET", path: `/checkserviceability?${new URLSearchParams(payload).toString()}` },
+      { method: "POST", path: "/checkserviceability", body: payload },
+      { method: "GET", path: `/couriers/pincode-availability?${new URLSearchParams(payload).toString()}` },
+      { method: "POST", path: "/couriers/rates", body: payload },
+    ];
+
+    const errors = [];
+    for (const attempt of attempts) {
       try {
-        const res = await shipwayFetch("/checkserviceability", {
-          method: "POST",
-          username,
-          password,
-          body: payload,
-        });
-        if (res) return res;
-      } catch (postErr) {
-        // Fallback response so rate modal is never blocked
-        return {
-          status: "success",
-          courier_companies: [
-            {
-              id: "shipway_express",
-              courier_name: "Shipway Express Air",
-              rate: paymentMode === "cod" ? 65 : 49,
-              etd: "2-3 Days",
-              mode: paymentMode === "cod" ? "COD Priority" : "Air Express",
-            },
-            {
-              id: "shipway_surface",
-              courier_name: "Shipway Surface Economy",
-              rate: paymentMode === "cod" ? 45 : 35,
-              etd: "4-5 Days",
-              mode: "Surface Economy",
-            },
-          ],
-        };
+        const res = await shipwayFetch(attempt.path, { method: attempt.method, username, password, body: attempt.body });
+        const hasCouriers = res?.courier_companies?.length || res?.couriers?.length || res?.data?.length;
+        if (hasCouriers) return res;
+      } catch (err) {
+        errors.push(`${attempt.method} ${attempt.path}: ${err.message}`);
       }
     }
+
+    throw new HttpError(
+      502,
+      `Shipway didn't return courier rates for this route on any known endpoint. This account/API surface may need the exact endpoint confirmed against your Shipway dashboard (apidocs.shipway.com). Attempts: ${errors.join(" | ")}`,
+    );
   }
 
   buildShipmentPayload(order, warehouse, options = {}) {
