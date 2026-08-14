@@ -331,7 +331,7 @@ export async function updateShippingChannelToken({ channelId, companyId, token, 
 }
 
 export async function listShippingChannels(companyId) {
-  const SHIPPING_PROVIDERS = ["velocity", "shiprocket", "shipway", "shipmozo"];
+  const SHIPPING_PROVIDERS = ["velocity", "shiprocket", "shipway", "shipmozo", "delhivery"];
 
   if (isMongoConnected()) {
     // Return channels that are explicitly typed as shipping OR have a known shipping provider

@@ -1,4 +1,4 @@
-import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus } from "../../repositories/order.repo.js";
+import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus, createLocalOrder } from "../../repositories/order.repo.js";
 import { getWarehouseByExternalId, listWarehouses } from "../../repositories/warehouse.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
@@ -23,6 +23,19 @@ export async function getFulfillmentOrders(companyId, { page = 1, limit = 100 } 
 export async function getFulfilledOrders(companyId, { page = 1, limit = 200 } = {}) {
   const orders = await listFulfilledOrders(companyId, { page, limit });
   return { orders };
+}
+
+/**
+ * Creates an order directly in the panel — no Shopify/Amazon involved (phone
+ * orders, walk-ins, anything placed outside a connected sales channel). It
+ * lands in the same "ready to ship" queue as every synced order, so from
+ * here on it's shipped exactly the way any other order is — via shipOrder()
+ * below, same Ship Order flow, same providers, same everything.
+ */
+export async function createManualOrder({ companyId, customer, shippingAddress, lineItems, isCOD, note }) {
+  const result = await createLocalOrder({ companyId, customer, shippingAddress, lineItems, isCOD, note });
+  if (result.error) throw new HttpError(400, result.error);
+  return result.order;
 }
 
 /**

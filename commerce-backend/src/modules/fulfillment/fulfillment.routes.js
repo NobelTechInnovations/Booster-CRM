@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment, createManualOrder } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -28,6 +28,18 @@ fulfillmentRoutes.get(
     const limit = Number(req.query.limit || 200);
     const result = await getFulfilledOrders(req.auth.companyId, { page, limit });
     res.json(result);
+  }),
+);
+
+// Create an order directly in the panel (not synced from Shopify/Amazon) —
+// lands in the same fulfillment queue below, ready to ship like any other order.
+fulfillmentRoutes.post(
+  "/orders/local",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { customer, shippingAddress, lineItems, isCOD, note } = req.body || {};
+    const order = await createManualOrder({ companyId: req.auth.companyId, customer, shippingAddress, lineItems, isCOD, note });
+    res.json({ message: "Order created", order });
   }),
 );
 

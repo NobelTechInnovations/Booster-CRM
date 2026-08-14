@@ -78,6 +78,17 @@ function InvoiceModal({ order, company, onClose }) {
   const invoiceNumber = `${prefix}-${order.orderNumber || order.name?.replace(/[^0-9]/g, "") || order.externalId}`;
   const invoiceDate = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
 
+  // The brand shown across the dashboard (company.name, e.g. "Sukirti Spices")
+  // isn't necessarily the GST-registered entity — that's company.legalName
+  // (e.g. "Kaleva Foods & Spices"), set once during KYC. A tax invoice must
+  // carry the legal name; the brand name is shown small, as a wordmark only.
+  const brandWord = (company?.name || "").split(" ")[0] || "Store";
+  const legalName = company?.legalName || company?.kyc?.legalName || company?.name || "Your Company";
+  const gstin = company?.gstin || company?.kyc?.gstin;
+  const registeredAddress = company?.address?.line1
+    ? [company.address.line1, company.address.line2, company.address.city, company.address.state, company.address.pincode].filter(Boolean).join(", ")
+    : company?.kyc?.registeredAddress;
+
   // Shopify line-item prices in India are tax-inclusive — GST is already baked
   // into every item's rate, not added on top. The invoice total is the actual
   // amount paid; taxable value + GST are the portions *within* that total.
@@ -93,14 +104,24 @@ function InvoiceModal({ order, company, onClose }) {
   return (
     <div className="fixed inset-0 z-[60] overflow-y-auto bg-slate-950/70 p-4 backdrop-blur-sm print:static print:bg-white print:p-0 print:backdrop-blur-none">
       <style>{`
+        @page { size: A4; margin: 10mm; }
         @media print {
-          body * { visibility: hidden; }
-          #invoice-printable, #invoice-printable * { visibility: visible; }
-          #invoice-printable { position: absolute; inset: 0; width: 100%; box-shadow: none !important; border-radius: 0 !important; }
-          .no-print { display: none !important; }
+          /* display:none (not visibility:hidden) actually removes hidden nodes from
+             layout — visibility:hidden keeps their box height, so Chrome paginated
+             the entire (long, scrollable) dashboard behind the modal as blank pages. */
+          body * { display: none !important; }
+          #invoice-printable, #invoice-printable * { display: revert !important; }
+          #invoice-printable {
+            position: static !important;
+            width: 100% !important;
+            box-shadow: none !important;
+            border: none !important;
+            border-radius: 0 !important;
+            font-size: 11px !important;
+          }
         }
       `}</style>
-      <div className="mx-auto w-full max-w-2xl">
+      <div className="mx-auto w-full max-w-xl">
         {/* Screen-only toolbar */}
         <div className="no-print mb-3 flex items-center justify-between rounded-xl bg-white px-4 py-3 shadow-lg">
           <p className="text-sm font-semibold text-slate-700">Tax Invoice Preview</p>
@@ -113,55 +134,50 @@ function InvoiceModal({ order, company, onClose }) {
           </div>
         </div>
 
-        {/* Printable invoice */}
-        <div id="invoice-printable" className="overflow-hidden rounded-2xl border border-[var(--line)] bg-white shadow-2xl">
+        {/* Printable invoice — pure white, compact */}
+        <div id="invoice-printable" className="overflow-hidden rounded-xl border border-slate-200 bg-white text-[13px] shadow-2xl">
           {/* Letterhead */}
-          <div className="bg-gradient-to-r from-[#0b1533] to-[#1e1b4b] px-8 py-7 text-white">
-            <div className="flex items-start justify-between">
-              <div>
-                <h1 className="text-2xl font-extrabold tracking-tight">{company?.name || "Your Company"}</h1>
-                {company?.gstin ? <p className="mt-1.5 text-xs font-medium text-indigo-200">GSTIN {company.gstin}</p> : null}
-                {company?.address?.line1 ? (
-                  <p className="mt-1 max-w-xs text-xs leading-5 text-indigo-200/80">
-                    {[company.address.line1, company.address.line2, company.address.city, company.address.state, company.address.pincode].filter(Boolean).join(", ")}
-                  </p>
-                ) : null}
-              </div>
-              <div className="text-right">
-                <p className="inline-block rounded-md bg-white/10 px-3 py-1 text-sm font-extrabold uppercase tracking-widest ring-1 ring-white/20">Tax Invoice</p>
-                <p className="mt-3 text-xs text-indigo-200">Invoice #</p>
-                <p className="font-mono text-sm font-bold">{invoiceNumber}</p>
-              </div>
+          <div className="flex items-start justify-between border-b border-slate-200 px-5 py-3.5">
+            <div>
+              <span className="inline-block rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white">{brandWord}</span>
+              <h1 className="mt-1.5 text-base font-extrabold leading-tight tracking-tight text-slate-950">{legalName}</h1>
+              {gstin ? <p className="mt-0.5 text-[11px] font-medium text-slate-500">GSTIN {gstin}</p> : null}
+              {registeredAddress ? <p className="mt-0.5 max-w-xs text-[11px] leading-4 text-slate-500">{registeredAddress}</p> : null}
+            </div>
+            <div className="text-right">
+              <p className="inline-block rounded border border-slate-300 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-slate-700">Tax Invoice</p>
+              <p className="mt-2 text-[10px] text-slate-400">Invoice #</p>
+              <p className="font-mono text-xs font-bold text-slate-900">{invoiceNumber}</p>
             </div>
           </div>
 
           {/* Meta strip */}
-          <div className="grid grid-cols-3 gap-4 border-b border-slate-100 bg-slate-50 px-8 py-3.5 text-xs">
+          <div className="grid grid-cols-3 gap-3 border-b border-slate-100 bg-slate-50 px-5 py-2 text-[11px]">
             <div>
               <p className="font-semibold uppercase tracking-wide text-slate-400">Invoice Date</p>
-              <p className="mt-0.5 font-bold text-slate-800">{invoiceDate}</p>
+              <p className="font-bold text-slate-800">{invoiceDate}</p>
             </div>
             <div>
               <p className="font-semibold uppercase tracking-wide text-slate-400">Order Reference</p>
-              <p className="mt-0.5 font-bold text-slate-800">{order.name}</p>
+              <p className="font-bold text-slate-800">{order.name}</p>
             </div>
             <div className="text-right">
               <p className="font-semibold uppercase tracking-wide text-slate-400">Payment</p>
-              <p className="mt-0.5 font-bold text-slate-800">{order.isCOD ? "Cash on Delivery" : order.financialStatus || "Prepaid"}</p>
+              <p className="font-bold text-slate-800">{order.isCOD ? "Cash on Delivery" : order.financialStatus || "Prepaid"}</p>
             </div>
           </div>
 
-          <div className="px-8 py-6">
-            <div className="grid grid-cols-2 gap-6 pb-6">
+          <div className="px-5 py-3.5">
+            <div className="grid grid-cols-2 gap-4 pb-3.5">
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700">Bill To</p>
-                <p className="mt-1.5 font-bold text-slate-900">{order.customerName || "Customer"}</p>
-                {order.email ? <p className="mt-0.5 text-xs text-slate-500">{order.email}</p> : null}
-                {order.phone ? <p className="text-xs text-slate-500">{order.phone}</p> : null}
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Bill To</p>
+                <p className="mt-0.5 font-bold text-slate-900">{order.customerName || "Customer"}</p>
+                {order.email ? <p className="text-[11px] text-slate-500">{order.email}</p> : null}
+                {order.phone ? <p className="text-[11px] text-slate-500">{order.phone}</p> : null}
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-wide text-indigo-700">Ship To</p>
-                <p className="mt-1.5 text-sm leading-6 text-slate-700">
+                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Ship To</p>
+                <p className="mt-0.5 text-[11px] leading-5 text-slate-700">
                   {addr.name && <span className="block font-bold text-slate-900">{addr.name}</span>}
                   {[addr.address1, addr.address2].filter(Boolean).join(", ")}
                   <br />
@@ -171,38 +187,38 @@ function InvoiceModal({ order, company, onClose }) {
             </div>
 
             {/* Line items */}
-            <div className="overflow-hidden rounded-xl border border-slate-200">
-              <table className="w-full border-collapse text-sm">
+            <div className="overflow-hidden rounded-md border border-slate-200">
+              <table className="w-full border-collapse text-[12px]">
                 <thead>
-                  <tr className="bg-slate-900 text-left text-[11px] uppercase tracking-wide text-white">
-                    <th className="py-2.5 pl-4 pr-2 font-semibold">Item</th>
-                    <th className="py-2.5 px-2 text-right font-semibold">Qty</th>
-                    <th className="py-2.5 px-2 text-right font-semibold">Rate (₹)</th>
-                    <th className="py-2.5 pl-2 pr-4 text-right font-semibold">Amount (₹)</th>
+                  <tr className="border-b border-slate-200 bg-slate-100 text-left text-[10px] uppercase tracking-wide text-slate-600">
+                    <th className="py-1.5 pl-3 pr-2 font-semibold">Item</th>
+                    <th className="py-1.5 px-2 text-right font-semibold">Qty</th>
+                    <th className="py-1.5 px-2 text-right font-semibold">Rate (₹)</th>
+                    <th className="py-1.5 pl-2 pr-3 text-right font-semibold">Amount (₹)</th>
                   </tr>
                 </thead>
                 <tbody>
                   {lineItems.map((item, idx) => (
-                    <tr key={idx} className={idx % 2 === 1 ? "bg-slate-50" : "bg-white"}>
-                      <td className="py-2.5 pl-4 pr-2 text-slate-800">{item.title || item.name}</td>
-                      <td className="py-2.5 px-2 text-right text-slate-600">{item.quantity}</td>
-                      <td className="py-2.5 px-2 text-right text-slate-600">{Number(item.price || 0).toFixed(2)}</td>
-                      <td className="py-2.5 pl-2 pr-4 text-right font-semibold text-slate-900">
+                    <tr key={idx} className="border-b border-slate-100 last:border-0">
+                      <td className="py-1.5 pl-3 pr-2 text-slate-800">{item.title || item.name}</td>
+                      <td className="py-1.5 px-2 text-right text-slate-600">{item.quantity}</td>
+                      <td className="py-1.5 px-2 text-right text-slate-600">{Number(item.price || 0).toFixed(2)}</td>
+                      <td className="py-1.5 pl-2 pr-3 text-right font-semibold text-slate-900">
                         {(Number(item.price || 0) * Number(item.quantity || 1)).toFixed(2)}
                       </td>
                     </tr>
                   ))}
                   {lineItems.length === 0 && (
-                    <tr><td colSpan={4} className="py-4 text-center text-slate-400">No item details available</td></tr>
+                    <tr><td colSpan={4} className="py-3 text-center text-slate-400">No item details available</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
 
             {/* Tax summary + total */}
-            <div className="mt-5 flex justify-end">
-              <div className="w-72 overflow-hidden rounded-xl border border-slate-200">
-                <div className="space-y-1.5 bg-slate-50 px-4 py-3 text-sm">
+            <div className="mt-3 flex justify-end">
+              <div className="w-64 overflow-hidden rounded-md border border-slate-200">
+                <div className="space-y-1 bg-slate-50 px-3 py-2 text-[11px]">
                   <div className="flex justify-between text-slate-500">
                     <span>Items Total</span><span className="font-medium text-slate-700">₹{itemsTotal.toFixed(2)}</span>
                   </div>
@@ -213,23 +229,23 @@ function InvoiceModal({ order, company, onClose }) {
                     <span>GST @ {gstRate}% (inclusive)</span><span className="font-medium text-slate-700">₹{taxAmount.toFixed(2)}</span>
                   </div>
                 </div>
-                <div className="flex items-baseline justify-between bg-slate-900 px-4 py-3">
-                  <span className="text-sm font-bold uppercase tracking-wide text-white">Grand Total</span>
-                  <span className="text-xl font-extrabold text-white">₹{total.toFixed(2)}</span>
+                <div className="flex items-baseline justify-between border-t border-slate-200 bg-slate-900 px-3 py-2">
+                  <span className="text-[11px] font-bold uppercase tracking-wide text-white">Grand Total</span>
+                  <span className="text-base font-extrabold text-white">₹{total.toFixed(2)}</span>
                 </div>
               </div>
             </div>
 
-            <p className="mt-4 text-[11px] leading-5 text-slate-400">
+            <p className="mt-2.5 text-[9.5px] leading-4 text-slate-400">
               GST is calculated as inclusive within the item price, per standard Indian D2C pricing — the taxable value and GST
               amount above are the components within the total, not added on top of it.
             </p>
           </div>
 
           {/* Footer */}
-          <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-8 py-4">
-            <p className="text-[11px] text-slate-400">This is a computer-generated invoice and does not require a signature.</p>
-            <p className="text-[11px] font-semibold text-indigo-700">Thank you for your business</p>
+          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-2.5">
+            <p className="text-[10px] text-slate-400">Computer-generated invoice — no signature required.</p>
+            <p className="text-[10px] font-semibold text-slate-500">Thank you for your business</p>
           </div>
         </div>
       </div>

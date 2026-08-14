@@ -2,6 +2,7 @@ import { VelocityProvider } from "./providers/velocity.provider.js";
 import { ShiprocketProvider } from "./providers/shiprocket.provider.js";
 import { ShipwayProvider } from "./providers/shipway.provider.js";
 import { ShipMozoProvider } from "./providers/shipmozo.provider.js";
+import { DelhiveryProvider } from "./providers/delhivery.provider.js";
 import { HttpError } from "../../utils/http-error.js";
 
 /**
@@ -12,6 +13,7 @@ const PROVIDER_MAP = {
   shiprocket: ShiprocketProvider,
   shipway:    ShipwayProvider,
   shipmozo:   ShipMozoProvider,
+  delhivery:  DelhiveryProvider,
 };
 
 /**
@@ -36,9 +38,9 @@ export function listSupportedShippingProviders() {
     { provider: "shiprocket",  name: "Shiprocket",        status: "available" },
     { provider: "shipway",     name: "Shipway",           status: "available" },
     { provider: "shipmozo",    name: "ShipMozo",          status: "available" },
+    { provider: "delhivery",   name: "Delhivery",         status: "available" },
     { provider: "ithink",      name: "iThink Logistics",  status: "coming_soon" },
     { provider: "nimbuspost",  name: "NimbusPost",        status: "coming_soon" },
     { provider: "pickrr",      name: "Pickrr",            status: "coming_soon" },
-    { provider: "delhivery",   name: "Delhivery",         status: "coming_soon" },
   ];
 }

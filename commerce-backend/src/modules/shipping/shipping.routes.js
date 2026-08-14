@@ -2,11 +2,30 @@ import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { getShippingProvider, listSupportedShippingProviders } from "./shipping-registry.js";
+import { compareShippingRates } from "./rate-comparison.service.js";
 import { listWarehouses } from "../../repositories/warehouse.repo.js";
 import { listShipments } from "../../repositories/shipment.repo.js";
 import { listShippingChannels } from "../../repositories/channel.repo.js";
 
 export const shippingRoutes = Router();
+
+// Compare GST-inclusive rates across every shipping provider this brand has
+// connected, cheapest first — Delhivery, Velocity, Shipway, ShipMozo, all in one place.
+shippingRoutes.get(
+  "/rates/compare",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await compareShippingRates({
+      companyId: req.auth.companyId,
+      from: req.query.from,
+      to: req.query.to,
+      weight: req.query.weight ? Number(req.query.weight) : undefined,
+      paymentMode: req.query.paymentMode,
+      codAmount: req.query.codAmount ? Number(req.query.codAmount) : undefined,
+    });
+    res.json(result);
+  }),
+);
 
 // List all supported shipping providers
 shippingRoutes.get("/providers", (_req, res) => {

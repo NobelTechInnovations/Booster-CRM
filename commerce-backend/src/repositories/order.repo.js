@@ -438,6 +438,76 @@ export async function upsertSingleOrder({ companyId, channelId, provider, shop, 
   return clone(stored);
 }
 
+// Creates an order entirely inside the panel — no Shopify/Amazon channel
+// involved (phone/WhatsApp orders, walk-ins, anything not placed through a
+// connected sales channel). Lands with omsStatus:"pending", so it shows up in
+// the exact same Fulfillment "ready to ship" queue as every synced order —
+// the whole ship/track/cancel pipeline downstream is unchanged, this only
+// adds a second way to get an order INTO that queue.
+export async function createLocalOrder({ companyId, customer = {}, shippingAddress = {}, lineItems = [], isCOD = true, note = "" }) {
+  const cleanItems = (lineItems || [])
+    .filter((item) => item && item.title)
+    .map((item) => ({
+      title: String(item.title).trim(),
+      sku: item.sku || "",
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      price: Math.max(0, Number(item.price) || 0),
+      grams: Number(item.grams) || 0,
+      requiresShipping: item.requiresShipping !== false,
+    }));
+
+  if (!cleanItems.length) return { error: "At least one line item is required" };
+  if (!shippingAddress.zip) return { error: "Shipping address PIN code is required" };
+
+  const totalPrice = cleanItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const externalId = `local-${id()}`;
+  const shortCode = Date.now().toString(36).toUpperCase().slice(-6);
+
+  const orderDoc = {
+    companyId,
+    channelId: undefined,
+    provider: "local",
+    shop: "local",
+    externalId,
+    name: `#LC-${shortCode}`,
+    email: customer.email || "",
+    phone: customer.phone || shippingAddress.phone || "",
+    customerName: customer.name || shippingAddress.name || "Customer",
+    financialStatus: isCOD ? "pending" : "paid",
+    fulfillmentStatus: "unfulfilled",
+    note,
+    currency: "INR",
+    totalPrice,
+    subtotalPrice: totalPrice,
+    isCOD,
+    codAmount: isCOD ? totalPrice : 0,
+    shippingAddress: {
+      name: shippingAddress.name || customer.name || "",
+      address1: shippingAddress.address1 || "",
+      address2: shippingAddress.address2 || "",
+      city: shippingAddress.city || "",
+      province: shippingAddress.province || "",
+      country: shippingAddress.country || "India",
+      zip: String(shippingAddress.zip || ""),
+      phone: shippingAddress.phone || customer.phone || "",
+    },
+    lineItems: cleanItems,
+    omsStatus: "pending",
+    shopifyCreatedAt: new Date(),
+    raw: { manualCreate: true },
+    tags: ["local-order"],
+  };
+
+  if (isMongoConnected()) {
+    const order = await SyncedOrder.create(orderDoc);
+    return { order: order.toObject() };
+  }
+
+  const stored = { _id: id(), ...orderDoc, createdAt: now(), updatedAt: now() };
+  memory.orders.set(`${companyId}:local:${externalId}`, stored);
+  return { order: clone(stored) };
+}
+
 export async function updateOrderOmsStatus({ companyId, shopifyOrderId, update }) {
   if (isMongoConnected()) {
     const compIdStr = String(companyId || "");
