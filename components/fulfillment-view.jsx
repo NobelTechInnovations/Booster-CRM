@@ -120,7 +120,10 @@ function CourierSelectModal({
       setCourierOptions(list);
       setSelectedCourier(list[0] || null);
       if (!list.length) {
-        setRateError(`${provider} returned no usable courier rate for this route. Try a different provider, or re-check the pickup/delivery PIN codes.`);
+        // res.reason carries a specific explanation when the provider itself said
+        // why (e.g. Delhivery: "no service coverage for pincode X") — prefer that
+        // real reason over a generic message when it's available.
+        setRateError(res.reason || `${provider} returned no usable courier rate for this route. Try a different provider, or re-check the pickup/delivery PIN codes.`);
       }
     } catch (err) {
       setCourierOptions([]);

@@ -10,31 +10,39 @@ import { listSkuCosts } from "./sku-cost.repo.js";
 
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
+// A real online payment gateway name — if one of these actually processed the
+// order, money was genuinely collected online, regardless of what else is on
+// the order (a leftover "cod" tag from the checkout-method step, a
+// COD-conversion app like Fastrr, etc).
+const REAL_PAYMENT_GATEWAYS = ["cashfree", "payu", "razorpay", "instamojo", "ccavenue", "paytm", "phonepe", "gpay", "upi", "card", "net banking", "netbanking", "wallet", "stripe"];
+
 function isCodPayment(order) {
-  // financial_status is Shopify's own authoritative record of whether money has
-  // actually been collected. "paid" (or refunded/voided, which implies it WAS
-  // paid) must win over every heuristic below, no matter what the checkout app
-  // is called — apps like Fastrr specifically exist to convert COD orders to
-  // prepaid, but can leave "cod" in their gateway name / tags even on orders
-  // they successfully converted. Trusting that substring over financial_status
-  // was flagging real prepaid orders as COD, which fed COD-tier (higher)
-  // freight rates into the Ship Order rate check for orders that were never
-  // actually COD.
-  if (["paid", "partially_paid", "refunded", "partially_refunded", "voided"].includes(order.financial_status)) {
-    return false;
-  }
+  const paymentGatewayNames = (order.payment_gateway_names || []).map((name) => String(name).toLowerCase());
+  const tagsLower = String(order.tags || "").toLowerCase();
 
-  const paymentGatewayNames = order.payment_gateway_names || [];
-  const gatewayMatch = paymentGatewayNames.some((name) =>
-    String(name).toLowerCase().includes("cod") ||
-    String(name).toLowerCase().includes("cash") ||
-    String(name).toLowerCase().includes("manual"),
-  );
+  const hasRealGateway = paymentGatewayNames.some((name) => REAL_PAYMENT_GATEWAYS.some((g) => name.includes(g)));
+  const isPaidStatus = ["paid", "partially_paid", "refunded", "partially_refunded", "voided"].includes(order.financial_status);
 
+  // Paid status + an actual payment gateway (Cashfree, PayU, ...) together
+  // mean money was genuinely collected online — this is the one combination
+  // that reliably means prepaid. Paid status alone is NOT enough: several
+  // real orders here show financial_status "paid" with gateway "Cash on
+  // Delivery (COD)" or "manual" and an explicit "✅ COD-Verified" tag — these
+  // are genuinely COD, just marked "paid" for an internal workflow reason
+  // unrelated to cash actually changing hands, so blindly trusting
+  // financial_status alone was wrong and got reverted.
+  if (isPaidStatus && hasRealGateway) return false;
+
+  // COD-verification apps (Fastrr, Cashfree's own COD product) tag orders
+  // this explicitly — trust it outright over everything else.
+  const explicitCodTag = /cod[\s-]?(verified|pending)|cashfree\s*-\s*cod/.test(tagsLower);
+  if (explicitCodTag) return true;
+
+  const gatewayCodMatch = paymentGatewayNames.some((name) => name.includes("cod") || name.includes("cash") || name.includes("manual"));
   const isPending = order.financial_status === "pending";
-  const tagCod = String(order.tags || "").toLowerCase().includes("cod");
+  const tagCod = tagsLower.includes("cod");
 
-  return gatewayMatch || isPending || tagCod;
+  return gatewayCodMatch || isPending || tagCod;
 }
 
 export function normalizeOrder({ companyId, channelId, provider, shop, order }) {

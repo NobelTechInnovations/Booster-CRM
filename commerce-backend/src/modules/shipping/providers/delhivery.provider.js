@@ -170,7 +170,16 @@ export class DelhiveryProvider extends BaseShippingProvider {
     const isServiceable = Boolean(pinData) && pinData.pre_paid !== "N";
 
     if (!isServiceable) {
-      return { serviceable: false, pincode: destPin, courier_companies: [] };
+      // Genuine "no coverage" from Delhivery's own API (delivery_codes: []
+      // for this pincode), not a bug — not every provider covers every
+      // pincode. Distinguishing this from a real request failure so the UI
+      // can say why, instead of a bare empty list.
+      return {
+        serviceable: false,
+        pincode: destPin,
+        reason: `Delhivery has no service coverage for pincode ${destPin} on this account.`,
+        courier_companies: [],
+      };
     }
 
     const weightGrams = Math.max(1, Math.round((Number(weight) || 0.5) * 1000));
