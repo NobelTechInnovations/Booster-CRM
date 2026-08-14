@@ -163,46 +163,35 @@ export class ShipwayProvider extends BaseShippingProvider {
     });
   }
 
+  // Real endpoint, confirmed against Shipway's own docs (apidocs.shipway.com
+  // → Rate API → Carrier Rates) and verified live against a real connected
+  // account: GET /getshipwaycarrierrates?fromPincode&toPincode&paymentType,
+  // Basic auth (same as every other call here). Returns rate_card[] with
+  // delivery_charge (freight) + cod_charges (COD handling fee, additive) per
+  // real courier — e.g. "Shipway Delhivery Express (0.5kg)" at a real price,
+  // not the fabricated "Shipway Express Air" this used to fall back to.
   async checkServiceability({ from, to, weight = 0.5, paymentMode = "cod" }) {
     const { username, password } = await this.ensureToken();
-    const payload = {
-      origin: String(from || "302020"),
-      destination: String(to || "302020"),
-      weight: String(weight || 0.5),
-      payment_type: paymentMode === "cod" ? "COD" : "Prepaid",
+    const isCod = paymentMode === "cod" || paymentMode === "COD";
+    const params = new URLSearchParams({
+      fromPincode: String(from || "302020"),
+      toPincode: String(to || "302020"),
+      paymentType: isCod ? "cod" : "prepaid",
+    });
+
+    const res = await shipwayFetch(`/getshipwaycarrierrates?${params.toString()}`, { method: "GET", username, password });
+    const rateCard = res?.rate_card || [];
+
+    return {
+      status: res?.success,
+      courier_companies: rateCard.map((c) => ({
+        id: String(c.carrier_id),
+        courier_name: c.courier_name,
+        rate: Math.round((Number(c.delivery_charge || 0) + (isCod ? Number(c.cod_charges || 0) : 0)) * 100) / 100,
+        etd: "",
+        mode: `Zone ${c.zone}`,
+      })),
     };
-
-    // Shipway's exact public endpoint for this isn't consistently documented
-    // (their docs portal is JS-rendered, not crawlable) — these are the
-    // candidate paths found across their PDF docs and third-party SDK
-    // references. Tried in order; the first one that actually returns
-    // courier/rate data wins. IMPORTANT: this previously fell back to
-    // hardcoded fake data ("Shipway Express Air" / "Shipway Surface Economy",
-    // rates that were never real) when every attempt failed — that's removed.
-    // If nothing here is right for this account, it now fails loudly with the
-    // real error instead of quietly showing invented numbers.
-    const attempts = [
-      { method: "GET", path: `/checkserviceability?${new URLSearchParams(payload).toString()}` },
-      { method: "POST", path: "/checkserviceability", body: payload },
-      { method: "GET", path: `/couriers/pincode-availability?${new URLSearchParams(payload).toString()}` },
-      { method: "POST", path: "/couriers/rates", body: payload },
-    ];
-
-    const errors = [];
-    for (const attempt of attempts) {
-      try {
-        const res = await shipwayFetch(attempt.path, { method: attempt.method, username, password, body: attempt.body });
-        const hasCouriers = res?.courier_companies?.length || res?.couriers?.length || res?.data?.length;
-        if (hasCouriers) return res;
-      } catch (err) {
-        errors.push(`${attempt.method} ${attempt.path}: ${err.message}`);
-      }
-    }
-
-    throw new HttpError(
-      502,
-      `Shipway didn't return courier rates for this route on any known endpoint. This account/API surface may need the exact endpoint confirmed against your Shipway dashboard (apidocs.shipway.com). Attempts: ${errors.join(" | ")}`,
-    );
   }
 
   buildShipmentPayload(order, warehouse, options = {}) {
