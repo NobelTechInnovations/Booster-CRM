@@ -258,8 +258,25 @@ export class VelocityProvider extends BaseShippingProvider {
     const firstName = nameParts[0] || "";
     const lastName  = nameParts.slice(1).join(" ") || "";
 
+    // Velocity has its own separate Shopify app connected on the user's
+    // store, so it auto-imports every Shopify order independently of us —
+    // by the time we call this, Velocity may already hold the order under
+    // its own record. We used to send Shopify's display name ("#SM1050")
+    // as order_id, which doesn't match what Velocity's own Shopify sync
+    // stored, so their orchestration engine treated it as a brand-new order
+    // and choked (ALL_CARRIERS_FAILED / S-900) instead of reusing the real
+    // one. Fix: for Shopify-sourced orders, key off the raw numeric Shopify
+    // order ID (order.externalId, e.g. "9035581817138") — that's the one
+    // globally-unique value both systems get from the same Shopify webhook/
+    // API, so it's what any correctly-built Shopify integration should be
+    // matching orders on. Only orders NOT sourced from Shopify (manually
+    // created in-panel, Amazon-imported, etc.) — which Velocity could never
+    // have pre-fetched — fall back to generating a fresh order_id.
+    const orderId = options.orderId
+      || (order.provider === "shopify" ? String(order.externalId) : (order.name || String(order.externalId)));
+
     return {
-      order_id:   options.orderId || order.name || String(order.externalId),
+      order_id:   orderId,
       order_date: new Date().toISOString().slice(0, 16).replace("T", " "),
 
       warehouse_id: warehouse.externalWarehouseId,
