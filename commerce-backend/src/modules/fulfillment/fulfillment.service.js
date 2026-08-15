@@ -2,6 +2,7 @@ import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsSta
 import { getWarehouseByExternalId, listWarehouses } from "../../repositories/warehouse.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
+import { updateShipmentsByAwb, updateShipmentById, getShipmentByAwb } from "../../repositories/shipment.repo.js";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
 
@@ -88,7 +89,11 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
     shopifyOrderName: order.name,
   });
 
-  // 5. Update Synced Order in Local OMS Database
+  // 5. Update Synced Order in Local OMS Database — the courier shipment
+  // genuinely exists now (real AWB), so omsStatus:"shipped" is true
+  // regardless of what happens next. fulfillmentStatus is deliberately NOT
+  // set here — that field mirrors Shopify's own state, and step 6 below is
+  // the only place that's actually confirmed true or false.
   const updatedOrder = await updateOrderOmsStatus({
     companyId,
     shopifyOrderId: order.externalId,
@@ -98,27 +103,137 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
       shipmentId: shipment._id || shipment.id,
       awbCode: shipment.awbCode,
       labelUrl: shipment.labelUrl,
-      fulfillmentStatus: "fulfilled",
       // The courier rate the user picked in the Ship Order modal — varies by
       // destination/weight per order, so this is the real per-order freight cost.
       shippingCost: Number(options.rate) || 0,
     },
   });
 
-  // 6. Attempt to push fulfillment status back to Shopify asynchronously
-  try {
-    await markShopifyOrderFulfilled({
-      shop: order.shop,
-      shopifyOrderId: order.externalId,
-      awbCode: shipment.awbCode,
-      trackingUrl: shipment.trackingUrl || shipment.labelUrl,
-      courierName: shipment.courierName || providerName,
-    });
-  } catch (err) {
-    console.warn(`[Fulfillment] Shopify auto-fulfillment update failed for ${order.name}:`, err.message);
+  // 6. Push fulfillment status back to Shopify. Only mark fulfillmentStatus
+  // "fulfilled" locally once Shopify actually confirms it — this used to be
+  // set optimistically in step 5 regardless of whether this push succeeded,
+  // which meant a failed push left our DB claiming "fulfilled" while Shopify
+  // genuinely didn't. The next routine sync would then correctly revert
+  // fulfillmentStatus back to "unfulfilled" from Shopify's real state, but
+  // omsStatus stayed "shipped" forever (it's deliberately preserved across
+  // syncs) — the order got stuck showing "Fulfilled" on the Fulfillment page
+  // with no way to tell why, and no record of the push ever having failed.
+  let shopifyPushError = null;
+  if (order.provider === "shopify" && order.shop) {
+    try {
+      const fulfillResult = await markShopifyOrderFulfilled({
+        shop: order.shop,
+        shopifyOrderId: order.externalId,
+        awbCode: shipment.awbCode,
+        trackingUrl: shipment.trackingUrl || shipment.labelUrl,
+        courierName: shipment.courierName || providerName,
+      });
+      await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
+      updatedOrder.fulfillmentStatus = "fulfilled";
+      // Save the Shopify fulfillment's own ID so cancelShipment() can later
+      // undo it there too, not just with the courier.
+      const shopifyFulfillmentId = fulfillResult?.fulfillment?.id;
+      if (shopifyFulfillmentId) {
+        await updateShipmentById({ shipmentId: shipment._id || shipment.id, companyId, update: { shopifyFulfillmentId: String(shopifyFulfillmentId) } });
+      }
+    } catch (err) {
+      shopifyPushError = err.message;
+      console.warn(`[Fulfillment] Shopify auto-fulfillment update failed for ${order.name}:`, err.message);
+    }
+  } else {
+    // Non-Shopify orders (local/manual, Amazon import) have no external
+    // fulfillment system to confirm against — our own record is authoritative.
+    await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
+    updatedOrder.fulfillmentStatus = "fulfilled";
   }
 
-  return { shipment, order: updatedOrder };
+  return { shipment, order: updatedOrder, shopifyPushError };
+}
+
+/**
+ * Cancels an order's active courier shipment (and, if we pushed one, the
+ * Shopify fulfillment it created) and moves the order back to unfulfilled
+ * so it reappears in the "To Ship" queue and can be shipped again — via the
+ * same provider or a different one. Distinct from cancelOrderFulfillment()
+ * above, which cancels the whole Shopify ORDER; this only undoes the
+ * shipment/courier assignment and leaves the order itself alive.
+ */
+export async function cancelShipment({ companyId, orderId }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) throw new HttpError(404, "Order not found");
+
+  if (!order.awbCode && order.omsStatus !== "shipped") {
+    throw new HttpError(400, "This order has no active shipment to cancel");
+  }
+
+  const providerName = order.shippingProvider;
+  if (!providerName) throw new HttpError(400, "No shipping provider recorded for this order's shipment");
+
+  const shippingProvider = getShippingProvider(providerName, { companyId });
+
+  // 1. Cancel with the courier — best-effort but not swallowed: if the
+  // courier refuses (e.g. already picked up), surface that rather than
+  // silently reverting our own records to a state that no longer matches
+  // reality on their side.
+  let courierResult = null;
+  let shipmentRecord = null;
+  if (order.awbCode) {
+    try {
+      courierResult = await shippingProvider.cancelOrder([order.awbCode]);
+    } catch (err) {
+      throw new HttpError(400, `${providerName} refused the cancellation: ${err.message}`);
+    }
+    await updateShipmentsByAwb({ companyId, awbCodes: [order.awbCode], update: { status: "cancelled" } });
+    shipmentRecord = await getShipmentByAwb({ companyId, awbCode: order.awbCode });
+  }
+
+  // 2. If we successfully pushed a fulfillment to Shopify for this shipment,
+  // undo that too so Shopify's own state matches — best-effort, since a
+  // courier-side cancel is the part that actually matters operationally.
+  if (shipmentRecord?.shopifyFulfillmentId && order.provider === "shopify" && order.shop) {
+    try {
+      await cancelShopifyFulfillment({ shop: order.shop, shopifyOrderId: order.externalId, fulfillmentId: shipmentRecord.shopifyFulfillmentId });
+    } catch (err) {
+      console.warn(`[Fulfillment] Shopify fulfillment cancel failed for ${order.name}:`, err.message);
+    }
+  }
+
+  // 3. Revert the order locally so it's shippable again.
+  const updatedOrder = await updateOrderOmsStatus({
+    companyId,
+    shopifyOrderId: order.externalId,
+    update: {
+      omsStatus:         "pending",
+      fulfillmentStatus: "unfulfilled",
+      shippingProvider:  null,
+      shipmentId:        null,
+      awbCode:           null,
+      labelUrl:          null,
+      shippingCost:      0,
+    },
+  });
+
+  return { message: "Shipment cancelled — order moved back to unfulfilled and can be shipped again", order: updatedOrder, courierResult };
+}
+
+/**
+ * Cancels a Shopify fulfillment (the mirror of markShopifyOrderFulfilled's
+ * create call) so an order we un-ship on the courier side also reverts to
+ * unfulfilled in Shopify itself, instead of just in our own DB.
+ */
+async function cancelShopifyFulfillment({ shop, shopifyOrderId, fulfillmentId }) {
+  const channel = await getShopifyChannelByShop(shop);
+  if (!channel?.credentials?.accessToken) throw new Error(`No connected Shopify channel with a valid access token for ${shop}`);
+
+  const res = await fetch(`https://${shop}/admin/api/${env.shopify.apiVersion}/fulfillments/${fulfillmentId}/cancel.json`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", "X-Shopify-Access-Token": channel.credentials.accessToken },
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Shopify rejected the fulfillment cancel call (${res.status}) for order ${shopifyOrderId}: ${errBody.slice(0, 300)}`);
+  }
 }
 
 /**
@@ -126,7 +241,9 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
  */
 export async function markShopifyOrderFulfilled({ shop, shopifyOrderId, awbCode, trackingUrl, courierName }) {
   const channel = await getShopifyChannelByShop(shop);
-  if (!channel || !channel.credentials?.accessToken) return;
+  if (!channel || !channel.credentials?.accessToken) {
+    throw new Error(`No connected Shopify channel with a valid access token for ${shop}`);
+  }
 
   const accessToken = channel.credentials.accessToken;
 
@@ -138,16 +255,35 @@ export async function markShopifyOrderFulfilled({ shop, shopifyOrderId, awbCode,
     },
   });
 
-  if (!response.ok) return;
+  // This used to silently `return` on any failure here (bad response, no
+  // open fulfillment order, or — worst — a failed create-fulfillment call
+  // whose response was never even checked). That meant we'd mark the order
+  // "fulfilled" in our own DB while Shopify still showed it unfulfilled, and
+  // the next routine Shopify sync would then flip our fulfillmentStatus back
+  // to "unfulfilled" (correctly, since that's the real state) while our own
+  // omsStatus stayed "shipped" forever (it's deliberately preserved across
+  // syncs) — the order got stuck looking "Fulfilled" on the Fulfillment page
+  // with no way to tell why. Every failure path here now throws instead, so
+  // the caller's try/catch actually has something real to log and the user
+  // can be told what happened rather than data quietly drifting out of sync.
+  if (!response.ok) {
+    const errBody = await response.text().catch(() => "");
+    throw new Error(`Failed to fetch fulfillment orders (${response.status}): ${errBody.slice(0, 300)}`);
+  }
 
   const body = await response.json();
   const fulfillmentOrders = body.fulfillment_orders || [];
   const openFulfillmentOrder = fulfillmentOrders.find((fo) => fo.status === "open");
 
-  if (!openFulfillmentOrder) return;
+  if (!openFulfillmentOrder) {
+    // Not necessarily an error — the order may already be fulfilled/closed
+    // on Shopify's side (e.g. someone fulfilled it manually there first).
+    // Treat as a no-op success rather than throwing.
+    return { skipped: true, reason: "No open fulfillment order (already fulfilled or closed on Shopify)" };
+  }
 
-  // 2. Create fulfillment using 2026-01 API format
-  await fetch(`https://${shop}/admin/api/${env.shopify.apiVersion}/fulfillments.json`, {
+  // 2. Create fulfillment using the Fulfillment Orders API format
+  const fulfillRes = await fetch(`https://${shop}/admin/api/${env.shopify.apiVersion}/fulfillments.json`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -169,6 +305,13 @@ export async function markShopifyOrderFulfilled({ shop, shopifyOrderId, awbCode,
       },
     }),
   });
+
+  if (!fulfillRes.ok) {
+    const errBody = await fulfillRes.text().catch(() => "");
+    throw new Error(`Shopify rejected the fulfillment create call (${fulfillRes.status}): ${errBody.slice(0, 500)}`);
+  }
+
+  return fulfillRes.json();
 }
 
 /**

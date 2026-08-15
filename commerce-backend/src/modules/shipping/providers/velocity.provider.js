@@ -314,7 +314,17 @@ export class VelocityProvider extends BaseShippingProvider {
       // sent "Prepaid" (mixed case) before, which didn't match the
       // documented value.
       payment_method:  order.isCOD ? "COD" : "PREPAID",
-      sub_total:       order.subtotalPrice || order.totalPrice,
+      // Velocity's own docs example always sends sub_total equal to
+      // cod_collectible (both "990" in their sample) — sub_total there means
+      // the full order value, not the pre-shipping product subtotal. We used
+      // to send order.subtotalPrice (product only, excluding Shopify's
+      // shipping line), which created an artificial gap against the full
+      // order total on Velocity's dashboard (e.g. "489" order value + "10"
+      // extra vs the real ₹499 total) that direct Shopify-side imports never
+      // showed, since they display one combined total. Using the full
+      // order total for both fields matches that and the documented
+      // convention.
+      sub_total:       order.totalPrice,
       cod_collectible: order.isCOD ? (order.codAmount || order.totalPrice) : 0,
 
       length:  options.length || 10,

@@ -28,6 +28,7 @@ import {
   listFulfilledOrders,
   shipFulfillmentOrder,
   cancelFulfillmentOrder,
+  cancelOrderShipment,
   listShippingChannels,
   listWarehouses,
   listAllShipments,
@@ -563,6 +564,27 @@ export function FulfillmentView() {
     }
   }
 
+  // Undoes just the shipment (courier + Shopify fulfillment) — the order
+  // itself stays alive and drops back into "To Ship" so it can be shipped
+  // again, e.g. via a different provider/warehouse.
+  async function handleCancelShipment(order) {
+    const orderIdToUse = order.externalId || order._id || order.id;
+    if (!confirm(`Cancel the shipment for ${order.name || orderIdToUse}? It will move back to "To Ship" and can be shipped again.`)) return;
+
+    setCancellingId(orderIdToUse);
+    setMessage({ type: "", text: "" });
+
+    try {
+      const res = await cancelOrderShipment(orderIdToUse);
+      setMessage({ type: "success", text: res.message || `Shipment for ${order.name} cancelled` });
+      await loadData();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setCancellingId("");
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       {/* Header */}
@@ -707,6 +729,17 @@ export function FulfillmentView() {
                           <p className="text-xs text-slate-400 mt-0.5">
                             {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
                           </p>
+                          {order.awbCode ? (
+                            <Button
+                              variant="secondary"
+                              className="mt-2 h-8 px-2.5 text-xs"
+                              disabled={cancellingId === (order.externalId || order._id || order.id)}
+                              onClick={() => handleCancelShipment(order)}
+                            >
+                              <Ban size={13} />
+                              Cancel Shipment
+                            </Button>
+                          ) : null}
                         </div>
                       </div>
                     </div>

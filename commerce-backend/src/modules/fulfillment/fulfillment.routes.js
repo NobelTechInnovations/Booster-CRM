@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment, createManualOrder } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment, cancelShipment, createManualOrder } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -72,9 +72,23 @@ fulfillmentRoutes.post(
     });
 
     res.json({
-      message: `Order shipped via ${provider}. AWB: ${result.shipment.awbCode}`,
+      message: result.shopifyPushError
+        ? `Order shipped via ${provider} (AWB: ${result.shipment.awbCode}), but Shopify wasn't marked fulfilled: ${result.shopifyPushError}`
+        : `Order shipped via ${provider}. AWB: ${result.shipment.awbCode}`,
       ...result,
     });
+  }),
+);
+
+// Cancel an order's active shipment (courier + Shopify fulfillment) and
+// move it back to unfulfilled so it can be shipped again.
+fulfillmentRoutes.post(
+  "/orders/:orderId/cancel-shipment",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const result = await cancelShipment({ companyId: req.auth.companyId, orderId });
+    res.json(result);
   }),
 );
 
