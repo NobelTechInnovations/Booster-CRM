@@ -9,6 +9,7 @@ import { FulfillmentView } from "@/components/fulfillment-view";
 import { ShippingView } from "@/components/shipping-view";
 import { FinanceView } from "@/components/finance-view";
 import { OrdersView } from "@/components/orders-view";
+import { CustomersView } from "@/components/customers-view";
 import { InventoryView } from "@/components/inventory-view";
 import { ReportsView } from "@/components/reports-view";
 import { AutomationView } from "@/components/automation-view";
@@ -134,6 +135,10 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Inventory") {
     return <InventoryView />;
+  }
+
+  if (activeViewName === "Customers") {
+    return <CustomersView />;
   }
 
   if (activeViewName === "Reports") {

@@ -6,6 +6,7 @@ import {
   updateChannelSyncState,
   upsertShopifyChannel,
   addShopifyWebhookRecord,
+  getConnectedShopifyChannel,
 } from "../../repositories/channel.repo.js";
 import { saveSyncedShopifyData, getCommerceRecordForUpdate } from "../../repositories/order.repo.js";
 import { getShopifyConfig } from "../../repositories/company.repo.js";
@@ -475,6 +476,66 @@ export async function createShopifyOrderDirect({ companyId, customerId, lineItem
   });
 
   return { order: body.order, channel };
+}
+
+/**
+ * Create a new customer directly in Shopify — matches Shopify's own "New
+ * customer" form field-for-field (first/last name, email, phone, marketing
+ * consent, notes, tags, default address). The customer is created in
+ * Shopify first (so it's real, not a local-only stub), then saved into our
+ * own SyncedCustomer collection from Shopify's response — the exact same
+ * "create there, sync the response back" pattern createShopifyOrderDirect
+ * already uses for orders, kept consistent rather than inventing a new one.
+ */
+export async function createShopifyCustomerDirect({ companyId, userId, firstName, lastName, email, phone, tags, note, acceptsMarketing, address }) {
+  const channel = await getConnectedShopifyChannel(companyId);
+  if (!channel) {
+    throw new HttpError(400, "No connected Shopify channel found. Connect Shopify first.");
+  }
+
+  const accessToken = channel.credentials?.accessToken;
+  if (!accessToken) {
+    throw new HttpError(400, "Shopify access token is missing. Reconnect the channel first.");
+  }
+
+  requireWriteScope(channel, "write_customers");
+
+  const customerPayloadBody = pickDefined({
+    first_name: firstName || undefined,
+    last_name: lastName || undefined,
+    email: email || undefined,
+    phone: phone || undefined,
+    tags: tags || undefined,
+    note: note || undefined,
+    accepts_marketing: Boolean(acceptsMarketing),
+    addresses: address && (address.address1 || address.city || address.zip)
+      ? [
+          pickDefined({
+            first_name: firstName || undefined,
+            last_name: lastName || undefined,
+            address1: address.address1 || undefined,
+            address2: address.address2 || undefined,
+            city: address.city || undefined,
+            province: address.province || undefined,
+            country: address.country || "India",
+            zip: address.zip || undefined,
+            phone: phone || undefined,
+          }),
+        ]
+      : undefined,
+  });
+
+  if (!customerPayloadBody.email && !customerPayloadBody.phone) {
+    throw new HttpError(400, "Email or phone is required to create a customer");
+  }
+
+  const body = await shopifyFetch(channel.shop, "/customers.json", accessToken, {
+    method: "POST",
+    body: JSON.stringify({ customer: customerPayloadBody }),
+  });
+
+  const saved = await saveSyncedShopifyData({ companyId, channelId: channel._id, shop: channel.shop, customers: [body.customer] });
+  return { customer: saved.customers[0], channel };
 }
 
 export async function syncShopifyData({ channelId, companyId }) {

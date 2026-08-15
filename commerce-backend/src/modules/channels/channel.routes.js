@@ -33,6 +33,7 @@ import {
   syncShopifyData,
   updateShopifyRecord,
   createShopifyOrderDirect,
+  createShopifyCustomerDirect,
 } from "./shopify.service.js";
 import { isMongoConnected } from "../../config/database.js";
 import { SyncedCustomer } from "../../models/synced-customer.model.js";
@@ -312,6 +313,35 @@ channelRoutes.post(
       shopifyOrderName: shopifyOrder.name,
       savedOrder,
     });
+  }),
+);
+
+// Create a new customer directly in Shopify — mirrors Shopify's own "New
+// customer" form. Created for real in Shopify first, then synced back so it
+// shows up in our own Customers list exactly like any other synced customer —
+// ready for follow-up (customer-followup-modal) and direct order creation
+// (create-order-modal) immediately, no separate "is this a real customer yet" state.
+channelRoutes.post(
+  "/customers",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { companyId, sub: userId } = req.auth;
+    const { firstName, lastName, email, phone, tags, note, acceptsMarketing, address } = req.body || {};
+
+    const { customer } = await createShopifyCustomerDirect({
+      companyId,
+      userId,
+      firstName,
+      lastName,
+      email,
+      phone,
+      tags,
+      note,
+      acceptsMarketing,
+      address,
+    });
+
+    res.json({ message: "Customer created on Shopify", customer });
   }),
 );
 

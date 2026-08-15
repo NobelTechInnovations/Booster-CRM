@@ -176,6 +176,19 @@ export async function getShopifyChannelByShop(shop) {
   return clone([...memory.channels.values()].find((ch) => ch.provider === "shopify" && ch.shop === shop) || null);
 }
 
+// The connected Shopify channel for a company — used wherever we need to push
+// something new INTO Shopify (e.g. creating a customer) rather than reading
+// an already-synced record, so there's no existing SyncedCustomer/SyncedOrder
+// to resolve the channel from yet.
+export async function getConnectedShopifyChannel(companyId) {
+  if (isMongoConnected()) {
+    return Channel.findOne({ companyId, provider: "shopify", status: "connected" })
+      .select("+credentials.accessToken")
+      .lean();
+  }
+  return clone([...memory.channels.values()].find((ch) => String(ch.companyId) === String(companyId) && ch.provider === "shopify" && ch.status === "connected") || null);
+}
+
 // ─── Amazon Channel ──────────────────────────────────────────────────────────
 
 export async function upsertAmazonChannel({ companyId, userId, sellingPartnerId, marketplaceId, refreshToken, accessToken }) {
