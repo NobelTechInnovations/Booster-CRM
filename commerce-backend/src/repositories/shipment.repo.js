@@ -35,6 +35,31 @@ export async function listShipments({ companyId, provider, page = 1, limit = 200
     .map(clone);
 }
 
+// Finds a shipment we already started for this order (same provider) —
+// used to recover from a partial create (order created on the provider's
+// side, but courier assignment failed or was deferred) without re-issuing
+// a "create order" call the provider will reject as a duplicate.
+export async function getShipmentByOrder({ companyId, provider, syncedOrderId, shopifyOrderId }) {
+  const orClauses = [];
+  if (syncedOrderId) orClauses.push({ syncedOrderId });
+  if (shopifyOrderId) orClauses.push({ shopifyOrderId: String(shopifyOrderId) });
+  if (!orClauses.length) return null;
+
+  if (isMongoConnected()) {
+    return Shipment.findOne({ companyId, provider, $or: orClauses }).sort({ createdAt: -1 }).lean();
+  }
+
+  return clone(
+    [...memory.shipments.values()]
+      .filter((s) => {
+        if (String(s.companyId) !== String(companyId) || s.provider !== provider) return false;
+        return (syncedOrderId && String(s.syncedOrderId) === String(syncedOrderId))
+          || (shopifyOrderId && String(s.shopifyOrderId) === String(shopifyOrderId));
+      })
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0] || null,
+  );
+}
+
 export async function getShipmentByAwb({ companyId, awbCode }) {
   if (isMongoConnected()) return Shipment.findOne({ companyId, awbCode }).lean();
   return clone([...memory.shipments.values()].find((s) => String(s.companyId) === String(companyId) && s.awbCode === awbCode) || null);

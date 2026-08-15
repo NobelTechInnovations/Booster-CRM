@@ -9,7 +9,7 @@ import {
   upsertWarehouseRecord,
   listWarehouses,
 } from "../../../repositories/warehouse.repo.js";
-import { createShipmentRecord, updateShipmentsByAwb } from "../../../repositories/shipment.repo.js";
+import { createShipmentRecord, updateShipmentsByAwb, getShipmentByOrder, updateShipmentById } from "../../../repositories/shipment.repo.js";
 
 const BASE_URL = "https://shazam.velocity.in";
 
@@ -280,6 +280,11 @@ export class VelocityProvider extends BaseShippingProvider {
       order_date: new Date().toISOString().slice(0, 16).replace("T", " "),
 
       warehouse_id: warehouse.externalWarehouseId,
+      // Required per Velocity's docs alongside warehouse_id (their "Pickup
+      // Location Name") — was missing entirely before, which their forward-
+      // order-orchestration endpoint apparently tolerated but isn't
+      // documented as optional.
+      pickup_location: warehouse.name || warehouse.externalWarehouseId,
 
       billing_customer_name: firstName,
       billing_last_name:     lastName,
@@ -305,7 +310,10 @@ export class VelocityProvider extends BaseShippingProvider {
           tax:           0,
         })),
 
-      payment_method:  order.isCOD ? "COD" : "Prepaid",
+      // Docs specify the enum as exactly COD / PREPAID (uppercase) — this
+      // sent "Prepaid" (mixed case) before, which didn't match the
+      // documented value.
+      payment_method:  order.isCOD ? "COD" : "PREPAID",
       sub_total:       order.subtotalPrice || order.totalPrice,
       cod_collectible: order.isCOD ? (order.codAmount || order.totalPrice) : 0,
 
@@ -323,7 +331,59 @@ export class VelocityProvider extends BaseShippingProvider {
   async createForwardOrder(payload, { syncedOrderId, shopifyOrderId, shopifyOrderName } = {}) {
     const { channel, token } = await this.ensureToken();
 
-    const body     = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: payload });
+    // Recover from a partial earlier attempt on OUR side: if a shipment
+    // record already exists for this order with a Velocity shipment_id but
+    // no AWB yet (order got created there but courier assignment didn't
+    // complete — network blip, a picked carrier going out of service, etc),
+    // finish it via the documented two-step "assign courier to an existing
+    // shipment" endpoint instead of re-submitting "create order", which
+    // Velocity correctly rejects as a duplicate.
+    const existing = await getShipmentByOrder({ companyId: this.companyId, provider: this.provider, syncedOrderId, shopifyOrderId });
+    if (existing?.shipmentId && !existing.awbCode) {
+      const body = await velocityFetch("/custom/api/v1/forward-order-shipment", {
+        token,
+        body: { shipment_id: existing.shipmentId, ...(payload.carrier_id ? { carrier_id: payload.carrier_id } : {}) },
+      });
+      const shipment = body.payload || {};
+      return updateShipmentById({
+        shipmentId: existing._id,
+        companyId:  this.companyId,
+        update: {
+          orderId:     shipment.order_id || existing.orderId,
+          awbCode:     shipment.awb_code,
+          courierId:   shipment.courier_company_id,
+          courierName: shipment.courier_name,
+          status:      shipment.awb_generated ? "awb_generated" : "order_created",
+          labelUrl:    shipment.label_url,
+          response:    body,
+        },
+      });
+    }
+
+    let body;
+    try {
+      body = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: payload });
+    } catch (err) {
+      // Velocity refuses to re-create an order_id it already holds (per
+      // their docs' cancel/waybill error conventions, this comes back as a
+      // plain 400 with meta.message "Order already exists" — no shipment_id
+      // included to recover it by). Since we just checked and have no local
+      // record of creating this order ourselves, it almost always means a
+      // separate Shopify app connected directly on the user's Velocity
+      // dashboard already auto-imported the order independently of us —
+      // their API has no documented way to look up or ship that record, only
+      // to create a new (colliding) one. Surface that plainly instead of the
+      // raw duplicate-key error.
+      const veloMessage = err.details?.meta?.message || err.details?.message || "";
+      if (/order already exists/i.test(veloMessage)) {
+        throw new HttpError(
+          409,
+          `Velocity already has an order with ID "${payload.order_id}" that wasn't created from this panel — most likely auto-imported by a separate Shopify app connected directly on your Velocity dashboard. Assign a courier for it there directly, or disconnect that direct Shopify sync so every shipment routes through this panel instead.`,
+          err.details,
+        );
+      }
+      throw err;
+    }
     const shipment = body.payload || {};
 
     return createShipmentRecord({
