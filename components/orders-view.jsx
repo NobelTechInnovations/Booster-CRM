@@ -787,21 +787,15 @@ export function OrdersView() {
             </div>
 
             {/* Channel filter — every provider actually present in the data (Shopify live sync, Amazon SQL/CSV import, local manual orders, etc) */}
-            <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <select
+              value={filterChannel}
+              onChange={(e) => setFilterChannel(e.target.value)}
+              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+            >
               {channelTabs.map((tab) => (
-                <button
-                  key={tab.key}
-                  onClick={() => setFilterChannel(tab.key)}
-                  className={`px-3 py-1.5 text-xs font-semibold transition ${
-                    filterChannel === tab.key
-                      ? "bg-emerald-700 text-white"
-                      : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  {tab.label}
-                </button>
+                <option key={tab.key} value={tab.key}>{tab.label}</option>
               ))}
-            </div>
+            </select>
 
             {/* Status filter */}
             <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">

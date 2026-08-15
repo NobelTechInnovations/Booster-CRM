@@ -3,6 +3,8 @@ import mongoose from "mongoose";
 import { isMongoConnected } from "../config/database.js";
 import { WebhookEndpoint } from "../models/webhook-endpoint.model.js";
 import { WebhookEvent } from "../models/webhook-event.model.js";
+import { WebhookLead } from "../models/webhook-lead.model.js";
+import { extractLeadInfo } from "../modules/webhooks/webhook.service.js";
 import { memory, id, clone, now } from "./memory-store.js";
 
 // Same Schema.Types.Mixed id-filter fix applied everywhere else in this repo
@@ -95,23 +97,155 @@ export async function getEndpointByToken(token, { includeSecret = false } = {}) 
 
 // ─── Events ──────────────────────────────────────────────────────────────────
 
-export async function recordWebhookEvent({ companyId, endpointId, provider, type, summary, payload, headers, verified }) {
-  const record = { companyId, endpointId, provider, type, summary, payload, headers, verified: Boolean(verified), receivedAt: new Date() };
+export async function recordWebhookEvent({ companyId, endpointId, provider, type, summary, payload, headers, verified, leadKey }) {
+  const record = { companyId, endpointId, provider, type, summary, payload, headers, verified: Boolean(verified), receivedAt: new Date(), leadKey: leadKey || undefined };
+
+  let event;
+  if (isMongoConnected()) {
+    const created = await WebhookEvent.create(record);
+    await WebhookEndpoint.findByIdAndUpdate(endpointId, { $set: { lastEventAt: created.receivedAt }, $inc: { eventCount: 1 } });
+    event = created.toObject();
+  } else {
+    event = { _id: id(), ...record, createdAt: now(), updatedAt: now() };
+    memory.webhookEvents.set(event._id, event);
+    const endpoint = memory.webhookEndpoints.get(endpointId);
+    if (endpoint) {
+      endpoint.lastEventAt = event.receivedAt;
+      endpoint.eventCount = (endpoint.eventCount || 0) + 1;
+    }
+  }
+
+  // Group into a lead — falls back to the event's own id when nothing in the
+  // payload is identifiable (leadKey null), so every event still surfaces
+  // somewhere rather than being silently unreachable from the leads list.
+  await upsertWebhookLead({ companyId, endpointId, provider, leadKey: leadKey || String(event._id), type, summary, payload });
+
+  return event;
+}
+
+// Upserted on every event for a given (endpointId, leadKey) — always reflects
+// the latest stage without re-scanning every individual event. followUpStatus/
+// followUps are only ever touched by addLeadFollowUp() below, never here, so
+// a new event on an already-being-worked lead doesn't reset its follow-up state.
+async function upsertWebhookLead({ companyId, endpointId, provider, leadKey, type, summary, payload }) {
+  const info = extractLeadInfo(provider, payload);
+  const now_ = new Date();
+
+  const denormalized = {
+    provider,
+    latestType: type,
+    latestSummary: summary,
+    latestStage: info.stage || type,
+    ...(info.name ? { customerName: info.name } : {}),
+    ...(info.email ? { customerEmail: info.email } : {}),
+    ...(info.phone ? { customerPhone: info.phone } : {}),
+    ...(info.cartValue !== undefined ? { cartValue: info.cartValue } : {}),
+    lastEventAt: now_,
+  };
 
   if (isMongoConnected()) {
-    const event = await WebhookEvent.create(record);
-    await WebhookEndpoint.findByIdAndUpdate(endpointId, { $set: { lastEventAt: event.receivedAt }, $inc: { eventCount: 1 } });
-    return event.toObject();
+    await WebhookLead.findOneAndUpdate(
+      { companyId, endpointId, leadKey },
+      { $set: denormalized, $inc: { eventCount: 1 }, $setOnInsert: { companyId, endpointId, leadKey, firstEventAt: now_, followUpStatus: "new" } },
+      { upsert: true },
+    );
+    return;
   }
 
-  const event = { _id: id(), ...record, createdAt: now(), updatedAt: now() };
-  memory.webhookEvents.set(event._id, event);
-  const endpoint = memory.webhookEndpoints.get(endpointId);
-  if (endpoint) {
-    endpoint.lastEventAt = event.receivedAt;
-    endpoint.eventCount = (endpoint.eventCount || 0) + 1;
+  const memKey = `${endpointId}:${leadKey}`;
+  const existing = memory.webhookLeads.get(memKey);
+  if (existing) {
+    Object.assign(existing, denormalized, { eventCount: (existing.eventCount || 0) + 1, updatedAt: now() });
+  } else {
+    memory.webhookLeads.set(memKey, {
+      _id: id(), companyId, endpointId, leadKey, ...denormalized,
+      eventCount: 1, firstEventAt: now_, followUpStatus: "new", followUps: [],
+      createdAt: now(), updatedAt: now(),
+    });
   }
-  return clone(event);
+}
+
+// ─── Leads (grouped events) ─────────────────────────────────────────────────
+
+export async function listWebhookLeads({ companyId, endpointId, provider, limit = 200 }) {
+  const filter = {
+    companyId: mixedIdFilter(companyId),
+    ...(endpointId ? { endpointId: mixedIdFilter(endpointId) } : {}),
+    ...(provider ? { provider } : {}),
+  };
+
+  if (isMongoConnected()) {
+    return WebhookLead.find(filter).sort({ lastEventAt: -1 }).limit(limit).lean();
+  }
+
+  return [...memory.webhookLeads.values()]
+    .filter((l) => {
+      if (String(l.companyId) !== String(companyId)) return false;
+      if (endpointId && String(l.endpointId) !== String(endpointId)) return false;
+      if (provider && l.provider !== provider) return false;
+      return true;
+    })
+    .sort((a, b) => new Date(b.lastEventAt) - new Date(a.lastEventAt))
+    .slice(0, limit)
+    .map(clone);
+}
+
+export async function getWebhookLead({ companyId, leadId }) {
+  if (isMongoConnected()) {
+    return WebhookLead.findOne({ _id: leadId, companyId: mixedIdFilter(companyId) }).lean();
+  }
+  for (const lead of memory.webhookLeads.values()) {
+    if (String(lead._id) === String(leadId) && String(lead.companyId) === String(companyId)) return clone(lead);
+  }
+  return null;
+}
+
+// All raw events belonging to one lead's timeline — for the drawer.
+export async function listEventsForLead({ companyId, endpointId, leadKey, limit = 100 }) {
+  const filter = { companyId: mixedIdFilter(companyId), endpointId: mixedIdFilter(endpointId), leadKey };
+
+  if (isMongoConnected()) {
+    return WebhookEvent.find(filter).sort({ receivedAt: -1 }).limit(limit).lean();
+  }
+
+  return [...memory.webhookEvents.values()]
+    .filter((e) => String(e.companyId) === String(companyId) && String(e.endpointId) === String(endpointId) && e.leadKey === leadKey)
+    .sort((a, b) => new Date(b.receivedAt) - new Date(a.receivedAt))
+    .slice(0, limit)
+    .map(clone);
+}
+
+// Same shape/semantics as the customer follow-up log (channel.routes.js) —
+// deliberately kept consistent so a lead and a customer read the same way.
+export async function addLeadFollowUp({ companyId, leadId, note, outcome, nextFollowUpAt, followUpStatus, createdByName }) {
+  const followUpEntry = {
+    calledAt: new Date(),
+    note: note || "",
+    outcome: outcome || "called",
+    nextFollowUpAt: nextFollowUpAt ? new Date(nextFollowUpAt) : undefined,
+    createdByName: createdByName || "Agent",
+  };
+
+  if (isMongoConnected()) {
+    const update = { $push: { followUps: { $each: [followUpEntry], $position: 0 } }, $set: {} };
+    if (followUpStatus) update.$set.followUpStatus = followUpStatus;
+    if (nextFollowUpAt) update.$set.nextFollowUpAt = new Date(nextFollowUpAt);
+    if (Object.keys(update.$set).length === 0) delete update.$set;
+
+    const lead = await WebhookLead.findOneAndUpdate({ _id: leadId, companyId: mixedIdFilter(companyId) }, update, { new: true }).lean();
+    return lead;
+  }
+
+  for (const lead of memory.webhookLeads.values()) {
+    if (String(lead._id) === String(leadId) && String(lead.companyId) === String(companyId)) {
+      lead.followUps = [followUpEntry, ...(lead.followUps || [])];
+      if (followUpStatus) lead.followUpStatus = followUpStatus;
+      if (nextFollowUpAt) lead.nextFollowUpAt = new Date(nextFollowUpAt);
+      lead.updatedAt = now();
+      return clone(lead);
+    }
+  }
+  return null;
 }
 
 export async function listWebhookEvents({ companyId, endpointId, provider, limit = 200 }) {

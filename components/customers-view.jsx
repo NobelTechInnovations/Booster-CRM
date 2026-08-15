@@ -158,6 +158,7 @@ export function CustomersView() {
   const [showNew, setShowNew] = useState(false);
   const [orderTarget, setOrderTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
+  const [sortBy, setSortBy] = useState("latest");
 
   async function loadCustomers() {
     setIsLoading(true);
@@ -175,14 +176,30 @@ export function CustomersView() {
   useEffect(() => { loadCustomers(); }, []);
 
   const filtered = useMemo(() => {
-    if (!search) return customers;
-    const q = search.toLowerCase();
-    return customers.filter((c) =>
-      (c.name || "").toLowerCase().includes(q) ||
-      (c.email || "").toLowerCase().includes(q) ||
-      (c.phone || "").toLowerCase().includes(q),
-    );
-  }, [customers, search]);
+    let list = customers;
+    if (search) {
+      const q = search.toLowerCase();
+      list = list.filter((c) =>
+        (c.name || "").toLowerCase().includes(q) ||
+        (c.email || "").toLowerCase().includes(q) ||
+        (c.phone || "").toLowerCase().includes(q),
+      );
+    }
+    const nameOf = (c) => (c.name || [c.firstName, c.lastName].filter(Boolean).join(" ") || "").toLowerCase();
+    // shopifyCreatedAt = actual customer signup date on Shopify; fall back to
+    // our own createdAt for locally-created customers before the sync-back lands.
+    const dateOf = (c) => new Date(c.shopifyCreatedAt || c.createdAt || 0).getTime();
+    const sorted = [...list].sort((a, b) => {
+      switch (sortBy) {
+        case "az": return nameOf(a).localeCompare(nameOf(b));
+        case "za": return nameOf(b).localeCompare(nameOf(a));
+        case "oldest": return dateOf(a) - dateOf(b);
+        case "latest":
+        default: return dateOf(b) - dateOf(a);
+      }
+    });
+    return sorted;
+  }, [customers, search, sortBy]);
 
   return (
     <div className="mx-auto max-w-[1400px] px-4 py-6 lg:px-6">
@@ -200,14 +217,26 @@ export function CustomersView() {
 
       <Card className="mb-5">
         <CardContent className="p-4">
-          <div className="relative">
-            <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by name, email, phone..."
-              className="h-9 w-full rounded-lg border border-[var(--line)] bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
-            />
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="relative min-w-[200px] flex-1">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search by name, email, phone..."
+                className="h-9 w-full rounded-lg border border-[var(--line)] bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
+            </div>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            >
+              <option value="latest">Latest first</option>
+              <option value="oldest">Oldest first</option>
+              <option value="az">Name A → Z</option>
+              <option value="za">Name Z → A</option>
+            </select>
           </div>
         </CardContent>
       </Card>

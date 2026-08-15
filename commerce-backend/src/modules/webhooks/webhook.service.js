@@ -42,12 +42,52 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(bufA, bufB);
 }
 
+function flatten(payload) {
+  const p = payload || {};
+  return { ...p, ...(typeof p.data === "object" ? p.data : {}), ...(typeof p.payload === "object" ? p.payload : {}) };
+}
+
+// Pulls out the customer/cart info common to abandoned-cart style payloads.
+// Verified against real Fastrr payloads (cart_id, latest_stage, first_name/
+// last_name, phone_number, total_price) — not guessed. Other providers fall
+// through to the same generic field-name sniffing as before.
+export function extractLeadInfo(provider, payload) {
+  const flat = flatten(payload);
+  const name = [flat.first_name, flat.last_name].filter(Boolean).join(" ") || flat.customer_name || flat.name || "";
+  const phone = flat.phone_number || flat.phone || flat.mobile || flat.contact || "";
+  // Fastrr's "email" is a synthetic `{phone}@fastrr.com` placeholder when the
+  // shopper hasn't given a real one yet — still useful as a stable id, just
+  // not necessarily a real inbox.
+  const email = flat.email || flat.customer_email || "";
+  const stage = flat.latest_stage || flat.stage || "";
+  const cartValueRaw = flat.total_price ?? flat.amount ?? flat.total ?? flat.cart_value;
+  const cartValue = cartValueRaw !== undefined ? Number(cartValueRaw) : undefined;
+  return { name, phone, email, stage, cartValue };
+}
+
+// Groups repeat events from the same underlying lead — a Fastrr cart moving
+// INIT -> PAYMENT_INITIATED -> ORDER_SCREEN sends one webhook call per stage,
+// all sharing one cart_id. Falls back to a customer identifier (phone/email)
+// when there's no cart/order id, and returns null (caller groups by the
+// event's own id) only when nothing at all is identifiable.
+export function extractLeadKey(provider, payload) {
+  const p = payload || {};
+  const flat = flatten(payload);
+  return (
+    (p.cart_id && String(p.cart_id)) ||
+    (p.order_id && String(p.order_id)) ||
+    (p.cart_token && String(p.cart_token)) ||
+    (flat.phone_number && String(flat.phone_number)) ||
+    (flat.email && String(flat.email)) ||
+    null
+  );
+}
+
 // Best-effort, provider-agnostic: pulls out an event "type" label and a short
 // human-readable summary so the events list is scannable without opening
 // every raw payload. Recognizes Razorpay's shape explicitly (well-documented,
-// verified against their docs); everything else falls back to a generic
-// key-sniffing pass over common field names, since we don't have a verified
-// payload shape for Shiprocket Checkout / Fastrr / every possible provider.
+// verified against their docs) and Fastrr's shape explicitly (verified
+// against real payloads); everything else falls back to generic field-name sniffing.
 export function extractEventSummary(provider, payload) {
   const p = payload || {};
 
@@ -58,15 +98,10 @@ export function extractEventSummary(provider, payload) {
     return { type: p.event, summary: [amount, p.event, who].filter(Boolean).join(" — ") };
   }
 
-  // Generic fallback: look for a type/event field, and common
-  // customer/amount fields anywhere in the top two levels of the payload.
-  const type = p.event || p.type || p.event_type || p.status || "webhook.received";
-  const flat = { ...p, ...(typeof p.data === "object" ? p.data : {}), ...(typeof p.payload === "object" ? p.payload : {}) };
-  const email = flat.email || flat.customer_email || flat.contact_email;
-  const phone = flat.phone || flat.mobile || flat.customer_phone || flat.contact;
-  const amount = flat.amount || flat.total || flat.cart_value || flat.order_value;
-  const who = email || phone || flat.customer_name || flat.name || "";
-  const amountLabel = amount ? `₹${Number(amount).toLocaleString("en-IN")}` : "";
+  const info = extractLeadInfo(provider, p);
+  const type = info.stage || p.event || p.type || p.event_type || p.status || "webhook.received";
+  const amountLabel = info.cartValue ? `₹${info.cartValue.toLocaleString("en-IN")}` : "";
+  const who = info.name || info.phone || info.email || "";
 
   return {
     type: String(type),

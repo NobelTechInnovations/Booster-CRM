@@ -6,11 +6,14 @@ import {
   Building2,
   Check,
   ChevronDown,
+  ChevronRight,
+  Clock,
   Copy,
   CreditCard,
   KeyRound,
   Package,
   Percent,
+  PhoneCall,
   PlugZap,
   Plus,
   Receipt,
@@ -19,6 +22,7 @@ import {
   ShoppingCart,
   Trash2,
   Truck,
+  User,
   Users,
   Webhook,
   X,
@@ -37,8 +41,10 @@ import {
   createWebhookEndpoint,
   updateWebhookEndpoint,
   deleteWebhookEndpoint,
-  listWebhookEvents,
   webhookInboundUrl,
+  listWebhookLeads,
+  getWebhookLeadEvents,
+  logWebhookLeadFollowUp,
 } from "@/lib/api";
 
 function SectionCard({ icon: Icon, title, desc, children }) {
@@ -292,48 +298,223 @@ function EndpointCard({ endpoint, onRefresh }) {
   );
 }
 
-function EventRow({ event }) {
-  const [expanded, setExpanded] = useState(false);
+const FOLLOW_UP_OUTCOMES = [
+  { value: "called", label: "Called" },
+  { value: "no_answer", label: "No answer" },
+  { value: "interested", label: "Interested" },
+  { value: "converted", label: "Converted" },
+  { value: "follow_up_later", label: "Follow up later" },
+  { value: "not_interested", label: "Not interested" },
+  { value: "other", label: "Other" },
+];
+
+const LEAD_STATUS_TONE = { new: "slate", follow_up_scheduled: "amber", converted: "green", no_response: "rose", closed: "slate" };
+
+// Same outcome/status log as the customer follow-up flow — kept identical so
+// a webhook lead and a synced customer read the same way once you're calling them.
+function LogFollowUpModal({ lead, onClose, onLogged }) {
+  const [outcome, setOutcome] = useState("called");
+  const [note, setNote] = useState("");
+  const [followUpStatus, setFollowUpStatus] = useState(lead.followUpStatus || "new");
+  const [nextFollowUpAt, setNextFollowUpAt] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  async function handleSubmit(event) {
+    event.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const result = await logWebhookLeadFollowUp(lead._id || lead.id, {
+        outcome, note, followUpStatus, nextFollowUpAt: nextFollowUpAt || undefined,
+      });
+      onLogged(result.lead);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
-    <>
-      <tr className="cursor-pointer border-b border-slate-100 transition-colors hover:bg-slate-50/60" onClick={() => setExpanded((v) => !v)}>
-        <td className="py-2.5 pr-3 text-xs text-slate-500">{new Date(event.receivedAt).toLocaleString("en-IN")}</td>
-        <td className="py-2.5 pr-3"><Badge tone="slate">{event.provider}</Badge></td>
-        <td className="py-2.5 pr-3 text-xs font-medium text-slate-700">{event.type}</td>
-        <td className="py-2.5 pr-3 text-sm text-slate-800">{event.summary}</td>
-        <td className="py-2.5 pr-0 text-right">
-          <Badge tone={event.verified ? "green" : "amber"}>{event.verified ? "Verified" : "Unverified"}</Badge>
-        </td>
-      </tr>
-      {expanded ? (
-        <tr className="border-b border-slate-100 bg-slate-50/60">
-          <td colSpan={5} className="p-3">
-            <pre className="max-h-64 overflow-auto rounded-md bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
-              {JSON.stringify(event.payload, null, 2)}
-            </pre>
-          </td>
-        </tr>
-      ) : null}
-    </>
+    <WebhookModal title={`Log follow-up — ${lead.customerName || lead.customerPhone || "Lead"}`} onClose={onClose}>
+      <form onSubmit={handleSubmit} className="space-y-3">
+        <label className="block text-sm font-semibold text-slate-700">
+          Outcome
+          <select className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
+            {FOLLOW_UP_OUTCOMES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          </select>
+        </label>
+        <label className="block text-sm font-semibold text-slate-700">
+          Lead status
+          <select className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={followUpStatus} onChange={(e) => setFollowUpStatus(e.target.value)}>
+            <option value="new">New</option>
+            <option value="follow_up_scheduled">Follow-up scheduled</option>
+            <option value="converted">Converted</option>
+            <option value="no_response">No response</option>
+            <option value="closed">Closed</option>
+          </select>
+        </label>
+        <label className="block text-sm font-semibold text-slate-700">
+          Next follow-up (optional)
+          <input type="datetime-local" className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} />
+        </label>
+        <label className="block text-sm font-semibold text-slate-700">
+          Note
+          <textarea rows={3} className="mt-1 w-full rounded-md border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={note} onChange={(e) => setNote(e.target.value)} />
+        </label>
+        {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
+        <Button type="submit" className="w-full" disabled={saving}>{saving ? "Saving…" : "Log follow-up"}</Button>
+      </form>
+    </WebhookModal>
+  );
+}
+
+// Right-side drawer — full event timeline for one lead, replacing the old
+// under-row inline JSON expansion for readability (a cart with 5+ stage
+// events made the table nearly unreadable inline).
+function LeadDrawer({ lead, onClose, onLogFollowUp }) {
+  const [events, setEvents] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [expandedId, setExpandedId] = useState(null);
+
+  useEffect(() => {
+    setIsLoading(true);
+    getWebhookLeadEvents(lead._id || lead.id)
+      .then((res) => setEvents(res.events || []))
+      .finally(() => setIsLoading(false));
+  }, [lead]);
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="flex h-full w-full max-w-lg flex-col bg-white shadow-2xl">
+        <div className="flex items-start justify-between border-b border-[var(--line)] px-5 py-4">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{lead.provider}</p>
+            <h2 className="text-lg font-extrabold text-slate-900">{lead.customerName || lead.customerPhone || lead.customerEmail || "Lead"}</h2>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
+              {lead.customerPhone ? <span className="flex items-center gap-1"><PhoneCall size={11} />{lead.customerPhone}</span> : null}
+              {lead.cartValue ? <span className="font-semibold text-slate-700">₹{Number(lead.cartValue).toLocaleString("en-IN")}</span> : null}
+              <Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge>
+            </div>
+          </div>
+          <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
+        </div>
+
+        <div className="border-b border-[var(--line)] px-5 py-3">
+          <Button className="w-full h-9" onClick={() => onLogFollowUp(lead)}>
+            <PhoneCall size={14} />
+            Log follow-up
+          </Button>
+        </div>
+
+        <div className="flex-1 overflow-y-auto px-5 py-4">
+          {lead.followUps?.length ? (
+            <div className="mb-5">
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Follow-up history</p>
+              <div className="space-y-2">
+                {lead.followUps.map((f) => (
+                  <div key={f._id} className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <span className="font-semibold text-indigo-700">{FOLLOW_UP_OUTCOMES.find((o) => o.value === f.outcome)?.label || f.outcome}</span>
+                      <span className="text-slate-400">{new Date(f.calledAt).toLocaleString("en-IN")}</span>
+                    </div>
+                    {f.note ? <p className="mt-1 text-slate-600">{f.note}</p> : null}
+                    <p className="mt-1 text-[10px] text-slate-400">by {f.createdByName}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Event timeline ({events.length})</p>
+          {isLoading ? (
+            <p className="text-sm text-slate-400">Loading…</p>
+          ) : (
+            <div className="space-y-2">
+              {events.map((event, idx) => {
+                const eid = event._id || event.id;
+                const isExpanded = expandedId === eid;
+                return (
+                  <div key={eid} className="overflow-hidden rounded-lg border border-slate-200">
+                    <button
+                      onClick={() => setExpandedId(isExpanded ? null : eid)}
+                      className="flex w-full items-center justify-between gap-2 px-3 py-2.5 text-left hover:bg-slate-50"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className={cn("h-2 w-2 shrink-0 rounded-full", idx === 0 ? "bg-indigo-600" : "bg-slate-300")} />
+                        <div>
+                          <p className="text-sm font-semibold text-slate-800">{event.type}</p>
+                          <p className="flex items-center gap-1 text-[11px] text-slate-400"><Clock size={10} />{new Date(event.receivedAt).toLocaleString("en-IN")}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge tone={event.verified ? "green" : "amber"}>{event.verified ? "Verified" : "Unverified"}</Badge>
+                        <ChevronRight size={14} className={cn("text-slate-400 transition-transform", isExpanded && "rotate-90")} />
+                      </div>
+                    </button>
+                    {isExpanded ? (
+                      <pre className="max-h-72 overflow-auto border-t border-slate-100 bg-slate-900 p-3 text-[11px] leading-5 text-slate-100">
+                        {JSON.stringify(event.payload, null, 2)}
+                      </pre>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LeadRow({ lead, onView, onFollowUp }) {
+  return (
+    <tr className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/60" onClick={() => onView(lead)}>
+      <td className="py-2.5 pr-3">
+        <div className="flex items-center gap-2">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500"><User size={14} /></div>
+          <div className="min-w-0">
+            <p className="truncate text-sm font-semibold text-slate-800">{lead.customerName || lead.customerPhone || lead.customerEmail || "Unknown"}</p>
+            {lead.customerPhone && lead.customerName ? <p className="text-[11px] text-slate-400">{lead.customerPhone}</p> : null}
+          </div>
+        </div>
+      </td>
+      <td className="py-2.5 pr-3"><Badge tone="slate">{lead.provider}</Badge></td>
+      <td className="py-2.5 pr-3 text-xs font-medium text-slate-700">{lead.latestStage || lead.latestType}</td>
+      <td className="py-2.5 pr-3 text-sm font-semibold text-slate-800">{lead.cartValue ? `₹${Number(lead.cartValue).toLocaleString("en-IN")}` : "—"}</td>
+      <td className="py-2.5 pr-3 text-center text-xs font-medium text-slate-500">{lead.eventCount}</td>
+      <td className="py-2.5 pr-3 text-xs text-slate-500">{new Date(lead.lastEventAt).toLocaleString("en-IN")}</td>
+      <td className="py-2.5 pr-3"><Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge></td>
+      <td className="py-2.5 pr-0 text-right" onClick={(e) => e.stopPropagation()}>
+        <button onClick={() => onFollowUp(lead)} className="rounded-md p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700" title="Log follow-up">
+          <PhoneCall size={15} />
+        </button>
+      </td>
+    </tr>
   );
 }
 
 function WebhooksTab() {
   const [endpoints, setEndpoints] = useState([]);
-  const [events, setEvents] = useState([]);
+  const [leads, setLeads] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [filterEndpoint, setFilterEndpoint] = useState("");
+  const [viewingLead, setViewingLead] = useState(null);
+  const [followUpLead, setFollowUpLead] = useState(null);
 
   async function refresh() {
     setIsLoading(true);
     try {
-      const [endpointsRes, eventsRes] = await Promise.all([
+      const [endpointsRes, leadsRes] = await Promise.all([
         listWebhookEndpoints(),
-        listWebhookEvents(filterEndpoint ? { endpointId: filterEndpoint } : {}),
+        listWebhookLeads(filterEndpoint ? { endpointId: filterEndpoint } : {}),
       ]);
       setEndpoints(endpointsRes.endpoints || []);
-      setEvents(eventsRes.events || []);
+      setLeads(leadsRes.leads || []);
     } finally {
       setIsLoading(false);
     }
@@ -343,6 +524,12 @@ function WebhooksTab() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filterEndpoint]);
+
+  // Keep the open drawer's data current after a follow-up is logged from inside it.
+  function handleLeadUpdated(updatedLead) {
+    setLeads((prev) => prev.map((l) => ((l._id || l.id) === (updatedLead._id || updatedLead.id) ? updatedLead : l)));
+    setViewingLead((prev) => (prev && (prev._id || prev.id) === (updatedLead._id || updatedLead.id) ? updatedLead : prev));
+  }
 
   return (
     <div className="space-y-5">
@@ -381,8 +568,10 @@ function WebhooksTab() {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Recent Events</CardTitle>
-            <p className="mt-1 text-sm text-[var(--muted)]">Latest first. Click a row for the raw payload.</p>
+            <CardTitle>Leads</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Repeat events from the same cart/order are grouped into one lead. Click a row for the full timeline and to log a follow-up call.
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <select
@@ -401,22 +590,25 @@ function WebhooksTab() {
           </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {!events.length ? (
-            <p className="py-6 text-center text-sm text-[var(--muted)]">No events received yet.</p>
+          {!leads.length ? (
+            <p className="py-6 text-center text-sm text-[var(--muted)]">No leads yet — they'll appear here as webhook events come in.</p>
           ) : (
-            <table className="w-full min-w-[720px] border-collapse text-sm">
+            <table className="w-full min-w-[820px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
-                  <th className="py-2.5 pr-3 font-semibold">Received</th>
+                  <th className="py-2.5 pr-3 font-semibold">Customer</th>
                   <th className="py-2.5 pr-3 font-semibold">Provider</th>
-                  <th className="py-2.5 pr-3 font-semibold">Type</th>
-                  <th className="py-2.5 pr-3 font-semibold">Summary</th>
-                  <th className="py-2.5 pr-0 text-right font-semibold">Status</th>
+                  <th className="py-2.5 pr-3 font-semibold">Stage</th>
+                  <th className="py-2.5 pr-3 font-semibold">Cart value</th>
+                  <th className="py-2.5 pr-3 text-center font-semibold">Events</th>
+                  <th className="py-2.5 pr-3 font-semibold">Last seen</th>
+                  <th className="py-2.5 pr-3 font-semibold">Status</th>
+                  <th className="py-2.5 pr-0 text-right font-semibold" />
                 </tr>
               </thead>
               <tbody>
-                {events.map((event) => (
-                  <EventRow key={event._id || event.id} event={event} />
+                {leads.map((lead) => (
+                  <LeadRow key={lead._id || lead.id} lead={lead} onView={setViewingLead} onFollowUp={setFollowUpLead} />
                 ))}
               </tbody>
             </table>
@@ -425,6 +617,12 @@ function WebhooksTab() {
       </Card>
 
       {showAdd ? <AddEndpointModal onClose={() => setShowAdd(false)} onCreated={refresh} /> : null}
+      {viewingLead ? (
+        <LeadDrawer lead={viewingLead} onClose={() => setViewingLead(null)} onLogFollowUp={(lead) => setFollowUpLead(lead)} />
+      ) : null}
+      {followUpLead ? (
+        <LogFollowUpModal lead={followUpLead} onClose={() => setFollowUpLead(null)} onLogged={handleLeadUpdated} />
+      ) : null}
     </div>
   );
 }

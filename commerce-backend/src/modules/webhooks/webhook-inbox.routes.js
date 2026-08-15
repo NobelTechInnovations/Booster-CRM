@@ -11,8 +11,12 @@ import {
   recordWebhookEvent,
   listWebhookEvents,
   getWebhookEvent,
+  listWebhookLeads,
+  getWebhookLead,
+  listEventsForLead,
+  addLeadFollowUp,
 } from "../../repositories/webhook.repo.js";
-import { verifyWebhookSignature, extractEventSummary } from "./webhook.service.js";
+import { verifyWebhookSignature, extractEventSummary, extractLeadKey } from "./webhook.service.js";
 
 export const webhookInboxRoutes = Router();
 
@@ -88,6 +92,53 @@ webhookInboxRoutes.get(
   }),
 );
 
+// ─── Leads (events grouped by cart/order/customer) ─────────────────────────
+
+webhookInboxRoutes.get(
+  "/leads",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const leads = await listWebhookLeads({
+      companyId: req.auth.companyId,
+      endpointId: req.query.endpointId,
+      provider: req.query.provider,
+      limit: req.query.limit ? Number(req.query.limit) : undefined,
+    });
+    res.json({ leads });
+  }),
+);
+
+// Full event timeline for one lead — powers the drawer.
+webhookInboxRoutes.get(
+  "/leads/:leadId/events",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const lead = await getWebhookLead({ companyId: req.auth.companyId, leadId: req.params.leadId });
+    if (!lead) throw new HttpError(404, "Lead not found");
+    const events = await listEventsForLead({ companyId: req.auth.companyId, endpointId: lead.endpointId, leadKey: lead.leadKey });
+    res.json({ lead, events });
+  }),
+);
+
+webhookInboxRoutes.post(
+  "/leads/:leadId/follow-up",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { note, outcome, nextFollowUpAt, followUpStatus } = req.body || {};
+    const lead = await addLeadFollowUp({
+      companyId: req.auth.companyId,
+      leadId: req.params.leadId,
+      note,
+      outcome,
+      nextFollowUpAt,
+      followUpStatus,
+      createdByName: req.auth.displayName || req.auth.email,
+    });
+    if (!lead) throw new HttpError(404, "Lead not found");
+    res.json({ message: "Follow-up logged", lead });
+  }),
+);
+
 // ─── Inbound receiver (public — external services can't send our auth) ─────
 // Identity + tenancy come entirely from the unguessable :token, not from a
 // session. Always returns fast + 2xx-ish even on soft failures (unknown
@@ -113,6 +164,7 @@ webhookInboxRoutes.post(
     });
 
     const { type, summary } = extractEventSummary(endpoint.provider, req.body);
+    const leadKey = extractLeadKey(endpoint.provider, req.body);
 
     // A subset of headers only — enough to debug a signature mismatch,
     // without hoarding every header the sender includes.
@@ -130,6 +182,7 @@ webhookInboxRoutes.post(
       payload: req.body,
       headers: headerSubset,
       verified,
+      leadKey,
     });
 
     res.status(200).json({ status: "received" });

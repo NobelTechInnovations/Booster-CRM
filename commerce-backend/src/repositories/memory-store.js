@@ -22,6 +22,7 @@ export const memory = {
   automationRules: new Map(),
   webhookEndpoints: new Map(),
   webhookEvents:  new Map(),
+  webhookLeads:   new Map(),
 };
 
 export function id() {
