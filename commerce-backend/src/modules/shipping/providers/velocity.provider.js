@@ -364,25 +364,32 @@ export class VelocityProvider extends BaseShippingProvider {
     try {
       body = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: payload });
     } catch (err) {
-      // Velocity refuses to re-create an order_id it already holds (per
-      // their docs' cancel/waybill error conventions, this comes back as a
-      // plain 400 with meta.message "Order already exists" — no shipment_id
-      // included to recover it by). Since we just checked and have no local
-      // record of creating this order ourselves, it almost always means a
-      // separate Shopify app connected directly on the user's Velocity
-      // dashboard already auto-imported the order independently of us —
-      // their API has no documented way to look up or ship that record, only
-      // to create a new (colliding) one. Surface that plainly instead of the
-      // raw duplicate-key error.
       const veloMessage = err.details?.meta?.message || err.details?.message || "";
-      if (/order already exists/i.test(veloMessage)) {
+      if (!/order already exists/i.test(veloMessage)) throw err;
+
+      // Velocity refuses to re-create an order_id it already holds — and
+      // confirmed by testing, that reservation is PERMANENT: cancelling the
+      // order on Velocity's own dashboard does not free the order_id back
+      // up, so a retry with the same ID keeps failing forever. Since their
+      // API has no "look up an existing order" endpoint at all (checked —
+      // not in their docs), there's no way to attach a courier to whatever
+      // is sitting under that ID anyway; matching it only mattered if we
+      // could act on the match, which we can't. So: retry once with a
+      // de-duplicated order_id instead of dead-ending here. This does mean
+      // Velocity ends up with two order records if the original really did
+      // come from a separate Shopify auto-import — but a shippable
+      // duplicate beats a shipment that can never go out.
+      const retryPayload = { ...payload, order_id: `${payload.order_id}-R${Date.now().toString(36).slice(-5)}` };
+      try {
+        body = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: retryPayload });
+        payload = retryPayload;
+      } catch (retryErr) {
         throw new HttpError(
           409,
-          `Velocity already has an order with ID "${payload.order_id}" that wasn't created from this panel — most likely auto-imported by a separate Shopify app connected directly on your Velocity dashboard. Assign a courier for it there directly, or disconnect that direct Shopify sync so every shipment routes through this panel instead.`,
-          err.details,
+          `Velocity already has an order with ID "${payload.order_id}" and won't free it even after cancellation — a retry with a new ID also failed (${retryErr.message}). This usually means a separate Shopify app is connected directly on your Velocity dashboard, still auto-importing this order. Check Settings → Channels there and disconnect it so every shipment routes through this panel instead.`,
+          retryErr.details,
         );
       }
-      throw err;
     }
     const shipment = body.payload || {};
 
