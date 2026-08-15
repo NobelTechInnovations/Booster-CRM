@@ -111,9 +111,17 @@ export class VelocityProvider extends BaseShippingProvider {
   // ─── Warehouse Sync (THE KEY FIX) ────────────────────────────────────────
 
   /**
-   * Fetches ALL existing warehouses from Velocity and upserts them locally.
-   * This is called automatically on connect and by the warehouse sync job.
-   * Users will NEVER need to recreate warehouses that already exist on Velocity.
+   * Velocity's API has no "list warehouses" endpoint — GET /custom/api/v1/warehouse
+   * 404s (verified live against a real connected account), it only accepts POST
+   * for creating a brand-new one. So this can only pick up warehouses *we*
+   * created through createWarehouse() below; it can never see warehouses the
+   * user set up directly on Velocity's own dashboard. For those, use
+   * linkExistingWarehouse() with the Warehouse ID shown on their dashboard.
+   *
+   * Earlier versions of this fabricated a fake "Velocity Primary Pickup Hub"
+   * default whenever nothing was synced yet — that ID doesn't exist on
+   * Velocity's side and every shipment against it failed with "Warehouse not
+   * found". Removed: an empty list here is the honest result.
    */
   async syncWarehouses() {
     const { channel, token } = await this.ensureToken();
@@ -143,31 +151,7 @@ export class VelocityProvider extends BaseShippingProvider {
       synced.push(record);
     }
 
-    // Ensure at least one Velocity warehouse is registered locally if none exist
-    const existing = await listWarehouses({ companyId: this.companyId, provider: this.provider });
-    if (!existing.length) {
-      const defaultRecord = await upsertWarehouseRecord({
-        companyId:           this.companyId,
-        channelId:           channel._id,
-        provider:            this.provider,
-        externalWarehouseId: "WH_VELOCITY_PRIMARY",
-        data: {
-          name:               "Velocity Primary Pickup Hub",
-          phone_number:       channel.credentials?.username || "+919899474441",
-          contact_person:     "Warehouse Manager",
-          address_attributes: {
-            street_address: "Velocity Logistics Park",
-            city:           "Jaipur",
-            state:          "Rajasthan",
-            zip:            "302020",
-            country:        "India",
-          },
-        },
-      });
-      synced.push(defaultRecord);
-    }
-
-    return synced.length ? synced : existing;
+    return synced.length ? synced : listWarehouses({ companyId: this.companyId, provider: this.provider });
   }
 
   async createWarehouse(payload) {
@@ -184,6 +168,39 @@ export class VelocityProvider extends BaseShippingProvider {
       provider:            this.provider,
       externalWarehouseId: String(warehouseId),
       data:                { ...payload, warehouse_id: warehouseId },
+    });
+  }
+
+  /**
+   * Registers a warehouse the user already created on Velocity's own
+   * dashboard (they copy its Warehouse ID, e.g. "WHCOPY", from there since
+   * there's no API to look it up). No Velocity call — the ID is trusted as
+   * given, exactly like Shipway/Delhivery's manual-mapping fallback.
+   */
+  async linkExistingWarehouse(payload) {
+    const { channel } = await this.ensureToken();
+    const externalWarehouseId = String(payload.externalWarehouseId || payload.warehouseId || "").trim();
+    if (!externalWarehouseId) throw new HttpError(400, "Warehouse ID is required");
+    if (!payload.name) throw new HttpError(400, "Warehouse name is required");
+
+    return upsertWarehouseRecord({
+      companyId:           this.companyId,
+      channelId:           channel._id,
+      provider:            this.provider,
+      externalWarehouseId,
+      data: {
+        name:               payload.name,
+        phone_number:       payload.phone,
+        contact_person:     payload.contactPerson || payload.name,
+        email:              payload.email,
+        address_attributes: {
+          street_address: payload.address,
+          city:           payload.city,
+          state:          payload.state,
+          zip:            payload.zip,
+          country:        payload.country || "India",
+        },
+      },
     });
   }
 

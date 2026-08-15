@@ -99,6 +99,19 @@ shippingRoutes.post(
   }),
 );
 
+// Link a warehouse that already exists on the provider's own dashboard, by
+// ID — for providers (Velocity) with no "list warehouses" API, so the user
+// doesn't have to recreate warehouses they already set up there.
+shippingRoutes.post(
+  "/:provider/warehouses/link",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const provider = getShippingProvider(req.params.provider, { companyId: req.auth.companyId });
+    const warehouse = await provider.linkExistingWarehouse(req.body || {});
+    res.json({ message: "Warehouse linked", warehouse });
+  }),
+);
+
 // Check serviceability
 shippingRoutes.post(
   "/:provider/serviceability",

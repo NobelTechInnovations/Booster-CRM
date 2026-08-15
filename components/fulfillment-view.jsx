@@ -32,7 +32,108 @@ import {
   listWarehouses,
   listAllShipments,
   checkServiceability,
+  linkWarehouse,
 } from "@/lib/api";
+
+// For providers (Velocity) with no "list warehouses" API — lets the user
+// register a warehouse they already created on the provider's own dashboard
+// by pasting its Warehouse ID, instead of getting stuck with no pickup
+// location or an invented one that fails at ship time.
+function LinkWarehouseModal({ provider, onClose, onLinked }) {
+  const [form, setForm] = useState({
+    externalWarehouseId: "", name: "", phone: "", email: "", contactPerson: "",
+    address: "", city: "", state: "", zip: "",
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  function setField(key, value) {
+    setForm((f) => ({ ...f, [key]: value }));
+  }
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setSaving(true);
+    setError("");
+    try {
+      const res = await linkWarehouse(provider, form);
+      onLinked(res.warehouse);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+          <h2 className="text-base font-bold text-slate-900">Link an existing {provider} warehouse</h2>
+          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
+        </div>
+        <form onSubmit={handleSubmit} className="max-h-[75vh] space-y-3 overflow-y-auto px-5 py-4">
+          <p className="rounded-md bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
+            {provider} has no API to list warehouses, so paste the Warehouse ID exactly as shown on your {provider} dashboard
+            (e.g. <code className="font-mono">WHCOPY</code>) — we won't create a new one there.
+          </p>
+          <label className="block text-sm font-semibold text-slate-700">
+            Warehouse ID (from {provider} dashboard) *
+            <input required value={form.externalWarehouseId} onChange={(e) => setField("externalWarehouseId", e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" placeholder="WHCOPY" />
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            Warehouse name *
+            <input required value={form.name} onChange={(e) => setField("name", e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" placeholder="Main Warehouse" />
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block text-sm font-semibold text-slate-700">
+              Contact person
+              <input value={form.contactPerson} onChange={(e) => setField("contactPerson", e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Phone
+              <input value={form.phone} onChange={(e) => setField("phone", e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+          </div>
+          <label className="block text-sm font-semibold text-slate-700">
+            Email
+            <input type="email" value={form.email} onChange={(e) => setField("email", e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+          </label>
+          <label className="block text-sm font-semibold text-slate-700">
+            Street address
+            <input value={form.address} onChange={(e) => setField("address", e.target.value)}
+              className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+          </label>
+          <div className="grid grid-cols-3 gap-3">
+            <label className="block text-sm font-semibold text-slate-700">
+              City
+              <input value={form.city} onChange={(e) => setField("city", e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              State
+              <input value={form.state} onChange={(e) => setField("state", e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              PIN
+              <input value={form.zip} onChange={(e) => setField("zip", e.target.value)}
+                className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+            </label>
+          </div>
+          {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
+          <Button type="submit" className="w-full" disabled={saving}>{saving ? "Linking…" : "Link warehouse"}</Button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 function CourierSelectModal({
   order,
@@ -44,11 +145,25 @@ function CourierSelectModal({
   onShipped,
 }) {
   const [provider, setProvider] = useState(initialProvider || shippingChannels[0]?.provider || "shipway");
-  const [warehouseId, setWarehouseId] = useState(initialWarehouse || warehouses[0]?.externalWarehouseId || "");
+  // Warehouse IDs are provider-specific (Shipway's don't mean anything to
+  // Velocity and vice versa) — scope the picker to whichever channel is
+  // selected in this modal, not the full cross-provider warehouse list.
+  const providerWarehouses = warehouses.filter((w) => w.provider === provider);
+  const [warehouseId, setWarehouseId] = useState(initialWarehouse || providerWarehouses[0]?.externalWarehouseId || "");
   const [destPin, setDestPin] = useState(
     order?.shippingAddress?.zip || order?.shippingAddress?.pincode || "302020",
   );
-  const selectedWhObj = warehouses.find((w) => String(w.externalWarehouseId) === String(warehouseId)) || warehouses[0];
+  const selectedWhObj = providerWarehouses.find((w) => String(w.externalWarehouseId) === String(warehouseId)) || providerWarehouses[0];
+
+  // If the channel changes, the previously-selected warehouse ID almost
+  // certainly belongs to a different provider — reset to that provider's
+  // first warehouse instead of silently shipping against a mismatched ID.
+  useEffect(() => {
+    if (!providerWarehouses.some((w) => w.externalWarehouseId === warehouseId)) {
+      setWarehouseId(providerWarehouses[0]?.externalWarehouseId || "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider]);
   const [originPin, setOriginPin] = useState(
     selectedWhObj?.address?.zip || selectedWhObj?.raw?.pincode || "302020",
   );
@@ -62,11 +177,12 @@ function CourierSelectModal({
   const [shipError, setShipError] = useState("");
 
   useEffect(() => {
-    const wh = warehouses.find((w) => String(w.externalWarehouseId) === String(warehouseId)) || warehouses[0];
+    const wh = providerWarehouses.find((w) => String(w.externalWarehouseId) === String(warehouseId)) || providerWarehouses[0];
     if (wh) {
       setOriginPin(wh.address?.zip || wh.raw?.pincode || "302020");
     }
-  }, [warehouseId, warehouses]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [warehouseId, warehouses, provider]);
 
   async function fetchRates() {
     setRatesLoading(true);
@@ -214,12 +330,17 @@ function CourierSelectModal({
                 className="w-full h-9 rounded-lg border border-[var(--line)] px-3 text-xs outline-none focus:border-indigo-700 bg-white font-medium"
                 value={warehouseId}
                 onChange={(e) => setWarehouseId(e.target.value)}
+                disabled={!providerWarehouses.length}
               >
-                {warehouses.map((w) => (
-                  <option key={w._id || w.externalWarehouseId} value={w.externalWarehouseId}>
-                    {w.name} ({w.address?.city || w.externalWarehouseId})
-                  </option>
-                ))}
+                {providerWarehouses.length === 0 ? (
+                  <option value="">No {provider} warehouses linked</option>
+                ) : (
+                  providerWarehouses.map((w) => (
+                    <option key={w._id || w.externalWarehouseId} value={w.externalWarehouseId}>
+                      {w.name} ({w.address?.city || w.externalWarehouseId})
+                    </option>
+                  ))
+                )}
               </select>
             </div>
           </div>
@@ -349,6 +470,7 @@ export function FulfillmentView() {
   const [filterMode, setFilterMode] = useState("all"); // "all", "cod", "prepaid"
   const [shippingOrder, setShippingOrder] = useState(null); // Order active in courier modal
   const [cancellingId, setCancellingId] = useState("");
+  const [showLinkWarehouse, setShowLinkWarehouse] = useState(false);
 
   function dedup(rawOrders) {
     const seen = new Set();
@@ -404,6 +526,24 @@ export function FulfillmentView() {
     if (filterMode === "prepaid") return !o.isCOD;
     return true;
   });
+
+  // Each provider's warehouse IDs are only meaningful to that provider —
+  // e.g. Shipway's "103722" means nothing to Velocity, and shipping against
+  // the wrong one 404s as "Warehouse not found". Scope the dropdown to
+  // whichever channel is currently selected instead of showing every
+  // provider's warehouses mixed together.
+  const providerWarehouses = warehouses.filter((w) => w.provider === selectedProvider);
+
+  useEffect(() => {
+    if (!providerWarehouses.length) {
+      if (selectedWarehouse) setSelectedWarehouse("");
+      return;
+    }
+    if (!providerWarehouses.some((w) => w.externalWarehouseId === selectedWarehouse)) {
+      setSelectedWarehouse(providerWarehouses[0].externalWarehouseId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedProvider, warehouses]);
 
   async function handleCancelOrder(order) {
     const orderIdToUse = order.externalId || order._id || order.id;
@@ -613,18 +753,28 @@ export function FulfillmentView() {
                   className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-sm outline-none focus:border-indigo-700"
                   value={selectedWarehouse}
                   onChange={(e) => setSelectedWarehouse(e.target.value)}
-                  disabled={!warehouses.length}
+                  disabled={!providerWarehouses.length}
                 >
-                  {warehouses.length === 0 ? (
-                    <option value="">No warehouses synced</option>
+                  {providerWarehouses.length === 0 ? (
+                    <option value="">No {selectedProvider || "warehouses"} synced</option>
                   ) : (
-                    warehouses.map((w) => (
+                    providerWarehouses.map((w) => (
                       <option key={w._id || w.externalWarehouseId} value={w.externalWarehouseId}>
                         {w.name} ({w.address?.city || w.externalWarehouseId})
                       </option>
                     ))
                   )}
                 </select>
+                {selectedProvider ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowLinkWarehouse(true)}
+                    className="text-xs font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-900"
+                    title="Register a warehouse you already created on the provider's own dashboard"
+                  >
+                    + Link
+                  </button>
+                ) : null}
               </label>
             </div>
 
@@ -831,6 +981,18 @@ export function FulfillmentView() {
           }}
         />
       )}
+
+      {showLinkWarehouse && selectedProvider ? (
+        <LinkWarehouseModal
+          provider={selectedProvider}
+          onClose={() => setShowLinkWarehouse(false)}
+          onLinked={(warehouse) => {
+            setMessage({ type: "success", text: `Warehouse "${warehouse.name}" linked` });
+            setSelectedWarehouse(warehouse.externalWarehouseId);
+            loadData();
+          }}
+        />
+      ) : null}
     </div>
   );
 }

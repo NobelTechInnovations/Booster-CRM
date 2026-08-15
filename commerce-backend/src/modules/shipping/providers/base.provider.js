@@ -45,6 +45,20 @@ export class BaseShippingProvider {
   }
 
   /**
+   * Register a warehouse that already exists on the provider's own dashboard
+   * (its ID was created there, not through us) by its ID alone — no API call,
+   * just a local record so it can be used as a pickup location. Providers
+   * that expose a real "list warehouses" API don't need this; providers that
+   * only support create-and-return-id (no listing) should override it.
+   * @param {object} payload - { externalWarehouseId, name, ...address fields }
+   * @returns {Promise<object>} warehouse record
+   */
+  // eslint-disable-next-line no-unused-vars
+  async linkExistingWarehouse(payload) {
+    throw new Error(`${this.constructor.name} does not support linking an existing warehouse by ID`);
+  }
+
+  /**
    * Check serviceability between two PIN codes.
    * @param {object} params - { from, to, weight, paymentMode }
    * @returns {Promise<object>} serviceability result with courier options
