@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment, cancelShipment, createManualOrder } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -88,6 +88,20 @@ fulfillmentRoutes.post(
   asyncHandler(async (req, res) => {
     const { orderId } = req.params;
     const result = await cancelShipment({ companyId: req.auth.companyId, orderId });
+    res.json(result);
+  }),
+);
+
+// Pull live tracking status for one order's shipment right now (instead of
+// waiting for the 15-minute background job) — catches shipments cancelled
+// directly on the courier's own dashboard and syncs the order back to
+// unfulfilled if so.
+fulfillmentRoutes.post(
+  "/orders/:orderId/sync-shipment-status",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const result = await syncShipmentStatus({ companyId: req.auth.companyId, orderId });
     res.json(result);
   }),
 );

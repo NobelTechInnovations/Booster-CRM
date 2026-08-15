@@ -29,6 +29,7 @@ import {
   shipFulfillmentOrder,
   cancelFulfillmentOrder,
   cancelOrderShipment,
+  syncShipmentStatus,
   listShippingChannels,
   listWarehouses,
   listAllShipments,
@@ -585,6 +586,26 @@ export function FulfillmentView() {
     }
   }
 
+  // Pulls live status from the courier right now — for when the shipment
+  // was cancelled or its courier changed directly on the provider's own
+  // dashboard and hasn't shown up here yet (the background job catches this
+  // every 15 min, but this lets the user force it immediately).
+  async function handleSyncShipmentStatus(order) {
+    const orderIdToUse = order.externalId || order._id || order.id;
+    setCancellingId(orderIdToUse);
+    setMessage({ type: "", text: "" });
+
+    try {
+      const res = await syncShipmentStatus(orderIdToUse);
+      setMessage({ type: res.cancelled ? "success" : "info", text: res.message });
+      if (res.cancelled) await loadData();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setCancellingId("");
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       {/* Header */}
@@ -730,15 +751,27 @@ export function FulfillmentView() {
                             {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
                           </p>
                           {order.awbCode ? (
-                            <Button
-                              variant="secondary"
-                              className="mt-2 h-8 px-2.5 text-xs"
-                              disabled={cancellingId === (order.externalId || order._id || order.id)}
-                              onClick={() => handleCancelShipment(order)}
-                            >
-                              <Ban size={13} />
-                              Cancel Shipment
-                            </Button>
+                            <div className="mt-2 flex justify-end gap-1.5">
+                              <Button
+                                variant="secondary"
+                                className="h-8 px-2.5 text-xs"
+                                disabled={cancellingId === (order.externalId || order._id || order.id)}
+                                onClick={() => handleSyncShipmentStatus(order)}
+                                title="Check the courier's own dashboard right now instead of waiting for the 15-min background sync"
+                              >
+                                <RefreshCcw size={13} />
+                                Sync Status
+                              </Button>
+                              <Button
+                                variant="secondary"
+                                className="h-8 px-2.5 text-xs"
+                                disabled={cancellingId === (order.externalId || order._id || order.id)}
+                                onClick={() => handleCancelShipment(order)}
+                              >
+                                <Ban size={13} />
+                                Cancel Shipment
+                              </Button>
+                            </div>
                           ) : null}
                         </div>
                       </div>

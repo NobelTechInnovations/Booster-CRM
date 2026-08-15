@@ -73,7 +73,16 @@ export function normalizeOrder({ companyId, channelId, provider, shop, order }) 
     totalPrice,
     subtotalPrice:      toNumber(order.subtotal_price),
     totalTax:           toNumber(order.total_tax),
-    totalDiscounts:     toNumber(order.total_discounts),
+    // Some orders (e.g. converted from a draft order — seen on real data as
+    // source_name:"shopify_draft_order") don't carry a top-level
+    // total_discounts field at all, even when a real discount was applied —
+    // it showed as undefined while line_items[].total_discount correctly
+    // had the real per-item amount ("99.00" on a fully-discounted line).
+    // Fall back to summing line-item discounts when the order-level field
+    // is genuinely absent, so a real discount doesn't silently show as ₹0.
+    totalDiscounts: order.total_discounts !== undefined
+      ? toNumber(order.total_discounts)
+      : (order.line_items || []).reduce((sum, item) => sum + (toNumber(item.total_discount) || 0), 0),
     paymentGatewayNames,
     isCOD:     cod,
     codAmount:  cod ? totalPrice : 0,
@@ -127,14 +136,22 @@ function extractShopifyTracking(order) {
     updatedAt:       toDate(f.updated_at),
   }));
 
-  // Most recent fulfillment carries the tracking info we surface at the top level.
-  const latest = events[events.length - 1];
+  // Shopify's fulfillments array is append-only — a cancelled fulfillment
+  // stays in it forever with status:"cancelled", it doesn't get removed. The
+  // most-recent-by-array-position used to be promoted to the top-level
+  // trackingNumber/trackingUrl/trackingCompany fields unconditionally, so a
+  // cancelled AWB kept showing as if it were live tracking on an order that
+  // had gone back to unfulfilled. Only promote the latest fulfillment that
+  // isn't itself cancelled — and explicitly null the fields (not just omit
+  // them) when none qualifies, so a stale value from a prior sync actually
+  // clears instead of lingering forever under $set's partial-update semantics.
+  const latestActive = [...events].reverse().find((f) => f.status !== "cancelled");
 
   return {
-    fulfillments: events,
-    ...(latest?.trackingNumber ? { trackingNumber: latest.trackingNumber } : {}),
-    ...(latest?.trackingUrl ? { trackingUrl: latest.trackingUrl } : {}),
-    ...(latest?.trackingCompany ? { trackingCompany: latest.trackingCompany } : {}),
+    fulfillments:    events,
+    trackingNumber:  latestActive?.trackingNumber || null,
+    trackingUrl:     latestActive?.trackingUrl || null,
+    trackingCompany: latestActive?.trackingCompany || null,
   };
 }
 

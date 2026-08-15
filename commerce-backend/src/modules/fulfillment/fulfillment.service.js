@@ -199,7 +199,51 @@ export async function cancelShipment({ companyId, orderId }) {
   }
 
   // 3. Revert the order locally so it's shippable again.
-  const updatedOrder = await updateOrderOmsStatus({
+  const updatedOrder = await revertOrderToUnfulfilled({ companyId, order });
+
+  return { message: "Shipment cancelled — order moved back to unfulfilled and can be shipped again", order: updatedOrder, courierResult };
+}
+
+// A courier reporting any of these tracking states means the shipment is
+// dead on their side — cancelled directly on their own dashboard, an RTO
+// written off, etc — and the order needs to come back to "To Ship". Matched
+// as a substring since each courier phrases this slightly differently.
+const DEAD_SHIPMENT_STATUS = /cancel/i;
+
+/**
+ * Pulls live tracking status for one order's shipment right now, instead of
+ * waiting for the periodic background job (up to 15 minutes) — for when the
+ * user cancelled or changed the courier directly on the provider's own
+ * dashboard and wants the panel to catch up immediately. Reverts the order
+ * to unfulfilled if the courier now reports it cancelled.
+ */
+export async function syncShipmentStatus({ companyId, orderId }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) throw new HttpError(404, "Order not found");
+  if (!order.awbCode) throw new HttpError(400, "This order has no active shipment to check");
+
+  const providerName = order.shippingProvider;
+  if (!providerName) throw new HttpError(400, "No shipping provider recorded for this order's shipment");
+
+  const shippingProvider = getShippingProvider(providerName, { companyId });
+  await shippingProvider.trackOrders([order.awbCode]);
+
+  const shipment = await getShipmentByAwb({ companyId, awbCode: order.awbCode });
+  if (shipment?.trackingStatus && DEAD_SHIPMENT_STATUS.test(shipment.trackingStatus) && shipment.status !== "cancelled") {
+    const updatedOrder = await syncShipmentCancelledElsewhere({ companyId, shipment });
+    return { message: `${providerName} confirms this shipment is cancelled — order moved back to unfulfilled`, cancelled: true, order: updatedOrder || order };
+  }
+
+  return { message: `Tracking status: ${shipment?.trackingStatus || "no update from " + providerName}`, cancelled: false, order };
+}
+
+/**
+ * Shared by cancelShipment() above and the tracking-update job below —
+ * clears our own shipment fields and drops the order back into the
+ * "To Ship" queue.
+ */
+async function revertOrderToUnfulfilled({ companyId, order }) {
+  return updateOrderOmsStatus({
     companyId,
     shopifyOrderId: order.externalId,
     update: {
@@ -212,8 +256,44 @@ export async function cancelShipment({ companyId, orderId }) {
       shippingCost:      0,
     },
   });
+}
 
-  return { message: "Shipment cancelled — order moved back to unfulfilled and can be shipped again", order: updatedOrder, courierResult };
+/**
+ * Catches shipments cancelled directly on the courier's own dashboard
+ * (bypassing cancelShipment() above entirely) — called by the periodic
+ * tracking-update job whenever it sees a courier report a shipment as
+ * cancelled that we still show as active. Unlike cancelShipment(), this
+ * does NOT call the courier's cancel API (it's already cancelled there —
+ * that's the whole trigger), it just syncs our own records and, best-
+ * effort, undoes the Shopify fulfillment so all three systems agree.
+ */
+export async function syncShipmentCancelledElsewhere({ companyId, shipment }) {
+  const orderRefId = shipment.syncedOrderId || shipment.shopifyOrderId;
+  const order = await getOrderById({ companyId, orderId: orderRefId });
+  if (!order) return null;
+
+  // Guard against a race where the order was already re-shipped (new AWB)
+  // between the courier status check and this running — only revert if the
+  // order is still pointing at the shipment we're processing.
+  if (order.awbCode && order.awbCode !== shipment.awbCode) return null;
+
+  await updateShipmentById({ shipmentId: shipment._id, companyId, update: { status: "cancelled" } });
+
+  if (shipment.shopifyFulfillmentId && order.provider === "shopify" && order.shop) {
+    try {
+      await cancelShopifyFulfillment({ shop: order.shop, shopifyOrderId: order.externalId, fulfillmentId: shipment.shopifyFulfillmentId });
+    } catch (err) {
+      // Often expected here — Velocity's own separate Shopify sync may have
+      // already reverted Shopify's fulfillment itself before we even saw
+      // the cancelled tracking status, so this call fails because there's
+      // nothing left to cancel. Not worth surfacing as a real error.
+      console.warn(`[Fulfillment] Shopify fulfillment cancel (from tracking sync) failed for ${order.name}:`, err.message);
+    }
+  }
+
+  const updatedOrder = await revertOrderToUnfulfilled({ companyId, order });
+  console.log(`[Fulfillment] ${order.name} shipment cancelled on ${shipment.provider}'s side — synced back to unfulfilled`);
+  return updatedOrder;
 }
 
 /**
