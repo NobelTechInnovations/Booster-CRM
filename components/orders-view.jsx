@@ -49,6 +49,8 @@ function fmtDate(date) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(date));
 }
 
+const PROVIDER_LABELS = { local: "Local Shop", website: "Website (Historical)", flipkart: "Flipkart", shopdeck: "Shopdeck", amazon: "Amazon", shopify: "Shopify" };
+
 function statusTone(status) {
   const s = (status || "").toLowerCase();
   if (s === "fulfilled" || s === "shipped") return "green";
@@ -646,6 +648,7 @@ export function OrdersView() {
   const [search, setSearch] = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
   const [filterPayment, setFilterPayment] = useState("all");
+  const [filterChannel, setFilterChannel] = useState("all");
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [invoiceOrder, setInvoiceOrder] = useState(null);
   const [company, setCompany] = useState(null);
@@ -702,6 +705,8 @@ export function OrdersView() {
       if (filterPayment === "cod" && !o.isCOD) return false;
       if (filterPayment === "prepaid" && o.isCOD) return false;
 
+      if (filterChannel !== "all" && (o.provider || "shopify") !== filterChannel) return false;
+
       if (search) {
         const q = search.toLowerCase();
         return (
@@ -714,7 +719,7 @@ export function OrdersView() {
       }
       return true;
     });
-  }, [orders, filterStatus, filterPayment, search]);
+  }, [orders, filterStatus, filterPayment, filterChannel, search]);
 
   function getSiblingOrders(order) {
     const key = (order.email || order.customerEmail || "").toLowerCase();
@@ -730,12 +735,31 @@ export function OrdersView() {
     cancelled: orders.filter((o) => !!o.cancelledAt).length,
   }), [orders]);
 
+  // Every distinct provider actually present in the data — Shopify (live sync),
+  // Amazon (SQL/CSV imported), "local" (manual orders), etc. Built from the
+  // data itself rather than a fixed list, so a newly imported channel shows up
+  // automatically without a code change.
+  const channelTabs = useMemo(() => {
+    const byProvider = new Map();
+    for (const o of orders) {
+      const key = o.provider || "shopify";
+      byProvider.set(key, (byProvider.get(key) || 0) + 1);
+    }
+    return [
+      { key: "all", label: `All (${orders.length})` },
+      ...[...byProvider.entries()].map(([key, count]) => ({
+        key,
+        label: `${PROVIDER_LABELS[key] || key} (${count})`,
+      })),
+    ];
+  }, [orders]);
+
   return (
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
-          <Badge tone="indigo">All Channels</Badge>
+          <Badge tone="indigo">{filterChannel === "all" ? "All Channels" : PROVIDER_LABELS[filterChannel] || filterChannel}</Badge>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Orders</h1>
           <p className="mt-1 text-sm text-slate-500">
             {counts.total} total · {counts.unfulfilled} to ship · {counts.fulfilled} fulfilled
@@ -760,6 +784,23 @@ export function OrdersView() {
                 placeholder="Search by order #, customer, email..."
                 className="h-9 w-full rounded-lg border border-[var(--line)] bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />
+            </div>
+
+            {/* Channel filter — every provider actually present in the data (Shopify live sync, Amazon SQL/CSV import, local manual orders, etc) */}
+            <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+              {channelTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  onClick={() => setFilterChannel(tab.key)}
+                  className={`px-3 py-1.5 text-xs font-semibold transition ${
+                    filterChannel === tab.key
+                      ? "bg-emerald-700 text-white"
+                      : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              ))}
             </div>
 
             {/* Status filter */}
