@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { cn } from "@/lib/utils";
 import {
   PackageCheck,
   Truck,
@@ -19,6 +20,7 @@ import {
   Check,
   DollarSign,
   Info,
+  FileDown,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -30,6 +32,8 @@ import {
   cancelFulfillmentOrder,
   cancelOrderShipment,
   syncShipmentStatus,
+  shipFulfillmentOrdersBulk,
+  downloadLabelsBulk,
   listShippingChannels,
   listWarehouses,
   listAllShipments,
@@ -132,6 +136,111 @@ function LinkWarehouseModal({ provider, onClose, onLinked }) {
           {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
           <Button type="submit" className="w-full" disabled={saving}>{saving ? "Linking…" : "Link warehouse"}</Button>
         </form>
+      </div>
+    </div>
+  );
+}
+
+// Assigns a batch of orders to a shipment in one action. Courier is left to
+// the provider's automatic assignment per order (same as leaving a courier
+// unpicked in the single-order flow) — asking for a rate confirmation on
+// each of N orders one at a time would defeat the point of doing this in
+// bulk. Shows a per-order result once done since a batch can partially fail
+// (one order missing a PIN code, say) without blocking the rest.
+function BulkShipModal({ orderCount, shippingChannels, warehouses, initialProvider, initialWarehouse, onClose, onSubmit }) {
+  const [provider, setProvider] = useState(initialProvider || shippingChannels[0]?.provider || "");
+  const providerWarehouses = warehouses.filter((w) => w.provider === provider);
+  const [warehouseId, setWarehouseId] = useState(initialWarehouse || providerWarehouses[0]?.externalWarehouseId || "");
+  const [isShipping, setIsShipping] = useState(false);
+  const [result, setResult] = useState(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!providerWarehouses.some((w) => w.externalWarehouseId === warehouseId)) {
+      setWarehouseId(providerWarehouses[0]?.externalWarehouseId || "");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [provider]);
+
+  async function handleSubmit(e) {
+    e.preventDefault();
+    setIsShipping(true);
+    setError("");
+    try {
+      const res = await onSubmit({ provider, warehouseId });
+      setResult(res);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsShipping(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && !isShipping && onClose()}>
+      <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+          <h2 className="text-base font-bold text-slate-900">Bulk ship {orderCount} order{orderCount === 1 ? "" : "s"}</h2>
+          <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
+        </div>
+
+        {result ? (
+          <div className="max-h-[70vh] space-y-3 overflow-y-auto px-5 py-4">
+            <p className="rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">{result.message}</p>
+            {result.succeeded?.length ? (
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-emerald-700">Shipped ({result.succeeded.length})</p>
+                <div className="space-y-1">
+                  {result.succeeded.map((s) => (
+                    <div key={s.orderId} className="flex items-center justify-between rounded-md bg-emerald-50 px-2.5 py-1.5 text-xs">
+                      <span className="font-semibold text-emerald-900">{s.orderName}</span>
+                      <span className="font-mono text-emerald-700">{s.awbCode}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            {result.failed?.length ? (
+              <div>
+                <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-rose-700">Failed ({result.failed.length})</p>
+                <div className="space-y-1">
+                  {result.failed.map((f) => (
+                    <div key={f.orderId} className="rounded-md bg-rose-50 px-2.5 py-1.5 text-xs text-rose-800">
+                      <span className="font-semibold">{f.orderId}</span>: {f.error}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <Button className="w-full" onClick={onClose}>Done</Button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-3 px-5 py-4">
+            <p className="rounded-md bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
+              Courier is auto-assigned per order by {provider || "the provider"}'s own rules — same as leaving courier unpicked when shipping one order.
+            </p>
+            <label className="block text-sm font-semibold text-slate-700">
+              Shipping Channel
+              <select value={provider} onChange={(e) => setProvider(e.target.value)} className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100">
+                {shippingChannels.map((c) => <option key={c._id || c.id} value={c.provider}>{c.name || c.provider}</option>)}
+              </select>
+            </label>
+            <label className="block text-sm font-semibold text-slate-700">
+              Pickup Warehouse
+              <select value={warehouseId} onChange={(e) => setWarehouseId(e.target.value)} className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" disabled={!providerWarehouses.length}>
+                {providerWarehouses.length === 0 ? (
+                  <option value="">No {provider} warehouses linked</option>
+                ) : (
+                  providerWarehouses.map((w) => <option key={w._id || w.externalWarehouseId} value={w.externalWarehouseId}>{w.name} ({w.address?.city || w.externalWarehouseId})</option>)
+                )}
+              </select>
+            </label>
+            {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
+            <Button type="submit" className="w-full" disabled={isShipping || !provider || !warehouseId}>
+              {isShipping ? `Shipping ${orderCount} orders…` : `Ship ${orderCount} order${orderCount === 1 ? "" : "s"}`}
+            </Button>
+          </form>
+        )}
       </div>
     </div>
   );
@@ -473,6 +582,10 @@ export function FulfillmentView() {
   const [shippingOrder, setShippingOrder] = useState(null); // Order active in courier modal
   const [cancellingId, setCancellingId] = useState("");
   const [showLinkWarehouse, setShowLinkWarehouse] = useState(false);
+  const [selectedToShipIds, setSelectedToShipIds] = useState(new Set());
+  const [selectedFulfilledIds, setSelectedFulfilledIds] = useState(new Set());
+  const [showBulkShip, setShowBulkShip] = useState(false);
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   function dedup(rawOrders) {
     const seen = new Set();
@@ -566,11 +679,14 @@ export function FulfillmentView() {
   }
 
   // Undoes just the shipment (courier + Shopify fulfillment) — the order
-  // itself stays alive and drops back into "To Ship" so it can be shipped
-  // again, e.g. via a different provider/warehouse.
+  // itself stays alive and drops back into "To Ship" so it can be assigned
+  // again — e.g. via a different provider/warehouse, or because it was
+  // actually shipped through another partner outside this panel. Does NOT
+  // cancel anything with the courier or on Shopify — only clears our own
+  // record of which shipment is assigned.
   async function handleCancelShipment(order) {
     const orderIdToUse = order.externalId || order._id || order.id;
-    if (!confirm(`Cancel the shipment for ${order.name || orderIdToUse}? It will move back to "To Ship" and can be shipped again.`)) return;
+    if (!confirm(`Unassign the shipment for ${order.name || orderIdToUse}? It moves back to "To Ship" so a shipment can be assigned again. This does NOT cancel anything with the courier or on Shopify.`)) return;
 
     setCancellingId(orderIdToUse);
     setMessage({ type: "", text: "" });
@@ -603,6 +719,60 @@ export function FulfillmentView() {
       setMessage({ type: "error", text: err.message });
     } finally {
       setCancellingId("");
+    }
+  }
+
+  function toggleToShipSelected(id) {
+    setSelectedToShipIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleFulfilledSelected(id) {
+    setSelectedFulfilledIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleBulkDownloadLabels() {
+    const shipmentIds = fulfilledOrders
+      .filter((o) => selectedFulfilledIds.has(o.externalId || o._id || o.id) && o.shipmentId)
+      .map((o) => o.shipmentId);
+
+    if (!shipmentIds.length) {
+      setMessage({ type: "error", text: "None of the selected orders have a shipment label to download." });
+      return;
+    }
+
+    setBulkDownloading(true);
+    setMessage({ type: "", text: "" });
+    try {
+      const { blob, skipped } = await downloadLabelsBulk(shipmentIds);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `labels-${shipmentIds.length - skipped.length}-${new Date().toISOString().slice(0, 10)}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setMessage({
+        type: skipped.length ? "error" : "success",
+        text: skipped.length
+          ? `Downloaded ${shipmentIds.length - skipped.length} label(s). ${skipped.length} couldn't be fetched (label link may have expired) — try Sync Status on those first.`
+          : `Downloaded ${shipmentIds.length} label(s) as one PDF.`,
+      });
+      setSelectedFulfilledIds(new Set());
+      await loadData();
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setBulkDownloading(false);
     }
   }
 
@@ -689,6 +859,32 @@ export function FulfillmentView() {
               <Badge tone="green">{fulfilledOrders.length} Fulfilled</Badge>
             </div>
           </CardHeader>
+          {fulfilledOrders.some((o) => o.shipmentId) ? (
+            <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-2">
+              <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                <input
+                  type="checkbox"
+                  checked={fulfilledOrders.filter((o) => o.shipmentId).length > 0 && fulfilledOrders.filter((o) => o.shipmentId).every((o) => selectedFulfilledIds.has(o.externalId || o._id || o.id))}
+                  onChange={(e) => {
+                    const eligible = fulfilledOrders.filter((o) => o.shipmentId).map((o) => o.externalId || o._id || o.id);
+                    setSelectedFulfilledIds(e.target.checked ? new Set(eligible) : new Set());
+                  }}
+                />
+                Select all with a label ({fulfilledOrders.filter((o) => o.shipmentId).length})
+              </label>
+              {selectedFulfilledIds.size > 0 ? (
+                <Button
+                  size="sm"
+                  className="h-8 bg-indigo-700 px-3 text-xs hover:bg-indigo-800"
+                  disabled={bulkDownloading}
+                  onClick={handleBulkDownloadLabels}
+                >
+                  <FileDown size={13} className="mr-1" />
+                  {bulkDownloading ? "Merging…" : `Download Labels (${selectedFulfilledIds.size})`}
+                </Button>
+              ) : null}
+            </div>
+          ) : null}
           <CardContent className="p-0">
             {isLoading ? (
               <div className="p-8 text-center text-sm text-[var(--muted)]">Loading...</div>
@@ -702,10 +898,19 @@ export function FulfillmentView() {
               <div className="divide-y divide-slate-100">
                 {fulfilledOrders.map((order) => {
                   const addr = order.shippingAddress || {};
+                  const orderId = order.externalId || order._id || order.id;
                   const orderKey = `fulfilled::${order.externalId || order._id}`;
                   return (
-                    <div key={orderKey} className="p-4 hover:bg-slate-50/80 transition">
-                      <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div key={orderKey} className={cn("flex items-start gap-3 p-4 transition hover:bg-slate-50/80", selectedFulfilledIds.has(orderId) && "bg-indigo-50/50")}>
+                      {order.shipmentId ? (
+                        <input
+                          type="checkbox"
+                          className="mt-1.5 shrink-0"
+                          checked={selectedFulfilledIds.has(orderId)}
+                          onChange={() => toggleFulfilledSelected(orderId)}
+                        />
+                      ) : <span className="w-[13px] shrink-0" />}
+                      <div className="flex flex-1 flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
                             <span className="text-base font-bold text-slate-900">{order.name}</span>
@@ -713,6 +918,13 @@ export function FulfillmentView() {
                             <Badge tone={order.isCOD ? "amber" : "green"}>
                               {order.isCOD ? "COD" : "Prepaid"}
                             </Badge>
+                            {order.shipmentId ? (
+                              order.labelDownloaded ? (
+                                <Badge tone="slate">Label downloaded</Badge>
+                              ) : (
+                                <Badge tone="amber">Label not downloaded</Badge>
+                              )
+                            ) : null}
                           </div>
                           <p className="mt-1 text-sm font-medium text-slate-700">
                             {order.customerName || "Customer"} • {order.phone || order.email || ""}
@@ -767,9 +979,10 @@ export function FulfillmentView() {
                                 className="h-8 px-2.5 text-xs"
                                 disabled={cancellingId === (order.externalId || order._id || order.id)}
                                 onClick={() => handleCancelShipment(order)}
+                                title="Clears this order's assigned shipment in our panel only — doesn't cancel with the courier or on Shopify. Use when it was actually shipped through another partner."
                               >
                                 <Ban size={13} />
-                                Cancel Shipment
+                                Unassign Shipment
                               </Button>
                             </div>
                           ) : null}
@@ -887,6 +1100,35 @@ export function FulfillmentView() {
               </div>
               <Badge tone="blue">{filteredOrders.length} Unfulfilled</Badge>
             </CardHeader>
+            {filteredOrders.length > 0 ? (
+              <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-2">
+                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                  <input
+                    type="checkbox"
+                    checked={filteredOrders.length > 0 && filteredOrders.every((o) => selectedToShipIds.has(o.externalId || o._id || o.id))}
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        setSelectedToShipIds(new Set(filteredOrders.map((o) => o.externalId || o._id || o.id)));
+                      } else {
+                        setSelectedToShipIds(new Set());
+                      }
+                    }}
+                  />
+                  Select all ({filteredOrders.length})
+                </label>
+                {selectedToShipIds.size > 0 ? (
+                  <Button
+                    size="sm"
+                    className="h-8 bg-indigo-700 px-3 text-xs hover:bg-indigo-800"
+                    disabled={!connectedProviders.length}
+                    onClick={() => setShowBulkShip(true)}
+                  >
+                    <Send size={13} className="mr-1" />
+                    Bulk Ship ({selectedToShipIds.size})
+                  </Button>
+                ) : null}
+              </div>
+            ) : null}
             <CardContent className="p-0">
               {isLoading ? (
                 <div className="p-8 text-center text-sm text-[var(--muted)]">Loading orders...</div>
@@ -902,12 +1144,19 @@ export function FulfillmentView() {
                 <div className="divide-y divide-slate-100">
                   {filteredOrders.map((order) => {
                     const addr = order.shippingAddress || {};
-                    const orderKey = `${order.channelId || order.provider || "order"}::${order.externalId || order._id || order.id}`;
-                    const isCancelling = cancellingId === (order.externalId || order._id || order.id);
+                    const orderId = order.externalId || order._id || order.id;
+                    const orderKey = `${order.channelId || order.provider || "order"}::${orderId}`;
+                    const isCancelling = cancellingId === orderId;
 
                     return (
-                      <div key={orderKey} className="p-4 transition hover:bg-slate-50/80">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div key={orderKey} className={cn("flex items-start gap-3 p-4 transition hover:bg-slate-50/80", selectedToShipIds.has(orderId) && "bg-indigo-50/50")}>
+                        <input
+                          type="checkbox"
+                          className="mt-1.5 shrink-0"
+                          checked={selectedToShipIds.has(orderId)}
+                          onChange={() => toggleToShipSelected(orderId)}
+                        />
+                        <div className="flex flex-1 flex-wrap items-start justify-between gap-3">
                           <div>
                             <div className="flex items-center gap-2">
                               <span className="text-base font-bold text-slate-900">{order.name}</span>
@@ -1056,6 +1305,25 @@ export function FulfillmentView() {
             setMessage({ type: "success", text: `Warehouse "${warehouse.name}" linked` });
             setSelectedWarehouse(warehouse.externalWarehouseId);
             loadData();
+          }}
+        />
+      ) : null}
+
+      {showBulkShip ? (
+        <BulkShipModal
+          orderCount={selectedToShipIds.size}
+          shippingChannels={connectedProviders}
+          warehouses={warehouses}
+          initialProvider={selectedProvider}
+          initialWarehouse={selectedWarehouse}
+          onClose={() => {
+            setShowBulkShip(false);
+            setSelectedToShipIds(new Set());
+            loadData();
+          }}
+          onSubmit={async ({ provider, warehouseId }) => {
+            const res = await shipFulfillmentOrdersBulk({ orderIds: [...selectedToShipIds], provider, warehouseId });
+            return res;
           }}
         />
       ) : null}

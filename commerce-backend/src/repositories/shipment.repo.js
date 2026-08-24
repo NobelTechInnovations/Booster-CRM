@@ -91,6 +91,30 @@ export async function updateShipmentById({ shipmentId, companyId, update }) {
   return clone(s);
 }
 
+export async function listShipmentsByIds({ companyId, shipmentIds }) {
+  if (!shipmentIds?.length) return [];
+  if (isMongoConnected()) return Shipment.find({ companyId, _id: { $in: shipmentIds } }).lean();
+  return shipmentIds
+    .map((sid) => memory.shipments.get(sid))
+    .filter((s) => s && String(s.companyId) === String(companyId))
+    .map(clone);
+}
+
+// Bulk label print/download — marks every shipment as downloaded in one
+// pass so the fulfillment list can show "already downloaded" without a
+// round trip per order.
+export async function markLabelsDownloaded({ companyId, shipmentIds }) {
+  const update = { labelDownloaded: true, labelDownloadedAt: new Date() };
+  if (isMongoConnected()) {
+    await Shipment.updateMany({ companyId, _id: { $in: shipmentIds } }, { $set: update });
+    return;
+  }
+  for (const sid of shipmentIds) {
+    const s = memory.shipments.get(sid);
+    if (s && String(s.companyId) === String(companyId)) Object.assign(s, update, { updatedAt: now() });
+  }
+}
+
 export async function listActiveShipments(companyId) {
   // Active = AWB assigned, not yet delivered or cancelled
   const activeStatuses = ["awb_generated", "picked_up", "in_transit", "out_for_delivery"];

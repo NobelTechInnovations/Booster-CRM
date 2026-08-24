@@ -45,6 +45,8 @@ const shipmentSchema = new mongoose.Schema(
 
     // Label
     labelUrl: { type: String },
+    labelDownloaded:   { type: Boolean, default: false },
+    labelDownloadedAt: { type: Date },
 
     // Full request/response stored for debugging and audit
     request:  { type: mongoose.Schema.Types.Mixed },

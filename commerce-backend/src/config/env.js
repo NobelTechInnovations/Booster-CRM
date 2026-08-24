@@ -17,6 +17,12 @@ export const env = {
   frontendUrl: process.env.FRONTEND_URL || "http://localhost:3000",
   mongoUri: process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/commerceos",
   jwtSecret: process.env.JWT_SECRET || "dev-only-commerceos-secret",
+  // Authenticates Vercel Cron (or any external pinger) hitting /api/cron/*.
+  // Vercel automatically sends "Authorization: Bearer <CRON_SECRET>" on
+  // scheduled invocations when this env var is set on the project — see
+  // cron.routes.js. Left unset in dev, where the in-process node-cron
+  // scheduler (jobs/scheduler.js) runs these same jobs directly instead.
+  cronSecret: process.env.CRON_SECRET || "",
   shopify: {
     apiKey: process.env.SHOPIFY_API_KEY || "",
     apiSecret: process.env.SHOPIFY_API_SECRET || "",

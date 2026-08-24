@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, getFulfilledOrders, shipOrder, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, shipOrdersBulk, downloadLabelsBulk, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -77,6 +77,34 @@ fulfillmentRoutes.post(
         : `Order shipped via ${provider}. AWB: ${result.shipment.awbCode}`,
       ...result,
     });
+  }),
+);
+
+// Bulk-ship many orders at once through the same provider + warehouse,
+// courier auto-assigned per order — for assigning a batch to a shipment in
+// one action instead of one order at a time.
+fulfillmentRoutes.post(
+  "/ship-bulk",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderIds, provider, warehouseId } = req.body || {};
+    const result = await shipOrdersBulk({ companyId: req.auth.companyId, orderIds, providerName: provider, warehouseId });
+    res.json(result);
+  }),
+);
+
+// Merges the selected shipments' labels into one PDF and marks them
+// downloaded — real bulk print, not opening N tabs.
+fulfillmentRoutes.post(
+  "/labels/bulk-download",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { shipmentIds } = req.body || {};
+    const { pdfBytes, includedCount, skipped } = await downloadLabelsBulk({ companyId: req.auth.companyId, shipmentIds });
+    if (skipped.length) res.setHeader("X-Labels-Skipped", JSON.stringify(skipped));
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="labels-${includedCount}-${new Date().toISOString().slice(0, 10)}.pdf"`);
+    res.send(Buffer.from(pdfBytes));
   }),
 );
 

@@ -2,7 +2,8 @@ import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsSta
 import { getWarehouseByExternalId, listWarehouses } from "../../repositories/warehouse.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
-import { updateShipmentsByAwb, updateShipmentById, getShipmentByAwb } from "../../repositories/shipment.repo.js";
+import { updateShipmentsByAwb, updateShipmentById, getShipmentByAwb, listShipmentsByIds, markLabelsDownloaded } from "../../repositories/shipment.repo.js";
+import { PDFDocument } from "pdf-lib";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
 
@@ -23,7 +24,21 @@ export async function getFulfillmentOrders(companyId, { page = 1, limit = 100 } 
  */
 export async function getFulfilledOrders(companyId, { page = 1, limit = 200 } = {}) {
   const orders = await listFulfilledOrders(companyId, { page, limit });
-  return { orders };
+
+  // labelDownloaded lives on the Shipment record (it's shipment-specific,
+  // not order-specific — a re-shipped order gets a fresh label to print),
+  // not on the order itself — attach it here so the bulk-print UI can show
+  // which orders still need printing without a second round trip per row.
+  const shipmentIds = orders.map((o) => o.shipmentId).filter(Boolean);
+  const shipments = await listShipmentsByIds({ companyId, shipmentIds });
+  const byId = new Map(shipments.map((s) => [String(s._id), s]));
+
+  const enriched = orders.map((o) => {
+    const shipment = o.shipmentId ? byId.get(String(o.shipmentId)) : null;
+    return { ...o, labelDownloaded: shipment?.labelDownloaded || false };
+  });
+
+  return { orders: enriched };
 }
 
 /**
@@ -151,57 +166,120 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
 }
 
 /**
- * Cancels an order's active courier shipment (and, if we pushed one, the
- * Shopify fulfillment it created) and moves the order back to unfulfilled
- * so it reappears in the "To Ship" queue and can be shipped again — via the
- * same provider or a different one. Distinct from cancelOrderFulfillment()
- * above, which cancels the whole Shopify ORDER; this only undoes the
- * shipment/courier assignment and leaves the order itself alive.
+ * Ships many orders in one go through the same provider + warehouse —
+ * courier is left to that provider's automatic assignment per order (same
+ * as leaving carrier_id blank in the single-order flow), since asking the
+ * user to confirm a rate for each of N orders one at a time defeats the
+ * point of "bulk". Each order is shipped independently so one failure
+ * (missing PIN, provider rejects it, etc.) doesn't block the rest — the
+ * caller gets a per-order breakdown to show exactly what happened.
+ */
+export async function shipOrdersBulk({ companyId, orderIds, providerName, warehouseId }) {
+  if (!orderIds?.length) throw new HttpError(400, "No orders selected");
+
+  const succeeded = [];
+  const failed = [];
+
+  for (const orderId of orderIds) {
+    try {
+      const result = await shipOrder({ companyId, orderId, providerName, warehouseId, options: {} });
+      succeeded.push({ orderId, orderName: result.order.name, awbCode: result.shipment.awbCode, shopifyPushError: result.shopifyPushError });
+    } catch (err) {
+      failed.push({ orderId, error: err.message });
+    }
+  }
+
+  return {
+    message: `Shipped ${succeeded.length} of ${orderIds.length} order${orderIds.length === 1 ? "" : "s"}${failed.length ? `, ${failed.length} failed` : ""}`,
+    succeeded,
+    failed,
+  };
+}
+
+/**
+ * Merges every selected shipment's label PDF into a single downloadable
+ * file — a real "print all at once", not just opening N tabs — and marks
+ * each as downloaded so the fulfillment list can show which ones still
+ * need printing. A label whose URL fails to fetch (an expired signed S3
+ * link, a provider outage) is skipped rather than failing the whole
+ * batch, and reported back so the user knows which ones need a re-fetch.
+ */
+export async function downloadLabelsBulk({ companyId, shipmentIds }) {
+  if (!shipmentIds?.length) throw new HttpError(400, "No shipments selected");
+
+  const shipments = await listShipmentsByIds({ companyId, shipmentIds });
+  if (!shipments.length) throw new HttpError(404, "None of the selected shipments were found");
+
+  const merged = await PDFDocument.create();
+  const included = [];
+  const skipped = [];
+
+  for (const shipment of shipments) {
+    if (!shipment.labelUrl) {
+      skipped.push({ shipmentId: shipment._id, awbCode: shipment.awbCode, reason: "No label URL on this shipment" });
+      continue;
+    }
+    try {
+      const res = await fetch(shipment.labelUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const bytes = new Uint8Array(await res.arrayBuffer());
+      const labelPdf = await PDFDocument.load(bytes);
+      const pages = await merged.copyPages(labelPdf, labelPdf.getPageIndices());
+      pages.forEach((page) => merged.addPage(page));
+      included.push(shipment._id);
+    } catch (err) {
+      skipped.push({ shipmentId: shipment._id, awbCode: shipment.awbCode, reason: err.message });
+    }
+  }
+
+  if (!included.length) throw new HttpError(502, "Couldn't fetch any of the selected labels — they may have expired. Try syncing/re-fetching the shipment first.");
+
+  const pdfBytes = await merged.save();
+  await markLabelsDownloaded({ companyId, shipmentIds: included });
+
+  return { pdfBytes, includedCount: included.length, skipped };
+}
+
+/**
+ * Un-assigns a shipment from an order in OUR OWN records only. This does
+ * NOT cancel anything with the courier (the shipment may genuinely still be
+ * active there — this button is for when it was actually handled through a
+ * different partner, or a courier mix-up, not "the order got cancelled")
+ * and does NOT touch Shopify or the order itself. It just clears our record
+ * of which courier/AWB is assigned so the order reappears in "To Ship" and
+ * a (possibly different) shipment can be created for it. Distinct from
+ * cancelOrderFulfillment() above, which genuinely cancels the whole Shopify
+ * order — this never does that, on either side.
  */
 export async function cancelShipment({ companyId, orderId }) {
   const order = await getOrderById({ companyId, orderId });
   if (!order) throw new HttpError(404, "Order not found");
 
   if (!order.awbCode && order.omsStatus !== "shipped") {
-    throw new HttpError(400, "This order has no active shipment to cancel");
+    throw new HttpError(400, "This order has no shipment assigned to unassign");
   }
 
-  const providerName = order.shippingProvider;
-  if (!providerName) throw new HttpError(400, "No shipping provider recorded for this order's shipment");
-
-  const shippingProvider = getShippingProvider(providerName, { companyId });
-
-  // 1. Cancel with the courier — best-effort but not swallowed: if the
-  // courier refuses (e.g. already picked up), surface that rather than
-  // silently reverting our own records to a state that no longer matches
-  // reality on their side.
-  let courierResult = null;
-  let shipmentRecord = null;
   if (order.awbCode) {
-    try {
-      courierResult = await shippingProvider.cancelOrder([order.awbCode]);
-    } catch (err) {
-      throw new HttpError(400, `${providerName} refused the cancellation: ${err.message}`);
-    }
-    await updateShipmentsByAwb({ companyId, awbCodes: [order.awbCode], update: { status: "cancelled" } });
-    shipmentRecord = await getShipmentByAwb({ companyId, awbCode: order.awbCode });
+    await updateShipmentsByAwb({ companyId, awbCodes: [order.awbCode], update: { status: "unassigned" } });
   }
 
-  // 2. If we successfully pushed a fulfillment to Shopify for this shipment,
-  // undo that too so Shopify's own state matches — best-effort, since a
-  // courier-side cancel is the part that actually matters operationally.
-  if (shipmentRecord?.shopifyFulfillmentId && order.provider === "shopify" && order.shop) {
-    try {
-      await cancelShopifyFulfillment({ shop: order.shop, shopifyOrderId: order.externalId, fulfillmentId: shipmentRecord.shopifyFulfillmentId });
-    } catch (err) {
-      console.warn(`[Fulfillment] Shopify fulfillment cancel failed for ${order.name}:`, err.message);
-    }
-  }
+  const updatedOrder = await updateOrderOmsStatus({
+    companyId,
+    shopifyOrderId: order.externalId,
+    update: {
+      omsStatus:        "pending",
+      shippingProvider: null,
+      shipmentId:       null,
+      awbCode:          null,
+      labelUrl:         null,
+      shippingCost:     0,
+    },
+  });
 
-  // 3. Revert the order locally so it's shippable again.
-  const updatedOrder = await revertOrderToUnfulfilled({ companyId, order });
-
-  return { message: "Shipment cancelled — order moved back to unfulfilled and can be shipped again", order: updatedOrder, courierResult };
+  return {
+    message: "Shipment unassigned — order moved back to \"To Ship\" and can be assigned again. Nothing was cancelled with the courier or Shopify.",
+    order: updatedOrder,
+  };
 }
 
 // A courier reporting any of these tracking states means the shipment is

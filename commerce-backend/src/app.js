@@ -18,6 +18,7 @@ import { adsRoutes } from "./modules/ads/ads.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { automationRoutes } from "./modules/automation/automation.routes.js";
+import { cronRoutes } from "./modules/cron/cron.routes.js";
 
 export function createApp() {
   const app = express();
@@ -73,6 +74,7 @@ export function createApp() {
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/reports", reportsRoutes);
   app.use("/api/automation", automationRoutes);
+  app.use("/api/cron", cronRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
