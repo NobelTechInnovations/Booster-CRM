@@ -70,6 +70,8 @@ import {
   listMetaAdAccounts,
   listPurchases,
   listRefundedOrders,
+  listShippingCosts,
+  updateOrderShippingCost,
   listUsers,
   listVendors,
   recomputeAdAttribution,
@@ -180,7 +182,7 @@ const tileIconTone = {
   slate: "bg-slate-100 text-slate-600",
 };
 
-function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick }) {
+function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc }) {
   return (
     <Card
       className={cn(
@@ -206,6 +208,7 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick }) {
         {sub ? <Badge tone={tone}>{sub}</Badge> : <span />}
         {onClick ? <span className="text-[11px] font-semibold text-indigo-600">View entries →</span> : null}
       </div>
+      {calc ? <p className="mt-2.5 border-t border-slate-100 pt-2 text-[11px] leading-4 text-slate-400">{calc}</p> : null}
     </Card>
   );
 }
@@ -317,31 +320,77 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
   const [showRefunds, setShowRefunds] = useState(false);
   const [refundOrders, setRefundOrders] = useState(null);
   const [refundsLoading, setRefundsLoading] = useState(false);
+  const [showShipping, setShowShipping] = useState(false);
+  const [shippingOrders, setShippingOrders] = useState(null);
+  const [shippingLoading, setShippingLoading] = useState(false);
+  const [editingShipId, setEditingShipId] = useState(null);
+  const [editingShipValue, setEditingShipValue] = useState("");
+  const [savingShipId, setSavingShipId] = useState(null);
 
-  async function toggleRefunds() {
+  // Fetch whenever the panel is open AND whenever range changes while it's
+  // already open — not just once on first open. That used to only fetch on
+  // the open click, so switching the date range (Today -> This Month, etc.)
+  // while a panel was already open kept showing the OLD range's rows with
+  // no way to refresh short of closing and reopening.
+  useEffect(() => {
+    if (!showRefunds) return;
+    setRefundsLoading(true);
+    listRefundedOrders(range).then((res) => setRefundOrders(res.orders || [])).finally(() => setRefundsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showRefunds, range.from, range.to]);
+
+  useEffect(() => {
+    if (!showShipping) return;
+    setShippingLoading(true);
+    listShippingCosts(range).then((res) => setShippingOrders(res.orders || [])).finally(() => setShippingLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showShipping, range.from, range.to]);
+
+  function toggleRefunds() {
     setShowRefunds((v) => !v);
-    if (!refundOrders) {
-      setRefundsLoading(true);
-      try {
-        const res = await listRefundedOrders(range);
-        setRefundOrders(res.orders || []);
-      } finally {
-        setRefundsLoading(false);
-      }
+  }
+
+  function toggleShipping() {
+    setShowShipping((v) => !v);
+  }
+
+  function startEditShip(order) {
+    setEditingShipId(order._id || order.id);
+    setEditingShipValue(String(order.shippingCost || ""));
+  }
+
+  async function saveShipCost(order) {
+    const orderId = order.externalId || order._id || order.id;
+    setSavingShipId(orderId);
+    try {
+      const res = await updateOrderShippingCost(orderId, Number(editingShipValue) || 0);
+      setShippingOrders((prev) => prev.map((o) => ((o._id || o.id) === (order._id || order.id) ? res.order : o)));
+      setEditingShipId(null);
+    } finally {
+      setSavingShipId(null);
     }
   }
 
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Total Revenue" value={formatMoney(summary?.revenue, currency)} sub={`${summary?.orders ?? 0} orders`} tone="green" icon={BadgeIndianRupee} onClick={() => onNavigate("sales")} />
-        <KpiTile label="Inventory Purchases" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes} onClick={() => onNavigate("purchases")} />
+        <KpiTile
+          label="Total Revenue" value={formatMoney(summary?.revenue, currency)} sub={`${summary?.orders ?? 0} orders`} tone="green" icon={BadgeIndianRupee}
+          onClick={() => onNavigate("sales")}
+          calc="Sum of totalPrice across every non-cancelled order in this range."
+        />
+        <KpiTile
+          label="Inventory Purchases" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes}
+          onClick={() => onNavigate("purchases")}
+          calc="Sum of totalAmount across every vendor/raw-material purchase logged in this range."
+        />
         <KpiTile
           label="Gross Profit (on sales)"
           value={formatMoney(summary?.grossProfit, currency)}
           sub="revenue − purchases"
           tone={Number(summary?.grossProfit) >= 0 ? "green" : "rose"}
           icon={PiggyBank}
+          calc="Total Revenue − Inventory Purchases. Doesn't subtract expenses, ad spend, or shipping — see Net Period Profit for that."
         />
         <KpiTile
           label="Mfg Cost (Items Sold)"
@@ -349,12 +398,25 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           sub={summary?.mfgUncostedUnits ? `${summary.mfgUncostedUnits} units missing cost` : `${summary?.mfgCostedUnits ?? 0} units costed`}
           tone={summary?.mfgUncostedUnits ? "amber" : "slate"}
           icon={Factory}
+          calc="Sum of (SKU buying price × qty sold) for line items in this range, using prices set in Inventory & Costing. SKUs with no cost set contribute ₹0 — never a guess."
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="Meta ads + logged marketing expenses" tone="indigo" icon={Megaphone} onClick={() => onNavigate("expenses", "marketing")} />
-        <KpiTile label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="rose" icon={Wallet} onClick={() => onNavigate("expenses", "not-marketing")} />
-        <KpiTile label="Shipping Cost" value={formatMoney(summary?.shippingCost, currency)} sub="courier rate at ship time" tone="blue" icon={Truck} />
+        <KpiTile
+          label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="Meta ads + logged marketing expenses" tone="indigo" icon={Megaphone}
+          onClick={() => onNavigate("expenses", "marketing")}
+          calc="Meta ad spend (incl. 18% GST, from the Ads tab) + every manually-logged Expense tagged 'marketing' in this range. Meta spend itself is never auto-added as an Expense row."
+        />
+        <KpiTile
+          label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="rose" icon={Wallet}
+          onClick={() => onNavigate("expenses", "not-marketing")}
+          calc="Sum of every manually-logged Expense NOT tagged 'marketing' in this range."
+        />
+        <KpiTile
+          label="Shipping Cost" value={formatMoney(summary?.shippingCost, currency)} sub="courier rate at ship time" tone="blue" icon={Truck}
+          onClick={toggleShipping}
+          calc="Sum of each order's shippingCost — auto-captured from the real courier rate when shipped via this panel, or entered manually. Orders shipped outside this panel show ₹0 until filled in — not Shopify's own 'shipping charge' line, which is what the customer paid, not what the courier actually cost."
+        />
         <KpiTile
           label="Refunded/Returned Revenue"
           value={formatMoney(summary?.refundedRevenue, currency)}
@@ -362,6 +424,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           tone={summary?.refundedRevenue ? "amber" : "slate"}
           icon={RotateCcw}
           onClick={toggleRefunds}
+          calc="Sum of totalPrice for orders that are cancelled, or whose payment status is refunded/voided, in this range."
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -371,10 +434,23 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           sub={`${summary?.margin ?? 0}% margin`}
           tone={Number(summary?.netProfit) >= 0 ? "green" : "rose"}
           icon={Number(summary?.netProfit) >= 0 ? TrendingUp : TrendingDown}
+          calc="Total Revenue − Inventory Purchases − Other Expenses (excl. marketing) − Meta Ad Spend (incl. GST) − Shipping Cost. Margin = Net Profit ÷ Revenue."
         />
-        <KpiTile label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined} onClick={() => onNavigate("sales")} />
-        <KpiTile label="Total Orders" value={(analytics?.totals?.orders ?? 0).toLocaleString("en-IN")} sub="in selected range" tone="blue" icon={Package} onClick={() => onNavigate("sales")} />
-        <KpiTile label="Meta Ad Spend" value={formatMoney(summary?.adSpend, currency)} sub="Ads tab for ROAS" tone="indigo" icon={Target} onClick={() => onNavigate("ads")} />
+        <KpiTile
+          label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined}
+          onClick={() => onNavigate("sales")}
+          calc="Total Revenue ÷ Total Orders in this range."
+        />
+        <KpiTile
+          label="Total Orders" value={(analytics?.totals?.orders ?? 0).toLocaleString("en-IN")} sub="in selected range" tone="blue" icon={Package}
+          onClick={() => onNavigate("sales")}
+          calc="Count of non-cancelled orders in this range."
+        />
+        <KpiTile
+          label="Meta Ad Spend" value={formatMoney(summary?.adSpend, currency)} sub="Ads tab for ROAS" tone="indigo" icon={Target}
+          onClick={() => onNavigate("ads")}
+          calc="Sum of daily spend reported by Meta's Insights API for your connected ad account(s) in this range — pre-GST. Updates once a day at 8am; use Check Today on the Ads tab for a live (unsaved) look."
+        />
       </div>
 
       {showRefunds ? (
@@ -414,6 +490,79 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
                       <td className="py-3 pr-0 text-right font-bold text-rose-700">{formatMoney(o.totalPrice, currency)}</td>
                     </tr>
                   ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {showShipping ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Shipping Cost by Order</CardTitle>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                "Auto" = real courier rate captured when shipped via this panel. "Manual" = typed in. Unset (₹0, no badge) = shipped outside
+                this panel — click the amount to fill in the real cost.
+              </p>
+            </div>
+            <button onClick={() => setShowShipping(false)} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
+              <X size={18} />
+            </button>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            {shippingLoading ? (
+              <p className="text-sm text-[var(--muted)]">Loading...</p>
+            ) : !shippingOrders?.length ? (
+              <p className="text-sm text-[var(--muted)]">No orders in this range.</p>
+            ) : (
+              <table className="w-full min-w-[680px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
+                    <th className="py-3 pr-4 font-semibold">Order</th>
+                    <th className="py-3 pr-4 font-semibold">Date</th>
+                    <th className="py-3 pr-4 font-semibold">Provider</th>
+                    <th className="py-3 pr-4 font-semibold">Source</th>
+                    <th className="py-3 pr-0 text-right font-semibold">Shipping Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {shippingOrders.map((o) => {
+                    const rowId = o._id || o.id;
+                    const orderId = o.externalId || rowId;
+                    const isEditing = editingShipId === rowId;
+                    return (
+                      <tr key={rowId} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                        <td className="py-3 pr-4 font-semibold text-slate-900">{o.name}</td>
+                        <td className="py-3 pr-4">{new Date(o.shopifyCreatedAt).toLocaleDateString("en-IN")}</td>
+                        <td className="py-3 pr-4 text-slate-600">{o.shippingProvider || "-"}</td>
+                        <td className="py-3 pr-4">
+                          {o.shippingCostSource === "auto" ? <Badge tone="blue">Auto</Badge>
+                            : o.shippingCostSource === "manual" ? <Badge tone="indigo">Manual</Badge>
+                            : <Badge tone="slate">Unset</Badge>}
+                        </td>
+                        <td className="py-3 pr-0 text-right">
+                          {isEditing ? (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <input
+                                type="number" min="0" step="0.01" autoFocus
+                                value={editingShipValue}
+                                onChange={(e) => setEditingShipValue(e.target.value)}
+                                className="h-8 w-24 rounded-md border border-[var(--line)] px-2 text-right text-sm outline-none focus:border-[var(--primary)]"
+                              />
+                              <Button className="h-8 px-2.5 text-xs" disabled={savingShipId === orderId} onClick={() => saveShipCost(o)}>Save</Button>
+                              <button className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100" onClick={() => setEditingShipId(null)} aria-label="Cancel"><X size={14} /></button>
+                            </div>
+                          ) : (
+                            <button className="font-bold text-slate-900 hover:text-indigo-700 hover:underline" onClick={() => startEditShip(o)}>
+                              {formatMoney(o.shippingCost, currency)}
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             )}
@@ -1531,19 +1680,32 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
       </Card>
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Spend (Meta-reported)" value={formatMoney(totals.spend, totals.currency)} sub={`${(totals.clicks || 0).toLocaleString("en-IN")} clicks`} tone="indigo" icon={Megaphone} />
+        <KpiTile
+          label="Spend (Meta-reported)" value={formatMoney(totals.spend, totals.currency)} sub={`${(totals.clicks || 0).toLocaleString("en-IN")} clicks`} tone="indigo" icon={Megaphone}
+          calc="Sum of Meta's own daily 'spend' figure across every ad in this range, exactly as reported by their Insights API — pre-GST."
+        />
         <KpiTile
           label="Total Cost (incl. 18% GST)"
           value={formatMoney(totals.spendWithGst, totals.currency)}
           sub={`+${formatMoney(totals.gstAmount, totals.currency)} GST — informational, not an Expense entry`}
           tone="rose"
           icon={Coins}
+          calc="Spend (Meta-reported) × 1.18 — the real cash outflow, since Meta bills 18% GST on top of what their own dashboard shows as 'spend'."
         />
-        <KpiTile label="Attributed Revenue" value={formatMoney(totals.attributedRevenue, totals.currency)} sub={`${totals.attributedOrders || 0} orders`} tone="green" icon={BadgeIndianRupee} />
-        <KpiTile label="ROAS" value={`${totals.roas || 0}x`} sub="on Meta-reported spend" tone={totals.roas >= 1 ? "green" : "rose"} icon={Target} />
+        <KpiTile
+          label="Attributed Revenue" value={formatMoney(totals.attributedRevenue, totals.currency)} sub={`${totals.attributedOrders || 0} orders`} tone="green" icon={BadgeIndianRupee}
+          calc="Sum of totalPrice for synced orders auto-matched to an ad by UTM parameters (utm_campaign/utm_content). Needs UTM tags set in Meta Ads Manager — reads as ₹0 without them, even if spend is real."
+        />
+        <KpiTile
+          label="ROAS" value={`${totals.roas || 0}x`} sub="on Meta-reported spend" tone={totals.roas >= 1 ? "green" : "rose"} icon={Target}
+          calc="Attributed Revenue ÷ Spend (Meta-reported, pre-GST)."
+        />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="CPA" value={formatMoney(totals.cpa, totals.currency)} sub={`per attributed order`} tone="blue" icon={Activity} />
+        <KpiTile
+          label="CPA" value={formatMoney(totals.cpa, totals.currency)} sub={`per attributed order`} tone="blue" icon={Activity}
+          calc="Spend (Meta-reported) ÷ Attributed Orders."
+        />
       </div>
 
       <div>

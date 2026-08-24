@@ -91,7 +91,18 @@ const syncedOrderSchema = new mongoose.Schema(
     // Freight cost quoted/selected at ship time (courier rate the user picked in the
     // Ship Order modal) — captured here since it varies per order by destination and
     // weight, so it can't be a fixed per-SKU cost. Used to compute true net margin.
+    // Only ever set for orders actually shipped through this panel — orders fulfilled
+    // directly on Shopify/another app, or historical imports, have no auto-captured
+    // value at all (stays 0) until someone fills it in via shippingCostSource:"manual".
     shippingCost: { type: Number, default: 0 },
+    // "auto" = captured from the real courier rate at ship time (shipOrder()).
+    // "manual" = typed in directly by the user (finance.repo.js
+    // updateOrderShippingCost) — for orders that skipped this panel's ship
+    // flow, or to correct an auto-captured value. Shopify's own order-level
+    // "shipping charge" (what the CUSTOMER paid) is a different number
+    // entirely from what we actually paid the courier, so it's never used
+    // here — undefined means nobody has ever set a real figure for this order.
+    shippingCostSource: { type: String, enum: ["auto", "manual"] },
 
     // Tracking pulled from Shopify's fulfillments (admin-side or another channel/app)
     trackingNumber:  String,

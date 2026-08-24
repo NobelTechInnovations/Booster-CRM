@@ -1133,6 +1133,35 @@ export async function getShippingCostTotal({ companyId, from, to }) {
     .reduce((sum, o) => sum + toNumber(o.shippingCost), 0);
 }
 
+// The order rows behind getShippingCostTotal — powers the Finance tab's
+// "Shipping Cost" card drilling into an order-wise table, and lets the user
+// see (and manually correct/fill in) shippingCost per order rather than
+// only trusting whatever this panel's own Ship flow auto-captured. Orders
+// fulfilled outside this panel (direct on Shopify, historical imports) have
+// no auto-captured value at all — shown as ₹0/unset, not a guess.
+export async function listOrdersWithShippingCost({ companyId, from, to }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to });
+  return orders
+    .filter((o) => !o.cancelledAt)
+    .sort((a, b) => new Date(b.shopifyCreatedAt) - new Date(a.shopifyCreatedAt));
+}
+
+// Manual override/entry for an order's real shipping cost — for orders that
+// skipped this panel's Ship flow (so nothing was auto-captured), or to
+// correct an auto-captured value. Deliberately separate from Shopify's own
+// order-level "shipping charge" field (what the CUSTOMER paid), which is a
+// different number from what the business actually paid the courier and is
+// never used to populate this.
+export async function updateOrderShippingCost({ companyId, orderId, shippingCost }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) return null;
+  return updateOrderOmsStatus({
+    companyId,
+    shopifyOrderId: order.externalId,
+    update: { shippingCost: Math.max(0, toNumber(shippingCost)), shippingCostSource: "manual" },
+  });
+}
+
 // Revenue that was refunded/cancelled/returned in this period — kept separate
 // from the main revenue total so it can be shown as its own line item.
 export async function getRefundedRevenueTotal({ companyId, from, to }) {

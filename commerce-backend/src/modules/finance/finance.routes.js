@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { getSalesAnalytics, listRefundedOrders } from "../../repositories/order.repo.js";
+import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost } from "../../repositories/order.repo.js";
 import {
   createExpense,
   createPurchase,
@@ -62,6 +62,27 @@ financeRoutes.get(
   asyncHandler(async (req, res) => {
     const orders = await listRefundedOrders({ companyId: req.auth.companyId, from: req.query.from, to: req.query.to });
     res.json({ orders });
+  }),
+);
+
+// The order rows behind the "Shipping Cost" KPI — order-wise breakdown so
+// it can be verified (and manually corrected/filled in for orders shipped
+// outside this panel) instead of only trusting the auto-captured total.
+financeRoutes.get(
+  "/shipping-costs",
+  asyncHandler(async (req, res) => {
+    const orders = await listOrdersWithShippingCost({ companyId: req.auth.companyId, from: req.query.from, to: req.query.to });
+    res.json({ orders });
+  }),
+);
+
+financeRoutes.patch(
+  "/orders/:orderId/shipping-cost",
+  requirePermission("finance:manage"),
+  asyncHandler(async (req, res) => {
+    const order = await updateOrderShippingCost({ companyId: req.auth.companyId, orderId: req.params.orderId, shippingCost: req.body?.shippingCost });
+    if (!order) throw new HttpError(404, "Order not found");
+    res.json({ message: "Shipping cost updated", order });
   }),
 );
 

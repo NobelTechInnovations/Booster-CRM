@@ -121,6 +121,7 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
       // The courier rate the user picked in the Ship Order modal — varies by
       // destination/weight per order, so this is the real per-order freight cost.
       shippingCost: Number(options.rate) || 0,
+      shippingCostSource: "auto",
     },
   });
 
@@ -267,12 +268,13 @@ export async function cancelShipment({ companyId, orderId }) {
     companyId,
     shopifyOrderId: order.externalId,
     update: {
-      omsStatus:        "pending",
-      shippingProvider: null,
-      shipmentId:       null,
-      awbCode:          null,
-      labelUrl:         null,
-      shippingCost:     0,
+      omsStatus:          "pending",
+      shippingProvider:   null,
+      shipmentId:         null,
+      awbCode:            null,
+      labelUrl:           null,
+      shippingCost:       0,
+      shippingCostSource: null,
     },
   });
 
@@ -325,13 +327,14 @@ async function revertOrderToUnfulfilled({ companyId, order }) {
     companyId,
     shopifyOrderId: order.externalId,
     update: {
-      omsStatus:         "pending",
-      fulfillmentStatus: "unfulfilled",
-      shippingProvider:  null,
-      shipmentId:        null,
-      awbCode:           null,
-      labelUrl:          null,
-      shippingCost:      0,
+      omsStatus:          "pending",
+      fulfillmentStatus:  "unfulfilled",
+      shippingProvider:   null,
+      shipmentId:         null,
+      awbCode:            null,
+      labelUrl:           null,
+      shippingCost:       0,
+      shippingCostSource: null,
     },
   });
 }
