@@ -59,4 +59,9 @@ cronRoutes.get("/refresh-tokens", wrapJob("refresh-tokens", runTokenRefreshJob))
 cronRoutes.get("/sync-warehouses", wrapJob("sync-warehouses", runWarehouseSyncJob));
 cronRoutes.get("/sync-tracking", wrapJob("sync-tracking", runTrackingUpdateJob));
 cronRoutes.get("/sync-shopify", wrapJob("sync-shopify", runShopifySyncJob));
+// Scheduled once daily at "30 2 * * *" (UTC) = 8:00 AM IST in vercel.json —
+// this is the one figure that actually updates the "official" Meta ad spend
+// number; see getMetaAdSpendToday in meta.service.js (GET
+// /api/ads/:channelId/spend-today) for the separate live on-demand check
+// that never writes anywhere.
 cronRoutes.get("/sync-meta-ads", wrapJob("sync-meta-ads", runMetaAdsSyncJob));

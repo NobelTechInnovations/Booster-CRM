@@ -325,63 +325,18 @@ export async function deleteExpense({ companyId, expenseId }) {
   return { expense: clone(expense) };
 }
 
-// ─── Meta ad spend → Expense ledger sync ───────────────────────────────────
-
-function toLocalDayKey(date) {
-  const d = new Date(date);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-// Mirrors every day of live Meta ad spend into the Expense ledger (GST-inclusive)
-// so it shows up alongside every other cost — filterable, reportable, and
-// assignable to a partner via the existing splitBetween UI. One row per calendar
-// day, upserted on (companyId, source, syncDay) so re-syncing just refreshes the
-// amount instead of piling up duplicates. These rows are tagged source:"meta-ad-sync"
-// and are excluded from getFinanceSummary's expense totals below — the ad spend is
-// already counted once via getAdSpendTotal, so summing this too would double it.
-export async function syncMetaAdSpendToExpenses({ companyId, records }) {
-  if (!records?.length) return { synced: 0, days: 0 };
-
-  const byDay = new Map();
-  for (const record of records) {
-    const day = toLocalDayKey(record.date);
-    byDay.set(day, (byDay.get(day) || 0) + toNumber(record.spend));
-  }
-
-  let synced = 0;
-  for (const [syncDay, rawSpend] of byDay) {
-    const amount = Math.round(rawSpend * (1 + AD_GST_RATE) * 100) / 100;
-    if (!amount) continue;
-    const date = new Date(`${syncDay}T12:00:00`);
-    const set = {
-      companyId,
-      category: "marketing",
-      description: `Meta Ads spend — ${syncDay} (incl. 18% GST)`,
-      amount,
-      currency: "INR",
-      date,
-      source: "meta-ad-sync",
-      syncDay,
-    };
-
-    if (isMongoConnected()) {
-      await Expense.findOneAndUpdate({ companyId: mixedIdFilter(companyId), source: "meta-ad-sync", syncDay }, { $set: set }, { upsert: true, new: true });
-    } else {
-      const existing = [...memory.expenses.values()].find(
-        (e) => String(e.companyId) === String(companyId) && e.source === "meta-ad-sync" && e.syncDay === syncDay,
-      );
-      if (existing) {
-        Object.assign(existing, set, { updatedAt: now() });
-      } else {
-        const expense = { _id: id(), ...set, paymentMethod: "", vendorId: undefined, splitBetween: [], notes: "", createdAt: now(), updatedAt: now() };
-        memory.expenses.set(expense._id, expense);
-      }
-    }
-    synced += 1;
-  }
-
-  return { synced, days: byDay.size };
-}
+// ─── Meta ad spend ──────────────────────────────────────────────────────────
+// Ad spend used to get mirrored into the Expense ledger as one auto-generated
+// row per calendar day (source:"meta-ad-sync") so it was "visible" there —
+// in practice this just cluttered the expense list with rows nobody typed in,
+// on top of ad spend that isn't necessarily money that's actually left the
+// business yet (it may be running on a card not yet reconciled). Retired:
+// Meta ad spend is now purely an informational figure (getAdSpendTotal below,
+// refreshed once daily — see meta.service.js's getMetaAdSpendToday for the
+// live on-demand check that deliberately does NOT persist anywhere) and never
+// enters the Expense ledger or its totals at all. If money was genuinely paid
+// out for ads, that's a normal manual Expense entry (category "marketing")
+// like any other cost — nothing auto-creates it.
 
 // ─── Combined trend (revenue + expenses + ad spend, same period buckets) ──────
 

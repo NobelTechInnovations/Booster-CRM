@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { getSalesAnalytics } from "../../repositories/order.repo.js";
+import { getSalesAnalytics, listRefundedOrders } from "../../repositories/order.repo.js";
 import {
   createExpense,
   createPurchase,
@@ -52,6 +52,16 @@ financeRoutes.get(
     });
 
     res.json({ analytics });
+  }),
+);
+
+// The order rows behind the "Refunded/Returned Revenue" KPI — lets that card
+// drill into an actual table instead of just a bare total.
+financeRoutes.get(
+  "/refunds",
+  asyncHandler(async (req, res) => {
+    const orders = await listRefundedOrders({ companyId: req.auth.companyId, from: req.query.from, to: req.query.to });
+    res.json({ orders });
   }),
 );
 

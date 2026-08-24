@@ -12,6 +12,7 @@ import {
   runAttribution,
   selectMetaAdAccount,
   syncAdInsights,
+  getMetaAdSpendToday,
 } from "./meta.service.js";
 
 export const adsRoutes = Router();
@@ -102,6 +103,19 @@ adsRoutes.post(
       days: req.body?.days,
     });
     res.json({ message: `Synced ${result.syncedRows} ad-day rows from Meta`, ...result });
+  }),
+);
+
+// Live "what's it at right now" check — does NOT write to AdInsight or the
+// finance ledger. The official daily figure only ever moves via the 8am
+// scheduled sync (see vercel.json), so this can be clicked as often as
+// wanted without the reported total drifting depending on when someone looks.
+adsRoutes.get(
+  "/:channelId/spend-today",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await getMetaAdSpendToday({ companyId: req.auth.companyId, channelId: req.params.channelId });
+    res.json(result);
   }),
 );
 

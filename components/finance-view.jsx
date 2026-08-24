@@ -62,12 +62,14 @@ import {
   getExpensesByPartner,
   getFinanceSummary,
   getFinanceTrend,
+  getMetaAdSpendToday,
   getSalesAnalytics,
   linkAdProduct,
   listAdsChannels,
   listExpenses,
   listMetaAdAccounts,
   listPurchases,
+  listRefundedOrders,
   listUsers,
   listVendors,
   recomputeAdAttribution,
@@ -178,9 +180,18 @@ const tileIconTone = {
   slate: "bg-slate-100 text-slate-600",
 };
 
-function KpiTile({ label, value, sub, tone = "slate", icon: Icon }) {
+function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick }) {
   return (
-    <Card className="relative overflow-hidden p-4 hover:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_32px_-18px_rgba(15,23,42,0.22)]">
+    <Card
+      className={cn(
+        "relative overflow-hidden p-4 text-left hover:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_32px_-18px_rgba(15,23,42,0.22)]",
+        onClick && "cursor-pointer transition hover:-translate-y-0.5 hover:border-indigo-200",
+      )}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onKeyDown={onClick ? (e) => (e.key === "Enter" || e.key === " ") && onClick() : undefined}
+    >
       <div className={cn("absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r", tileAccent[tone] || tileAccent.slate)} />
       <div className="flex items-start justify-between gap-3">
         <div>
@@ -191,11 +202,10 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon }) {
           <Icon size={18} />
         </div>
       </div>
-      {sub ? (
-        <Badge tone={tone} className="mt-4">
-          {sub}
-        </Badge>
-      ) : null}
+      <div className="mt-4 flex items-center justify-between gap-2">
+        {sub ? <Badge tone={tone}>{sub}</Badge> : <span />}
+        {onClick ? <span className="text-[11px] font-semibold text-indigo-600">View entries →</span> : null}
+      </div>
     </Card>
   );
 }
@@ -302,14 +312,30 @@ const fieldClass =
 
 // ─── Overview Tab ────────────────────────────────────────────────────────────
 
-function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading }) {
+function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onNavigate }) {
   const currency = analytics?.totals?.currency || "INR";
+  const [showRefunds, setShowRefunds] = useState(false);
+  const [refundOrders, setRefundOrders] = useState(null);
+  const [refundsLoading, setRefundsLoading] = useState(false);
+
+  async function toggleRefunds() {
+    setShowRefunds((v) => !v);
+    if (!refundOrders) {
+      setRefundsLoading(true);
+      try {
+        const res = await listRefundedOrders(range);
+        setRefundOrders(res.orders || []);
+      } finally {
+        setRefundsLoading(false);
+      }
+    }
+  }
 
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Total Revenue" value={formatMoney(summary?.revenue, currency)} sub={`${summary?.orders ?? 0} orders`} tone="green" icon={BadgeIndianRupee} />
-        <KpiTile label="Inventory Purchases" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes} />
+        <KpiTile label="Total Revenue" value={formatMoney(summary?.revenue, currency)} sub={`${summary?.orders ?? 0} orders`} tone="green" icon={BadgeIndianRupee} onClick={() => onNavigate("sales")} />
+        <KpiTile label="Inventory Purchases" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes} onClick={() => onNavigate("purchases")} />
         <KpiTile
           label="Gross Profit (on sales)"
           value={formatMoney(summary?.grossProfit, currency)}
@@ -326,8 +352,8 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading }) {
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiTile label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="Meta ads + logged marketing expenses" tone="indigo" icon={Megaphone} />
-        <KpiTile label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="rose" icon={Wallet} />
+        <KpiTile label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="Meta ads + logged marketing expenses" tone="indigo" icon={Megaphone} onClick={() => onNavigate("expenses", "marketing")} />
+        <KpiTile label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="rose" icon={Wallet} onClick={() => onNavigate("expenses", "not-marketing")} />
         <KpiTile label="Shipping Cost" value={formatMoney(summary?.shippingCost, currency)} sub="courier rate at ship time" tone="blue" icon={Truck} />
         <KpiTile
           label="Refunded/Returned Revenue"
@@ -335,6 +361,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading }) {
           sub="excluded from Total Revenue"
           tone={summary?.refundedRevenue ? "amber" : "slate"}
           icon={RotateCcw}
+          onClick={toggleRefunds}
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -345,10 +372,54 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading }) {
           tone={Number(summary?.netProfit) >= 0 ? "green" : "rose"}
           icon={Number(summary?.netProfit) >= 0 ? TrendingUp : TrendingDown}
         />
-        <KpiTile label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined} />
-        <KpiTile label="Total Orders" value={(analytics?.totals?.orders ?? 0).toLocaleString("en-IN")} sub="in selected range" tone="blue" icon={Package} />
-        <KpiTile label="Meta Ad Spend" value={formatMoney(summary?.adSpend, currency)} sub="Ads tab for ROAS" tone="indigo" icon={Target} />
+        <KpiTile label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined} onClick={() => onNavigate("sales")} />
+        <KpiTile label="Total Orders" value={(analytics?.totals?.orders ?? 0).toLocaleString("en-IN")} sub="in selected range" tone="blue" icon={Package} onClick={() => onNavigate("sales")} />
+        <KpiTile label="Meta Ad Spend" value={formatMoney(summary?.adSpend, currency)} sub="Ads tab for ROAS" tone="indigo" icon={Target} onClick={() => onNavigate("ads")} />
       </div>
+
+      {showRefunds ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Refunded / Returned Orders</CardTitle>
+              <p className="mt-1 text-sm text-[var(--muted)]">Cancelled, refunded, or voided orders in this range — kept out of Total Revenue.</p>
+            </div>
+            <button onClick={() => setShowRefunds(false)} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
+              <X size={18} />
+            </button>
+          </CardHeader>
+          <CardContent className="overflow-x-auto">
+            {refundsLoading ? (
+              <p className="text-sm text-[var(--muted)]">Loading...</p>
+            ) : !refundOrders?.length ? (
+              <p className="text-sm text-[var(--muted)]">No refunded/cancelled orders in this range.</p>
+            ) : (
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
+                    <th className="py-3 pr-4 font-semibold">Order</th>
+                    <th className="py-3 pr-4 font-semibold">Customer</th>
+                    <th className="py-3 pr-4 font-semibold">Status</th>
+                    <th className="py-3 pr-4 font-semibold">Date</th>
+                    <th className="py-3 pr-0 text-right font-semibold">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {refundOrders.map((o) => (
+                    <tr key={o._id || o.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                      <td className="py-3 pr-4 font-semibold text-slate-900">{o.name}</td>
+                      <td className="py-3 pr-4">{o.customerName || "-"}</td>
+                      <td className="py-3 pr-4"><Badge tone="amber">{o.cancelledAt ? "Cancelled" : o.financialStatus}</Badge></td>
+                      <td className="py-3 pr-4">{new Date(o.cancelledAt || o.shopifyCreatedAt).toLocaleDateString("en-IN")}</td>
+                      <td className="py-3 pr-0 text-right font-bold text-rose-700">{formatMoney(o.totalPrice, currency)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>
@@ -629,11 +700,24 @@ function ExpenseFormModal({ onClose, onSaved, initial }) {
   );
 }
 
-function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
+const EXPENSE_CATEGORIES = ["rent", "salary", "utilities", "packaging", "shipping", "software", "marketing", "misc", "other"];
+
+function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFilter, onConsumeInitialFilter }) {
   const [showForm, setShowForm] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [deletingId, setDeletingId] = useState("");
   const [partnerSummary, setPartnerSummary] = useState(null);
+  const [categoryFilter, setCategoryFilter] = useState(initialCategoryFilter || "all");
+
+  // A KPI tile on Overview can jump here with a category pre-applied (e.g.
+  // "Marketing Spend" -> category=marketing) — consume it once so switching
+  // tabs manually afterward doesn't keep re-forcing the filter back.
+  useEffect(() => {
+    if (!initialCategoryFilter) return;
+    setCategoryFilter(initialCategoryFilter);
+    onConsumeInitialFilter?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCategoryFilter]);
 
   useEffect(() => {
     if (!range) return;
@@ -650,19 +734,39 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
     }
   }
 
-  const total = expenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
+  const filteredExpenses =
+    categoryFilter === "all" ? expenses
+      : categoryFilter === "not-marketing" ? expenses.filter((e) => e.category !== "marketing")
+      : expenses.filter((e) => e.category === categoryFilter);
+
+  const total = filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
   return (
     <Card>
       <CardHeader>
         <div>
           <CardTitle>Expenses</CardTitle>
-          <p className="mt-1 text-sm text-[var(--muted)]">{expenses.length} entries, {formatMoney(total)} in this range.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            {filteredExpenses.length} of {expenses.length} entries, {formatMoney(total)}{categoryFilter !== "all" ? " (filtered)" : ""} in this range.
+          </p>
         </div>
-        <Button onClick={() => { setEditingExpense(null); setShowForm(true); }}>
-          <Plus size={16} />
-          Add Expense
-        </Button>
+        <div className="flex items-center gap-2">
+          <select
+            value={categoryFilter}
+            onChange={(e) => setCategoryFilter(e.target.value)}
+            className="h-9 rounded-md border border-[var(--line)] bg-white px-2.5 text-xs font-semibold outline-none focus:border-[var(--primary)]"
+          >
+            <option value="all">All categories</option>
+            <option value="not-marketing">Other (non-marketing)</option>
+            {EXPENSE_CATEGORIES.map((c) => (
+              <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
+            ))}
+          </select>
+          <Button onClick={() => { setEditingExpense(null); setShowForm(true); }}>
+            <Plus size={16} />
+            Add Expense
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="overflow-x-auto">
         {/* Spend by partner summary */}
@@ -686,8 +790,12 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
         ) : null}
 
         {isLoading ? <p className="text-sm text-[var(--muted)]">Loading expenses...</p> : null}
-        {!isLoading && !expenses.length ? <p className="text-sm text-[var(--muted)]">No expenses recorded in this range yet.</p> : null}
-        {expenses.length ? (
+        {!isLoading && !filteredExpenses.length ? (
+          <p className="text-sm text-[var(--muted)]">
+            {expenses.length ? "No expenses match this category in this range." : "No expenses recorded in this range yet."}
+          </p>
+        ) : null}
+        {filteredExpenses.length ? (
           <table className="w-full min-w-[760px] border-collapse text-sm">
             <thead>
               <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
@@ -701,7 +809,7 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range }) {
               </tr>
             </thead>
             <tbody>
-              {expenses.map((expense) => (
+              {filteredExpenses.map((expense) => (
                 <tr key={expense._id || expense.id} className="border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/60">
                   <td className="py-3 pr-4">{new Date(expense.date).toLocaleDateString("en-IN")}</td>
                   <td className="py-3 pr-4">
@@ -1277,6 +1385,8 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
   const [actionError, setActionError] = useState("");
   const [syncNotice, setSyncNotice] = useState(null);
   const [linkTarget, setLinkTarget] = useState(null);
+  const [todaySpend, setTodaySpend] = useState(null);
+  const [checkingToday, setCheckingToday] = useState(false);
 
   const channelId = adsChannel?._id || adsChannel?.id;
   const hasAdAccount = Boolean(adsChannel?.external?.adAccountId);
@@ -1329,6 +1439,22 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
     }
   }
 
+  // Live look at today's spend so far — never written anywhere. The
+  // "official" spend figure only ever updates via the daily 8am sync, so
+  // clicking this as often as wanted can't make the reported total drift.
+  async function checkToday() {
+    setCheckingToday(true);
+    setActionError("");
+    try {
+      const result = await getMetaAdSpendToday(channelId);
+      setTodaySpend(result);
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setCheckingToday(false);
+    }
+  }
+
   async function recompute() {
     setRecomputing(true);
     setActionError("");
@@ -1360,6 +1486,10 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            <Button variant="secondary" className="h-9" onClick={checkToday} disabled={checkingToday || !hasAdAccount} title="Live look at today's spend so far — doesn't change the official figure">
+              <Eye size={14} className={checkingToday ? "animate-pulse" : ""} />
+              {checkingToday ? "Checking…" : "Check Today"}
+            </Button>
             <Button variant="secondary" className="h-9" onClick={recompute} disabled={recomputing}>
               <Link2 size={14} className={recomputing ? "animate-pulse" : ""} />
               Recompute Attribution
@@ -1382,6 +1512,12 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
               error={actionError}
             />
           </div>
+          {todaySpend ? (
+            <div className="flex items-center justify-between rounded-md border border-indigo-100 bg-indigo-50/60 px-3 py-2 text-sm">
+              <span className="font-semibold text-indigo-900">Today ({todaySpend.date}) so far: {formatMoney(todaySpend.spend, todaySpend.currency)}</span>
+              <span className="text-xs text-indigo-500">Live preview — not saved. The figures below update at the next daily sync (8am).</span>
+            </div>
+          ) : null}
           {syncNotice ? (
             <div className={cn("rounded-md px-3 py-2 text-sm font-medium", syncNotice.tone === "green" ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800")}>
               {syncNotice.text}
@@ -1399,7 +1535,7 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
         <KpiTile
           label="Total Cost (incl. 18% GST)"
           value={formatMoney(totals.spendWithGst, totals.currency)}
-          sub={`+${formatMoney(totals.gstAmount, totals.currency)} GST — mirrored into Expenses`}
+          sub={`+${formatMoney(totals.gstAmount, totals.currency)} GST — informational, not an Expense entry`}
           tone="rose"
           icon={Coins}
         />
@@ -1517,6 +1653,16 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
 
 export function FinanceView({ defaultTab = "overview" }) {
   const [activeTab, setActiveTab] = useState(tabs.some((t) => t.key === defaultTab) ? defaultTab : "overview");
+  // Set by an Overview KPI tile click (e.g. "Marketing Spend" -> "marketing")
+  // and consumed once by ExpensesTab so a manual tab switch afterward doesn't
+  // keep re-forcing the filter.
+  const [pendingExpenseFilter, setPendingExpenseFilter] = useState(null);
+
+  function navigateFromKpi(tab, expenseFilter) {
+    if (expenseFilter) setPendingExpenseFilter(expenseFilter);
+    setActiveTab(tab);
+  }
+
   const [preset, setPreset] = useState("30d");
   const [custom, setCustom] = useState({ from: LIFETIME_START, to: isoDay(new Date()) });
   const [groupBy, setGroupBy] = useState("day");
@@ -1651,9 +1797,18 @@ export function FinanceView({ defaultTab = "overview" }) {
       ) : null}
       {error ? <p className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
 
-      {activeTab === "overview" ? <OverviewTab range={range} groupBy={groupBy} summary={summary} analytics={analytics} trend={trend} isLoading={isLoading} /> : null}
+      {activeTab === "overview" ? <OverviewTab range={range} groupBy={groupBy} summary={summary} analytics={analytics} trend={trend} isLoading={isLoading} onNavigate={navigateFromKpi} /> : null}
       {activeTab === "sales" ? <SalesAnalyticsTab analytics={analytics} groupBy={groupBy} /> : null}
-      {activeTab === "expenses" ? <ExpensesTab expenses={expenses} isLoading={isLoading} onRefresh={refreshAll} range={range} /> : null}
+      {activeTab === "expenses" ? (
+        <ExpensesTab
+          expenses={expenses}
+          isLoading={isLoading}
+          onRefresh={refreshAll}
+          range={range}
+          initialCategoryFilter={pendingExpenseFilter}
+          onConsumeInitialFilter={() => setPendingExpenseFilter(null)}
+        />
+      ) : null}
       {activeTab === "purchases" ? <VendorsPurchasesTab vendors={vendors} purchases={purchases} isLoading={isLoading} onRefresh={refreshAll} /> : null}
       {activeTab === "ads" ? <AdsTab adsChannel={adsChannel} adsSummary={adsSummary} isLoading={isLoading} onRefresh={refreshAll} range={range} /> : null}
     </div>

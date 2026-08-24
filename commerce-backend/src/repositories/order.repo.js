@@ -1142,6 +1142,16 @@ export async function getRefundedRevenueTotal({ companyId, from, to }) {
     .reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
 }
 
+// The actual order rows behind getRefundedRevenueTotal — powers the
+// Finance tab's "Refunded/Returned Revenue" card drilling down into a table
+// instead of just showing a bare number.
+export async function listRefundedOrders({ companyId, from, to }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to });
+  return orders
+    .filter((o) => o.cancelledAt || o.financialStatus === "refunded" || o.financialStatus === "voided")
+    .sort((a, b) => new Date(b.cancelledAt || b.shopifyCreatedAt) - new Date(a.cancelledAt || a.shopifyCreatedAt));
+}
+
 // Manufacturing/procurement cost of items actually sold in this period, using
 // each SKU's buying price from Inventory & Costing. SKUs the user hasn't
 // costed yet contribute ₹0 — this number gets more accurate as costs are

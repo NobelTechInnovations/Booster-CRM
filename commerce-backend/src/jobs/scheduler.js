@@ -31,8 +31,11 @@ export function startScheduler() {
     runShopifySyncJob().catch(console.error);
   });
 
-  // 5. Meta Ads spend + attribution sync every 6 hours
-  cron.schedule("0 */6 * * *", () => {
+  // 5. Meta Ads spend + attribution sync once daily at 8am — matches
+  // vercel.json's production schedule ("30 2 * * *" UTC = 8am IST). This is
+  // the only thing that updates the "official" ad spend figure; the
+  // on-demand "Check Today" button (getMetaAdSpendToday) never persists.
+  cron.schedule("0 8 * * *", () => {
     runMetaAdsSyncJob().catch(console.error);
   });
 
@@ -42,5 +45,5 @@ export function startScheduler() {
     runWarehouseSyncJob().catch(console.error);
   }, 5000);
 
-  console.log("[Scheduler] Background jobs scheduled: Token Refresh (1h), Tracking Update (15m), Warehouse Sync (6h), Shopify Sync (30m), Meta Ads Sync (6h).");
+  console.log("[Scheduler] Background jobs scheduled: Token Refresh (1h), Tracking Update (15m), Warehouse Sync (6h), Shopify Sync (30m), Meta Ads Sync (daily 8am).");
 }

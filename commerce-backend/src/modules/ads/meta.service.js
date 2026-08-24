@@ -8,7 +8,6 @@ import {
 } from "../../repositories/channel.repo.js";
 import { getOrdersInRange } from "../../repositories/order.repo.js";
 import { listAdInsights, setAttribution, upsertAdInsights } from "../../repositories/ad-insight.repo.js";
-import { syncMetaAdSpendToExpenses } from "../../repositories/finance.repo.js";
 import { orderMatchesAd } from "../../utils/utm.js";
 import { HttpError } from "../../utils/http-error.js";
 import { createOauthState, readOauthState } from "../../utils/oauth-state.js";
@@ -211,14 +210,6 @@ export async function syncAdInsights({ companyId, channelId, days = 30 }) {
 
     await upsertAdInsights(records);
     await runAttribution({ companyId, channelId, from: since, to: until });
-    // Mirror this batch of ad spend into the Expense ledger (GST-inclusive) so it's
-    // visible/reportable/attributable-to-a-partner like every other cost. Best-effort —
-    // a failure here shouldn't fail the sync itself, the AdInsight data is already saved.
-    try {
-      await syncMetaAdSpendToExpenses({ companyId, records });
-    } catch (syncError) {
-      console.error("[meta] failed to mirror ad spend into expenses:", syncError.message);
-    }
 
     const updatedChannel = await updateChannelSyncState({
       channelId,
@@ -231,6 +222,33 @@ export async function syncAdInsights({ companyId, channelId, days = 30 }) {
     await updateChannelSyncState({ channelId, companyId, sync: { orders: "failed", lastError: error.message } });
     throw error;
   }
+}
+
+/**
+ * Live look at today's Meta ad spend so far — hits the Graph API directly
+ * and returns the number without writing anything to AdInsight or the
+ * finance ledger. The "official" figure only ever changes via the daily
+ * 8am sync (syncAdInsights, scheduled in vercel.json) so mid-day checks
+ * can't make the reported total drift depending on when someone happened
+ * to look — this is purely "what's it at right now" on demand.
+ */
+export async function getMetaAdSpendToday({ companyId, channelId }) {
+  const channel = await getChannelForSync({ channelId, companyId });
+  if (!channel || channel.provider !== "meta") throw new HttpError(404, "Meta Ads channel not found");
+  if (!channel.external?.adAccountId) throw new HttpError(400, "Select a Meta ad account before checking spend");
+
+  const today = toIsoDay(new Date());
+  const params = new URLSearchParams({
+    level: "account",
+    time_range: JSON.stringify({ since: today, until: today }),
+    fields: "spend",
+    access_token: channel.credentials.accessToken,
+  });
+
+  const body = await metaFetch(`${GRAPH_BASE()}/${channel.external.adAccountId}/insights?${params.toString()}`);
+  const spend = Number(body.data?.[0]?.spend || 0);
+
+  return { date: today, spend, currency: channel.external?.adAccountCurrency || "INR" };
 }
 
 // ─── Revenue attribution (UTM match against synced Shopify orders) ─────────
