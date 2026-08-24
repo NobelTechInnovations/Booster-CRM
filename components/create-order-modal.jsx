@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { X, Search, Plus, Minus, ShoppingCart, Trash2, RefreshCw, CheckCircle2, PackageCheck } from "lucide-react";
 import { createCustomerOrder, listSyncedRecords } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 
 export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
   const [products, setProducts] = useState([]);
@@ -184,7 +184,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                           <p className="text-xs text-slate-700 truncate">{variant.title || "Default"}</p>
                           {variant.sku && <p className="text-[10px] text-[var(--muted)]">SKU: {variant.sku}</p>}
                         </div>
-                        <p className="text-xs font-semibold text-slate-800 shrink-0">₹{Number(variant.price || 0).toLocaleString("en-IN")}</p>
+                        <p className="text-xs font-semibold text-slate-800 shrink-0">{formatMoney(variant.price)}</p>
                         <button
                           onClick={() => addToCart(product, variant)}
                           className="h-6 w-6 grid place-items-center rounded-md bg-indigo-700 text-white hover:bg-indigo-800 transition shrink-0"
@@ -231,7 +231,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                   ))}
                   <div className="flex items-center justify-between pt-1 text-xs font-bold text-slate-900">
                     <span>Total</span>
-                    <span>₹{total.toLocaleString("en-IN")}</span>
+                    <span>{formatMoney(total)}</span>
                   </div>
                 </div>
               )}
@@ -295,7 +295,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
           <div className="flex-1">
             {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
           </div>
-          <p className="text-sm font-bold text-slate-900">₹{total.toLocaleString("en-IN")}</p>
+          <p className="text-sm font-bold text-slate-900">{formatMoney(total)}</p>
           <button onClick={onClose} className="h-8 px-3 rounded-lg border border-[var(--line)] text-xs text-slate-600 hover:bg-slate-100">Cancel</button>
           <button
             onClick={placeOrder}

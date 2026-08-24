@@ -19,7 +19,7 @@ import { listSyncedRecords, listSkuCosts, saveSkuCost } from "@/lib/api";
 
 function money(n) {
   const v = Number(n || 0);
-  return `₹${v.toLocaleString("en-IN", { maximumFractionDigits: 2 })}`;
+  return `₹${v.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 // One editable field: buying price / MRP / weight, with inline save-on-blur.

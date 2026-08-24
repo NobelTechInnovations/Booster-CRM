@@ -835,7 +835,7 @@ function ExpenseFormModal({ onClose, onSaved, initial }) {
               ))}
               {splitMismatch ? (
                 <p className="text-xs font-medium text-amber-700">
-                  Split total ₹{splitTotal.toLocaleString("en-IN")} doesn&rsquo;t match expense amount ₹{amountNum.toLocaleString("en-IN")} — that&rsquo;s fine if intentional.
+                  Split total {formatMoney(splitTotal)} doesn&rsquo;t match expense amount {formatMoney(amountNum)} — that&rsquo;s fine if intentional.
                 </p>
               ) : null}
             </div>
@@ -979,7 +979,7 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFil
                       <div className="flex flex-wrap gap-1">
                         {expense.splitBetween.map((s, i) => (
                           <span key={i} className="rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-semibold text-indigo-700">
-                            {s.userName} ₹{Number(s.amount).toLocaleString("en-IN")}
+                            {s.userName} {formatMoney(s.amount)}
                           </span>
                         ))}
                       </div>

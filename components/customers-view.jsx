@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import { listSyncedRecords, createCustomer } from "@/lib/api";
 import { CreateOrderModal } from "@/components/create-order-modal";
 import { CustomerFollowUpModal } from "@/components/customer-followup-modal";
@@ -277,7 +277,7 @@ export function CustomersView() {
                       {c.phone ? <p className="flex items-center gap-1 mt-0.5"><Phone size={11} />{c.phone}</p> : null}
                     </td>
                     <td className="px-4 py-3 font-medium text-slate-700">{c.ordersCount || 0}</td>
-                    <td className="px-4 py-3 font-medium text-slate-700">₹{Number(c.totalSpent || 0).toLocaleString("en-IN")}</td>
+                    <td className="px-4 py-3 font-medium text-slate-700">{formatMoney(c.totalSpent)}</td>
                     <td className="px-4 py-3">
                       <Badge tone={c.followUpStatus === "converted" ? "green" : c.followUpStatus === "follow_up_scheduled" ? "amber" : "slate"}>
                         {(c.followUpStatus || "new").replace(/_/g, " ")}

@@ -31,7 +31,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import {
   getCompanyProfile,
   updateTaxSettings,
@@ -395,7 +395,7 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
             <h2 className="text-lg font-extrabold text-slate-900">{lead.customerName || lead.customerPhone || lead.customerEmail || "Lead"}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
               {lead.customerPhone ? <span className="flex items-center gap-1"><PhoneCall size={11} />{lead.customerPhone}</span> : null}
-              {lead.cartValue ? <span className="font-semibold text-slate-700">₹{Number(lead.cartValue).toLocaleString("en-IN")}</span> : null}
+              {lead.cartValue ? <span className="font-semibold text-slate-700">{formatMoney(lead.cartValue)}</span> : null}
               <Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge>
             </div>
           </div>
@@ -484,7 +484,7 @@ function LeadRow({ lead, onView, onFollowUp }) {
       </td>
       <td className="py-2.5 pr-3"><Badge tone="slate">{lead.provider}</Badge></td>
       <td className="py-2.5 pr-3 text-xs font-medium text-slate-700">{lead.latestStage || lead.latestType}</td>
-      <td className="py-2.5 pr-3 text-sm font-semibold text-slate-800">{lead.cartValue ? `₹${Number(lead.cartValue).toLocaleString("en-IN")}` : "—"}</td>
+      <td className="py-2.5 pr-3 text-sm font-semibold text-slate-800">{lead.cartValue ? formatMoney(lead.cartValue) : "—"}</td>
       <td className="py-2.5 pr-3 text-center text-xs font-medium text-slate-500">{lead.eventCount}</td>
       <td className="py-2.5 pr-3 text-xs text-slate-500">{new Date(lead.lastEventAt).toLocaleString("en-IN")}</td>
       <td className="py-2.5 pr-3"><Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge></td>

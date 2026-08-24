@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 import {
   PackageCheck,
   Truck,
@@ -529,7 +529,7 @@ function CourierSelectModal({
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-bold text-indigo-800">₹{option.rate}</p>
+                        <p className="text-sm font-bold text-indigo-800">{formatMoney(option.rate)}</p>
                         <p className="text-[10px] text-[var(--muted)]">Freight Charge</p>
                       </div>
                     </div>
@@ -557,7 +557,7 @@ function CourierSelectModal({
             className="h-9 px-4 rounded-lg bg-indigo-700 text-xs font-semibold text-white hover:bg-indigo-800 transition disabled:opacity-50 flex items-center gap-1.5"
           >
             {isShipping ? <RefreshCcw size={13} className="animate-spin" /> : <Send size={13} />}
-            Confirm & Create Shipment (₹{selectedCourier?.rate || "0"})
+            Confirm & Create Shipment ({formatMoney(selectedCourier?.rate || 0)})
           </button>
         </div>
       </div>
@@ -958,7 +958,7 @@ export function FulfillmentView() {
                           )}
                         </div>
                         <div className="text-right">
-                          <span className="text-base font-bold text-slate-900">₹{order.totalPrice}</span>
+                          <span className="text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</span>
                           <p className="text-xs text-slate-400 mt-0.5">
                             {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
                           </p>
@@ -1161,7 +1161,7 @@ export function FulfillmentView() {
                             <div className="flex items-center gap-2">
                               <span className="text-base font-bold text-slate-900">{order.name}</span>
                               <Badge tone={order.isCOD ? "amber" : "green"}>
-                                {order.isCOD ? `COD (₹${order.codAmount || order.totalPrice})` : "Prepaid"}
+                                {order.isCOD ? `COD (${formatMoney(order.codAmount || order.totalPrice)})` : "Prepaid"}
                               </Badge>
                               <span className="text-xs text-[var(--muted)]">
                                 {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
@@ -1192,7 +1192,7 @@ export function FulfillmentView() {
 
                           {/* Order Actions */}
                           <div className="flex flex-col items-end gap-2">
-                            <span className="text-base font-bold text-slate-900">₹{order.totalPrice}</span>
+                            <span className="text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</span>
                             <div className="flex items-center gap-1.5">
                               <Button
                                 disabled={isCancelling}

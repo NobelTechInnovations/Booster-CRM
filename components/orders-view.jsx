@@ -30,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { listAllOrders, getCompanyProfile } from "@/lib/api";
+import { formatMoney } from "@/lib/utils";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -428,7 +429,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">Total</p>
-                  <p className="mt-0.5 text-base font-bold text-slate-900">₹{order.totalPrice}</p>
+                  <p className="mt-0.5 text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</p>
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">Payment</p>
@@ -440,12 +441,12 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">COD Amount</p>
-                  <p className="mt-0.5 font-medium text-slate-700">{order.isCOD ? `₹${order.codAmount || order.totalPrice}` : "—"}</p>
+                  <p className="mt-0.5 font-medium text-slate-700">{order.isCOD ? formatMoney(order.codAmount || order.totalPrice) : "—"}</p>
                 </div>
                 {order.shippingCost > 0 && (
                   <div>
                     <p className="text-[11px] font-semibold uppercase text-slate-500">Shipping Cost</p>
-                    <p className="mt-0.5 font-medium text-slate-700">₹{order.shippingCost}</p>
+                    <p className="mt-0.5 font-medium text-slate-700">{formatMoney(order.shippingCost)}</p>
                   </div>
                 )}
                 {order.shippingProvider && (
@@ -512,7 +513,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                       {item.sku && <p className="text-xs text-slate-400">SKU: {item.sku}</p>}
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-bold text-slate-900">₹{Number(item.price || item.price_set?.shop_money?.amount || 0).toFixed(0)}</p>
+                      <p className="text-sm font-bold text-slate-900">{formatMoney(item.price || item.price_set?.shop_money?.amount || 0)}</p>
                       <p className="text-xs text-slate-500">× {item.quantity}</p>
                     </div>
                   </div>
@@ -527,18 +528,18 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                 {order.subtotalPrice && (
                   <div className="flex justify-between text-slate-600">
                     <span>Subtotal</span>
-                    <span>₹{order.subtotalPrice}</span>
+                    <span>{formatMoney(order.subtotalPrice)}</span>
                   </div>
                 )}
                 {order.totalTax > 0 && (
                   <div className="flex justify-between text-slate-600">
                     <span>Tax</span>
-                    <span>₹{order.totalTax}</span>
+                    <span>{formatMoney(order.totalTax)}</span>
                   </div>
                 )}
                 <div className="flex justify-between font-bold text-slate-900">
                   <span>Total</span>
-                  <span>₹{order.totalPrice}</span>
+                  <span>{formatMoney(order.totalPrice)}</span>
                 </div>
               </div>
             </section>
@@ -934,7 +935,7 @@ export function OrdersView() {
                         </div>
                       </td>
                       <td className="px-4 py-3 text-right font-bold text-slate-900">
-                        ₹{order.totalPrice}
+                        {formatMoney(order.totalPrice)}
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex items-center justify-end gap-1.5">
