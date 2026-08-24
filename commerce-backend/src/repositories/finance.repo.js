@@ -396,23 +396,29 @@ export async function getFinanceSummary({ companyId, from, to }) {
     getMfgCostTotal({ companyId, from, to }),
   ]);
 
-  // Meta-ad-sync rows mirror live ad spend into the ledger for visibility/partner
-  // attribution only — the spend itself is already counted via adSpend below, so
-  // they're excluded here to avoid double counting.
-  const ledgerExpenses = expenses.filter((e) => e.source !== "meta-ad-sync");
+  // All money totals below (expenses, marketing spend, net profit) come
+  // purely from the manually-logged Expense ledger — what the user actually
+  // recorded as paid, splitBetween and all. Meta's live API spend (adSpend
+  // below) is deliberately NEVER added into any of these totals — it's
+  // reported ad delivery, not confirmed payment, and the user already logs
+  // the real payment as its own Expense entry when they actually pay Meta
+  // (e.g. a ₹7,080 top-up on a given date). Combining both used to double-
+  // count: "Marketing Spend" showed the manual entry PLUS Meta's separately-
+  // tracked live number on top of it, even though the manual entry already
+  // *was* that spend. Meta's number stays visible on its own "Meta Ad Spend"
+  // card purely so it can be checked against — it never feeds a total here.
   const cogs = purchases.reduce((sum, purchase) => sum + toNumber(purchase.totalAmount), 0);
-  const expenseTotal = ledgerExpenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
-  const marketingExpenseTotal = ledgerExpenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);
+  const expenseTotal = expenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
+  const marketingExpenseTotal = expenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);
   const otherExpenseTotal = expenseTotal - marketingExpenseTotal;
-  // Ad spend is grossed up by Meta's 18% GST here — that's the real cash outflow,
-  // even though Meta's own dashboard only shows the pre-GST "spend" figure.
+  // Ad spend grossed up by Meta's 18% GST — shown on the separate Meta Ad
+  // Spend card as the real all-in cost, even though Meta's own dashboard
+  // only shows the pre-GST "spend" figure. Not summed into marketingSpend.
   const adSpendWithGst = adSpend.spendWithGst ?? adSpend.spend * (1 + AD_GST_RATE);
-  // "Marketing Spend" combines live Meta ad spend (GST-inclusive) with any
-  // manually-logged/historical marketing expenses — always disjoint sources, never double-counted.
-  const marketingSpend = adSpendWithGst + marketingExpenseTotal;
+  const marketingSpend = marketingExpenseTotal;
   const revenue = toNumber(sales.revenue);
   const grossProfit = revenue - cogs;
-  const netProfit = revenue - cogs - expenseTotal - adSpendWithGst - shippingCost;
+  const netProfit = revenue - cogs - expenseTotal - shippingCost;
   const margin = revenue ? (netProfit / revenue) * 100 : 0;
 
   return {

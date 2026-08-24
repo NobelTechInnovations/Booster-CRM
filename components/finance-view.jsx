@@ -151,17 +151,19 @@ function resolveRange(preset, custom) {
 
 function formatMoney(value, currency = "INR") {
   const num = Number(value || 0);
+  const formatted = num.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   if (currency === "INR") {
-    return `₹${num.toLocaleString("en-IN")}`;
+    return `₹${formatted}`;
   }
-  return `${currency} ${num.toLocaleString("en-IN")}`;
+  return `${currency} ${formatted}`;
 }
 
+// Used to abbreviate to "₹6k" / "₹1.2L" on chart axes/tooltips — per
+// explicit request, no more abbreviation anywhere: full value with decimals,
+// same as formatMoney. Kept as a separate name only so the chart call sites
+// below don't need touching.
 function formatCompact(value) {
-  const num = Number(value || 0);
-  if (Math.abs(num) >= 100000) return `₹${(num / 100000).toFixed(1)}L`;
-  if (Math.abs(num) >= 1000) return `₹${Math.round(num / 1000)}k`;
-  return `₹${Math.round(num)}`;
+  return formatMoney(value);
 }
 
 const tileAccent = {
@@ -403,9 +405,9 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile
-          label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="Meta ads + logged marketing expenses" tone="indigo" icon={Megaphone}
+          label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="From your logged expenses only" tone="indigo" icon={Megaphone}
           onClick={() => onNavigate("expenses", "marketing")}
-          calc="Meta ad spend (incl. 18% GST, from the Ads tab) + every manually-logged Expense tagged 'marketing' in this range. Meta spend itself is never auto-added as an Expense row."
+          calc="Sum of every manually-logged Expense tagged 'marketing' in this range — exactly what you've recorded as actually paid. Meta's live API spend (see the separate Meta Ad Spend card) is NOT added on top of this — log the real payment yourself when you actually pay, or it won't count here."
         />
         <KpiTile
           label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="rose" icon={Wallet}
@@ -434,7 +436,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           sub={`${summary?.margin ?? 0}% margin`}
           tone={Number(summary?.netProfit) >= 0 ? "green" : "rose"}
           icon={Number(summary?.netProfit) >= 0 ? TrendingUp : TrendingDown}
-          calc="Total Revenue − Inventory Purchases − Other Expenses (excl. marketing) − Meta Ad Spend (incl. GST) − Shipping Cost. Margin = Net Profit ÷ Revenue."
+          calc="Total Revenue − Inventory Purchases − all logged Expenses (marketing + other) − Shipping Cost. Meta's live API spend is not subtracted here — only what you've logged as actually paid counts. Margin = Net Profit ÷ Revenue."
         />
         <KpiTile
           label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined}

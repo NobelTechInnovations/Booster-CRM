@@ -117,8 +117,9 @@ const zeroKpis = [
 const zeroSalesTrend = ["Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"].map((day) => ({ day, sales: 0, profit: 0, orders: 0 }));
 const zeroChannelMix = [{ name: "No synced sales", value: 100 }];
 
+// Full value with decimals — no k/L abbreviation, per explicit request.
 function formatCurrency(value) {
-  return `₹${Math.round(value / 1000)}k`;
+  return `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function withKpiIcons(items) {
@@ -304,8 +305,7 @@ function ChartTooltip({ active, payload, label }) {
 const PERIOD_LABELS = { today: "Today", yesterday: "Yesterday", month: "This Month", last90: "Last 90 Days", lifetime: "Lifetime" };
 
 function formatPeriodMoney(value) {
-  const n = Math.round(value || 0);
-  return n >= 100000 ? `₹${(n / 100000).toFixed(1)}L` : n >= 1000 ? `₹${(n / 1000).toFixed(1)}k` : `₹${n}`;
+  return `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderCount }) {
@@ -505,7 +505,7 @@ function ChannelsPanel({
                 <div className="rounded-lg bg-slate-50 px-2 py-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
                   <p className="text-sm font-bold text-slate-900">
-                    {currency === "INR" ? "₹" : ""}{salesTotal >= 1000 ? `${Math.round(salesTotal / 1000)}k` : salesTotal}
+                    {currency === "INR" ? "₹" : ""}{Number(salesTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className="rounded-lg bg-slate-50 px-2 py-1.5">
@@ -805,7 +805,7 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
             <p className="mt-0.5 text-lg font-extrabold text-slate-900">
-              {currency === "INR" ? "₹" : currency + " "}{salesTotal >= 1000 ? `${Math.round(salesTotal / 1000)}k` : salesTotal.toLocaleString("en-IN")}
+              {currency === "INR" ? "₹" : currency + " "}{Number(salesTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
           <div className="col-span-2 flex items-center gap-1.5 border-t border-slate-200 pt-2 text-[11px] text-slate-500">
