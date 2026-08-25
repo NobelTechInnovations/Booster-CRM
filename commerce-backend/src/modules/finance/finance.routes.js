@@ -13,6 +13,7 @@ import {
   getExpensesByPartner,
   getFinanceSummary,
   getFinanceTrend,
+  getUnitEconomics,
   listExpenses,
   listPurchases,
   listVendors,
@@ -37,6 +38,19 @@ financeRoutes.get(
     });
 
     res.json({ summary });
+  }),
+);
+
+financeRoutes.get(
+  "/unit-economics",
+  asyncHandler(async (req, res) => {
+    const economics = await getUnitEconomics({
+      companyId: req.auth.companyId,
+      from: req.query.from,
+      to: req.query.to,
+    });
+
+    res.json({ economics });
   }),
 );
 

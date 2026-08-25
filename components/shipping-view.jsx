@@ -57,7 +57,12 @@ function ConnectProviderModal({ provider, onConnected, onClose }) {
       } else if (provider.provider === "shipway") {
         payload = { apiKey: form.apiKey, secretKey: form.secretKey };
       } else if (provider.provider === "shipmozo") {
-        payload = { apiKey: form.apiKey, apiSecret: form.secretKey };
+        // The backend's ShipMozoProvider.connect() reads publicKey/privateKey
+        // specifically (matching ShipMozo's own API field names) — sending
+        // apiKey/apiSecret here left both undefined server-side, which always
+        // fell through to "ShipMozo requires Public-Key & Private-Key or
+        // Username & Password" regardless of what was typed into this form.
+        payload = { publicKey: form.apiKey, privateKey: form.secretKey };
       } else {
         // velocity
         payload = { username: form.username, password: form.password };

@@ -106,19 +106,23 @@ export class ShipMozoProvider extends BaseShippingProvider {
   }
 
   /**
-   * Fetches warehouses from GET /get-warehouses and upserts them locally
+   * Fetches warehouses from GET /get-warehouses and upserts them locally.
+   *
+   * Lets real API errors propagate instead of silently swallowing them —
+   * ShipMozo returns result:"0" (an error, not an empty list) for things like
+   * "Your profile is under verification" when the account's KYC isn't done
+   * yet, and that used to just log a server-side console.warn while the UI
+   * showed "0 warehouses" with no explanation. connect() below still wraps
+   * its own auto-sync call separately, so a failure here never blocks
+   * connecting the channel — only an explicit "Sync Warehouses" click now
+   * surfaces the real reason to the user.
    */
   async syncWarehouses() {
     const { channel, publicKey, privateKey } = await this.ensureToken();
 
-    let remoteWarehouses = [];
-    try {
-      const body = await shipmozoFetch("/get-warehouses", { method: "GET", publicKey, privateKey });
-      remoteWarehouses = body.data || [];
-      if (!Array.isArray(remoteWarehouses)) remoteWarehouses = [];
-    } catch (err) {
-      console.warn("[ShipMozo] GET /get-warehouses failed:", err.message);
-    }
+    const body = await shipmozoFetch("/get-warehouses", { method: "GET", publicKey, privateKey });
+    let remoteWarehouses = body.data || [];
+    if (!Array.isArray(remoteWarehouses)) remoteWarehouses = [];
 
     const synced = [];
     for (const wh of remoteWarehouses) {

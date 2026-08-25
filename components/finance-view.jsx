@@ -15,16 +15,21 @@ import {
   Link2,
   Megaphone,
   MousePointerClick,
+  Gauge,
+  Layers,
   Package,
   Pencil,
   Percent,
   PiggyBank,
   Plus,
+  Receipt,
   RefreshCw,
   Repeat,
   RotateCcw,
+  Scale,
   Store,
   Target,
+  UserPlus,
   Trash2,
   TrendingDown,
   TrendingUp,
@@ -39,9 +44,11 @@ import {
   Bar,
   BarChart,
   CartesianGrid,
+  Cell,
   ComposedChart,
   Legend,
   Line,
+  ReferenceLine,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -62,6 +69,7 @@ import {
   getExpensesByPartner,
   getFinanceSummary,
   getFinanceTrend,
+  getUnitEconomics,
   getMetaAdSpendToday,
   getSalesAnalytics,
   linkAdProduct,
@@ -317,7 +325,7 @@ const fieldClass =
 
 // ─── Overview Tab ────────────────────────────────────────────────────────────
 
-function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onNavigate }) {
+function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isLoading, onNavigate }) {
   const currency = analytics?.totals?.currency || "INR";
   const [showRefunds, setShowRefunds] = useState(false);
   const [refundOrders, setRefundOrders] = useState(null);
@@ -403,21 +411,26 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           calc="Sum of (SKU buying price × qty sold) for line items in this range, using prices set in Inventory & Costing. SKUs with no cost set contribute ₹0 — never a guess."
         />
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KpiTile
-          label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub="From your logged expenses only" tone="indigo" icon={Megaphone}
+          label="Total Expense" value={formatMoney(summary?.expenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="slate" icon={Wallet}
+          onClick={() => onNavigate("expenses")}
+          calc="Every rupee in the Expense ledger, every category combined — Marketing Spend + Shipping Cost's wallet-recharge piece + Other Expenses always sum back to exactly this number."
+        />
+        <KpiTile
+          label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub={`${summary?.marketingExpenseCount ?? 0} entries · logged expenses only`} tone="indigo" icon={Megaphone}
           onClick={() => onNavigate("expenses", "marketing")}
           calc="Sum of every manually-logged Expense tagged 'marketing' in this range — exactly what you've recorded as actually paid. Meta's live API spend (see the separate Meta Ad Spend card) is NOT added on top of this — log the real payment yourself when you actually pay, or it won't count here."
         />
         <KpiTile
-          label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="rose" icon={Wallet}
-          onClick={() => onNavigate("expenses", "not-marketing")}
-          calc="Sum of every manually-logged Expense NOT tagged 'marketing' in this range."
-        />
-        <KpiTile
           label="Shipping Cost" value={formatMoney(summary?.totalShippingCost, currency)} sub="Amazon per-order + Shopify wallet recharge" tone="blue" icon={Truck}
           onClick={toggleShipping}
-          calc={`Amazon: real per-order shipping fee, fixed at import (₹${(summary?.shippingCost ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}). Shopify ships through a prepaid courier wallet — the courier deducts per shipment, so there's no clean per-order figure — its cost instead comes from every "Shipping" category Expense (wallet recharge amounts you log manually, ₹${(summary?.shippingExpense ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}). Only the Amazon amount is subtracted separately in Net Profit below — the Shopify amount is already inside Expenses, so it isn't double counted.`}
+          calc={`Amazon: real per-order shipping fee, fixed at import (₹${(summary?.shippingCost ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}). Shopify ships through a prepaid courier wallet — the courier deducts per shipment, so there's no clean per-order figure — its cost instead comes from every "Shipping" category Expense (wallet recharge amounts you log manually, ₹${(summary?.shippingExpense ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}, ${summary?.shippingExpenseCount ?? 0} entries). This whole amount is already inside Total Expense above — only the Amazon-only piece is subtracted again separately in Net Profit below, so it's never double counted.`}
+        />
+        <KpiTile
+          label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.otherExpenseCount ?? 0} entries · not marketing or shipping`} tone="rose" icon={Receipt}
+          onClick={() => onNavigate("expenses", "other")}
+          calc="Sum of every manually-logged Expense that is NOT tagged 'marketing' and NOT tagged 'shipping' — those two already have their own cards above, so they're excluded here instead of being shown twice."
         />
         <KpiTile
           label="Refunded/Returned Revenue"
@@ -612,6 +625,77 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           </div>
         </CardContent>
       </Card>
+
+      <Card>
+        <CardHeader>
+          <div>
+            <CardTitle>Unit Economics</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">
+              Built entirely from the KPI cards above — nothing here is a second, independently-computed number that could drift out of sync.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <KpiTile
+              label="Avg Order Value" value={formatMoney(economics?.aov, currency)} sub={`${economics?.orders ?? 0} orders`} tone="blue" icon={ChartNoAxesCombined}
+              calc="Total Revenue ÷ Total Orders in this range."
+            />
+            <KpiTile
+              label="CAC (Customer Acquisition Cost)"
+              value={economics?.cac == null ? "—" : formatMoney(economics.cac, currency)}
+              sub={`${economics?.newCustomers ?? 0} new customers`}
+              tone="indigo" icon={UserPlus}
+              calc="Marketing Spend ÷ new customers in this range. A customer counts as new when Shopify/Amazon created their customer record inside this range (their first checkout, in the vast majority of cases) — not a guess. Shows — when there are 0 new customers (can't divide by zero)."
+            />
+            <KpiTile
+              label="CM1 (after fulfillment)"
+              value={formatMoney(economics?.cm1, currency)}
+              sub={`${economics?.cm1Margin ?? 0}% of revenue`}
+              tone={Number(economics?.cm1) >= 0 ? "green" : "rose"} icon={Layers}
+              calc="Gross Profit (Revenue − COGS) − Total Shipping Cost. What's left after making and shipping the product, before spending anything to acquire the sale."
+            />
+            <KpiTile
+              label="CM2 (after marketing)"
+              value={formatMoney(economics?.cm2, currency)}
+              sub={`${economics?.cm2Margin ?? 0}% of revenue`}
+              tone={Number(economics?.cm2) >= 0 ? "green" : "rose"} icon={Scale}
+              calc="CM1 − Marketing Spend. What's left after also paying to acquire the sale, before fixed overhead (rent, salaries, software, etc)."
+            />
+            <KpiTile
+              label="EBITDA"
+              value={formatMoney(economics?.ebitda, currency)}
+              sub={`${economics?.ebitdaMargin ?? 0}% margin`}
+              tone={Number(economics?.ebitda) >= 0 ? "green" : "rose"} icon={Gauge}
+              calc="CM2 − Other (fixed) Expenses. Equals Net Period Profit above exactly — this system doesn't track interest, tax, depreciation, or amortization separately, so there's no further adjustment between the two."
+            />
+          </div>
+
+          <div className="mt-5 h-80">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={economics?.waterfall || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
+                <CartesianGrid stroke="#e5eaf1" vertical={false} />
+                <XAxis dataKey="stage" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 11 }} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={56} />
+                <ReferenceLine y={0} stroke="#cbd5e1" />
+                <Tooltip content={<ChartTooltip />} />
+                <Bar dataKey="value" name="Amount" radius={[4, 4, 4, 4]} maxBarSize={48}>
+                  {(economics?.waterfall || []).map((entry, index) => (
+                    <Cell
+                      key={index}
+                      fill={entry.isSubtotal ? "#3730a3" : entry.value >= 0 ? "#059669" : "#e11d48"}
+                    />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <p className="mt-2 text-xs text-[var(--muted)]">
+            Revenue → COGS → Gross Profit → Shipping → CM1 → Marketing → CM2 → Other Opex → EBITDA. Indigo bars are running subtotals; green/red bars are the revenue and cost lines that produce them.
+          </p>
+        </CardContent>
+      </Card>
+
       {isLoading ? <p className="text-sm text-[var(--muted)]">Loading finance data...</p> : null}
     </div>
   );
@@ -896,6 +980,10 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFil
   const filteredExpenses =
     categoryFilter === "all" ? expenses
       : categoryFilter === "not-marketing" ? expenses.filter((e) => e.category !== "marketing")
+      // Matches the Overview tab's "Other Expenses" card definition exactly —
+      // everything except marketing and shipping, since those two have their
+      // own dedicated cards there.
+      : categoryFilter === "other" ? expenses.filter((e) => e.category !== "marketing" && e.category !== "shipping")
       : expenses.filter((e) => e.category === categoryFilter);
 
   const total = filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
@@ -916,7 +1004,8 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFil
             className="h-9 rounded-md border border-[var(--line)] bg-white px-2.5 text-xs font-semibold outline-none focus:border-[var(--primary)]"
           >
             <option value="all">All categories</option>
-            <option value="not-marketing">Other (non-marketing)</option>
+            <option value="not-marketing">Not marketing</option>
+            <option value="other">Other (not marketing or shipping)</option>
             {EXPENSE_CATEGORIES.map((c) => (
               <option key={c} value={c}>{c[0].toUpperCase() + c.slice(1)}</option>
             ))}
@@ -1843,6 +1932,7 @@ export function FinanceView({ defaultTab = "overview" }) {
   const [summary, setSummary] = useState(null);
   const [analytics, setAnalytics] = useState(null);
   const [trend, setTrend] = useState(null);
+  const [economics, setEconomics] = useState(null);
   const [expenses, setExpenses] = useState([]);
   const [vendors, setVendors] = useState([]);
   const [purchases, setPurchases] = useState([]);
@@ -1879,10 +1969,11 @@ export function FinanceView({ defaultTab = "overview" }) {
     setIsLoading(true);
     setError("");
     try {
-      const [summaryRes, analyticsRes, trendRes, expensesRes, vendorsRes, purchasesRes, channelsRes] = await Promise.all([
+      const [summaryRes, analyticsRes, trendRes, economicsRes, expensesRes, vendorsRes, purchasesRes, channelsRes] = await Promise.all([
         getFinanceSummary(range),
         getSalesAnalytics({ ...range, groupBy }),
         getFinanceTrend({ ...range, groupBy }),
+        getUnitEconomics(range),
         listExpenses(range),
         listVendors(),
         listPurchases(range),
@@ -1896,6 +1987,7 @@ export function FinanceView({ defaultTab = "overview" }) {
       setSummary(summaryRes.summary);
       setAnalytics(analyticsRes.analytics);
       setTrend(trendRes.trend || []);
+      setEconomics(economicsRes.economics);
       setExpenses(expensesRes.expenses || []);
       setVendors(vendorsRes.vendors || []);
       setPurchases(purchasesRes.purchases || []);
@@ -1969,7 +2061,7 @@ export function FinanceView({ defaultTab = "overview" }) {
       ) : null}
       {error ? <p className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
 
-      {activeTab === "overview" ? <OverviewTab range={range} groupBy={groupBy} summary={summary} analytics={analytics} trend={trend} isLoading={isLoading} onNavigate={navigateFromKpi} /> : null}
+      {activeTab === "overview" ? <OverviewTab range={range} groupBy={groupBy} summary={summary} analytics={analytics} trend={trend} economics={economics} isLoading={isLoading} onNavigate={navigateFromKpi} /> : null}
       {activeTab === "sales" ? <SalesAnalyticsTab analytics={analytics} groupBy={groupBy} /> : null}
       {activeTab === "expenses" ? (
         <ExpensesTab
