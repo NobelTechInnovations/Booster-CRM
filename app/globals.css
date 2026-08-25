@@ -33,10 +33,9 @@ html {
 body {
   min-height: 100vh;
   margin: 0;
-  background:
-    radial-gradient(1100px 480px at 12% -8%, rgba(55, 48, 163, 0.07), transparent 60%),
-    radial-gradient(900px 420px at 100% 0%, rgba(180, 83, 9, 0.04), transparent 55%),
-    var(--background);
+  /* Flat background, no gradient glows — a clean/simple reference UI reads as
+     plain, evenly-lit surfaces, not decorative color washes. */
+  background: var(--background);
   color: var(--foreground);
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 14px;

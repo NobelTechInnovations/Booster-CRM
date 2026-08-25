@@ -15,7 +15,6 @@ import {
   Menu,
   RefreshCw,
   Search,
-  ShieldCheck,
   X,
   Gauge,
   PackageCheck,
@@ -33,7 +32,6 @@ import {
   Settings,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { roles } from "@/lib/data";
 import {
   clearSession,
   getSession,
@@ -67,6 +65,10 @@ const menu = [
   { label: "Settings", icon: Settings, href: "/panel/settings" },
 ];
 
+// Minimal icon rail (no visible labels — matches the compact enterprise
+// dashboard reference), with a floating label on hover so every item stays
+// identifiable without adding visual weight. Mobile keeps a slide-in drawer
+// with labels shown, since a pure icon rail doesn't work well touch-first.
 function Sidebar({ open, setOpen }) {
   const pathname = usePathname();
 
@@ -74,76 +76,51 @@ function Sidebar({ open, setOpen }) {
     <>
       <button
         aria-label="Close navigation"
-        className={cn("fixed inset-0 z-30 bg-slate-950/50 backdrop-blur-[2px] lg:hidden", open ? "block" : "hidden")}
+        className={cn("fixed inset-0 z-30 bg-slate-950/40 lg:hidden", open ? "block" : "hidden")}
         onClick={() => setOpen(false)}
       />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 flex w-72 flex-col bg-[var(--navy)] transition-transform lg:sticky lg:top-0 lg:h-screen lg:translate-x-0",
-          open ? "translate-x-0" : "-translate-x-full",
+          "fixed inset-y-0 left-0 z-40 w-64 flex-col border-r border-[var(--line)] bg-[var(--panel)] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[72px]",
+          open ? "flex" : "hidden",
         )}
-        style={{ boxShadow: "1px 0 0 rgba(255,255,255,0.06), 12px 0 32px -16px rgba(11,21,51,0.55)" }}
       >
-        <div className="flex h-16 items-center justify-between px-5">
-          <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-indigo-500 to-indigo-700 text-white shadow-[0_4px_14px_-2px_rgba(79,70,229,0.65)]">
-              <Layers3 size={19} />
-            </div>
-            <div>
-              <p className="text-sm font-bold leading-5 tracking-tight text-white">Wokbook</p>
-              <p className="text-[11px] font-medium text-indigo-200/60">Commerce Operations Platform</p>
-            </div>
-          </div>
-          <button className="rounded-md p-2 text-indigo-200/70 hover:bg-white/5 lg:hidden" onClick={() => setOpen(false)} aria-label="Close">
+        <div className="flex h-16 shrink-0 items-center justify-between px-5 lg:justify-center lg:px-0">
+          <Link href="/panel" className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--primary)] text-white">
+            <Layers3 size={18} />
+          </Link>
+          <p className="text-sm font-bold tracking-tight text-slate-900 lg:hidden">Wokbook</p>
+          <button className="rounded-md p-2 text-slate-500 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)} aria-label="Close">
             <X size={18} />
           </button>
         </div>
 
-        <div className="mx-4 h-px bg-white/[0.07]" />
-
-        <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 py-4">
-          <div className="mb-2 px-3 text-[10px] font-bold uppercase tracking-[0.14em] text-indigo-200/40">Operations</div>
-          <div className="space-y-0.5">
-            {menu.map((item) => {
-              const isActive = pathname === item.href || (item.href !== "/panel" && pathname?.startsWith(item.href));
-              return (
-                <Link
-                  key={item.label}
-                  href={item.href}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    "group relative flex h-[38px] w-full items-center gap-3 rounded-lg px-3 text-left text-[13.5px] font-medium transition-all",
-                    isActive
-                      ? "bg-white/[0.09] text-white shadow-[inset_0_0_0_1px_rgba(255,255,255,0.08)]"
-                      : "text-indigo-100/65 hover:bg-white/[0.05] hover:text-white",
-                  )}
-                >
-                  {isActive ? (
-                    <span className="absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-indigo-400 shadow-[0_0_8px_1px_rgba(129,140,248,0.7)]" />
-                  ) : null}
-                  <item.icon size={17} className={isActive ? "text-indigo-300" : "text-indigo-200/40 group-hover:text-indigo-200"} />
+        <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 py-3 lg:flex lg:flex-col lg:items-center lg:gap-1 lg:px-2">
+          {menu.map((item) => {
+            const isActive = pathname === item.href || (item.href !== "/panel" && pathname?.startsWith(item.href));
+            return (
+              <Link
+                key={item.label}
+                href={item.href}
+                onClick={() => setOpen(false)}
+                title={item.label}
+                className={cn(
+                  "group relative mb-0.5 flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13.5px] font-medium transition-colors lg:mb-0 lg:w-10 lg:justify-center lg:px-0",
+                  isActive
+                    ? "bg-[var(--primary-soft)] text-[var(--primary)]"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                )}
+              >
+                <item.icon size={18} strokeWidth={isActive ? 2.25 : 1.9} />
+                <span className="lg:hidden">{item.label}</span>
+                {/* Hover label — desktop rail only */}
+                <span className="pointer-events-none absolute left-[calc(100%+10px)] z-50 hidden whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 lg:block">
                   {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
-
-        <div className="p-4">
-          <div className="rounded-xl border border-white/[0.08] bg-white/[0.04] p-3.5 backdrop-blur">
-            <div className="flex items-center gap-2 text-[13px] font-semibold text-white">
-              <ShieldCheck size={15} className="text-indigo-300" />
-              Role Matrix
-            </div>
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {roles.slice(0, 5).map((role) => (
-                <span key={role} className="rounded-full bg-white/[0.08] px-2 py-1 text-[10px] font-semibold text-indigo-100/80 ring-1 ring-inset ring-white/[0.06]">
-                  {role}
                 </span>
-              ))}
-            </div>
-          </div>
-        </div>
+              </Link>
+            );
+          })}
+        </nav>
       </aside>
     </>
   );
@@ -329,7 +306,7 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
   }
 
   return (
-    <header className="sticky top-0 z-20 border-b border-[var(--line)]/70 bg-[var(--panel)]/80 backdrop-blur-md" style={{ boxShadow: "0 1px 0 rgba(15,23,42,0.03)" }}>
+    <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--panel)]">
       <div className="flex h-16 items-center gap-3 px-4 lg:px-6">
         <button className="rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation">
           <Menu size={20} />
@@ -471,7 +448,7 @@ export default function PanelLayout({ children }) {
     return (
       <div className="grid min-h-screen place-items-center bg-[var(--background)] px-4 text-center">
         <div>
-          <div className="mx-auto grid h-12 w-12 place-items-center rounded-md bg-[var(--navy)] text-white">
+          <div className="mx-auto grid h-12 w-12 place-items-center rounded-lg bg-[var(--primary)] text-white">
             <Layers3 size={24} />
           </div>
           <p className="mt-4 font-semibold text-slate-800">Opening secure panel</p>
@@ -482,7 +459,7 @@ export default function PanelLayout({ children }) {
   }
 
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[288px_minmax(0,1fr)] bg-[var(--background)]">
+    <div className="min-h-screen lg:grid lg:grid-cols-[72px_minmax(0,1fr)] bg-[var(--background)]">
       <Sidebar open={open} setOpen={setOpen} />
       <main className="min-w-0 flex flex-col min-h-screen">
         <Topbar setOpen={setOpen} session={session} onSyncAll={syncAllChannels} canSync={Array.isArray(connectedChannels) && connectedChannels.some((channel) => channel.status === "connected")} />
