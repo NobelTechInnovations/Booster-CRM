@@ -84,8 +84,8 @@ export function UsersView() {
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       <section className="mb-6">
         <Badge tone="indigo">Team Access</Badge>
-        <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Users, Roles & Permissions</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Users, Roles & Permissions</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
           Create multiple users under the same company and assign role-based permissions.
         </p>
       </section>

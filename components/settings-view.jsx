@@ -748,8 +748,8 @@ export function SettingsView() {
     <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-6">
       <section className="mb-6">
         <Badge tone="indigo">Settings</Badge>
-        <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Settings</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)] md:text-base">
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Settings</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
           Tax and invoicing defaults, notification preferences, and account security.
         </p>
       </section>

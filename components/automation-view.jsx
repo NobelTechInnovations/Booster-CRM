@@ -208,8 +208,8 @@ export function AutomationView() {
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="indigo">Automation</Badge>
-          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Automation Rules</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)] md:text-base">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Automation Rules</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
             Trigger actions automatically on order events — WhatsApp confirmations, tags, team alerts, and webhooks.
           </p>
         </div>

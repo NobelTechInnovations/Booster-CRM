@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { cn, formatMoney } from "@/lib/utils";
 import { listSyncedRecords, createCustomer } from "@/lib/api";
 import { CreateOrderModal } from "@/components/create-order-modal";
@@ -206,7 +207,7 @@ export function CustomersView() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Badge tone="indigo">CRM</Badge>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Customers</h1>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Customers</h1>
           <p className="mt-1 text-sm text-slate-500">{customers.length} synced from Shopify — create new ones here too.</p>
         </div>
         <Button onClick={() => setShowNew(true)}>
@@ -244,9 +245,9 @@ export function CustomersView() {
       {error ? <p className="mb-4 rounded-md bg-rose-50 px-3 py-2 text-sm font-medium text-rose-700">{error}</p> : null}
 
       <Card>
-        <CardContent className="overflow-x-auto p-0">
+        <CardContent className={isLoading ? "p-4" : "overflow-x-auto p-0"}>
           {isLoading ? (
-            <p className="p-6 text-center text-sm text-slate-400">Loading customers…</p>
+            <TableSkeleton rows={6} cols={5} />
           ) : !filtered.length ? (
             <div className="flex flex-col items-center gap-2 p-10 text-center">
               <UserRound size={22} className="text-slate-400" />

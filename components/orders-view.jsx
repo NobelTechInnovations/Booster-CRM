@@ -29,6 +29,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { listAllOrders, getCompanyProfile } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 
@@ -761,7 +762,7 @@ export function OrdersView() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Badge tone="indigo">{filterChannel === "all" ? "All Channels" : PROVIDER_LABELS[filterChannel] || filterChannel}</Badge>
-          <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Orders</h1>
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Orders</h1>
           <p className="mt-1 text-sm text-slate-500">
             {counts.total} total · {counts.unfulfilled} to ship · {counts.fulfilled} fulfilled
           </p>
@@ -854,12 +855,9 @@ export function OrdersView() {
 
       {/* Table */}
       <Card>
-        <CardContent className="p-0 overflow-x-auto">
+        <CardContent className={isLoading ? "p-4" : "p-0 overflow-x-auto"}>
           {isLoading ? (
-            <div className="p-16 text-center text-sm text-slate-400">
-              <RefreshCcw size={28} className="mx-auto mb-3 animate-spin text-indigo-400" />
-              Loading orders...
-            </div>
+            <TableSkeleton rows={8} cols={6} />
           ) : filtered.length === 0 ? (
             <div className="p-16 text-center">
               <ShoppingBag size={36} className="mx-auto mb-3 text-slate-300" />

@@ -160,8 +160,8 @@ export function ReportsView() {
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="indigo">Business Reports</Badge>
-          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Reports</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)] md:text-base">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Reports</h1>
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
             Sales, tax, profit, expenses, and customer insights — export any report as CSV.
           </p>
         </div>

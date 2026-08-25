@@ -57,6 +57,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import {
   connectMetaAds,
   createExpense,
@@ -484,7 +485,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
           </CardHeader>
           <CardContent className="overflow-x-auto">
             {refundsLoading ? (
-              <p className="text-sm text-[var(--muted)]">Loading...</p>
+              <TableSkeleton rows={4} cols={5} />
             ) : !refundOrders?.length ? (
               <p className="text-sm text-[var(--muted)]">No refunded/cancelled orders in this range.</p>
             ) : (
@@ -539,7 +540,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
           </CardHeader>
           <CardContent className="overflow-x-auto">
             {shippingLoading ? (
-              <p className="text-sm text-[var(--muted)]">Loading...</p>
+              <TableSkeleton rows={4} cols={5} />
             ) : !shippingOrders?.length ? (
               <p className="text-sm text-[var(--muted)]">No orders in this range.</p>
             ) : (
@@ -2023,8 +2024,8 @@ export function FinanceView({ defaultTab = "overview" }) {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Finance</Badge>
-          <h1 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 md:text-4xl">Finance & Ad Spend</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Finance & Ad Spend</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Sales, expenses, vendor & raw-material purchases, and Meta ad spend with ROAS — all in one place.
           </p>
         </div>

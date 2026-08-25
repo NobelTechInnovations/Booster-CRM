@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { KpiRowSkeleton, TableSkeleton } from "@/components/ui/skeleton";
 import { listSyncedRecords, listSkuCosts, saveSkuCost } from "@/lib/api";
 
 function money(n) {
@@ -181,8 +182,8 @@ export function InventoryView() {
     <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
       <section className="mb-6">
         <Badge tone="indigo">Stock Control</Badge>
-        <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Inventory & Costing</h1>
-        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Inventory & Costing</h1>
+        <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
           Live stock synced from Shopify, plus per-variant buying price and MRP to track real margin. Shipping cost
           isn&rsquo;t fixed here since it varies by destination and weight — check live courier rates from Fulfillment instead.
         </p>
@@ -193,6 +194,11 @@ export function InventoryView() {
       ) : null}
 
       {/* Summary cards */}
+      {isLoading ? (
+        <section className="mb-6">
+          <KpiRowSkeleton count={4} />
+        </section>
+      ) : (
       <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <Card className="p-4">
           <div className="flex items-center justify-between">
@@ -227,6 +233,7 @@ export function InventoryView() {
           <p className="mt-1 text-xs text-[var(--muted)]">≤ 5 units remaining</p>
         </Card>
       </section>
+      )}
 
       {missingCostCount > 0 ? (
         <div className="mb-4 flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
@@ -264,9 +271,9 @@ export function InventoryView() {
       </div>
 
       <Card>
-        <CardContent className="overflow-x-auto p-0">
+        <CardContent className={isLoading ? "p-4" : "overflow-x-auto p-0"}>
           {isLoading ? (
-            <div className="p-10 text-center text-sm text-[var(--muted)]">Loading inventory…</div>
+            <TableSkeleton rows={8} cols={7} />
           ) : filteredRows.length === 0 ? (
             <div className="p-10 text-center">
               <Boxes size={36} className="mx-auto mb-3 text-slate-300" />

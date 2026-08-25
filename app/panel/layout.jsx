@@ -89,7 +89,7 @@ function Sidebar({ open, setOpen }) {
           open ? "flex" : "hidden",
         )}
       >
-        <div className="flex h-16 shrink-0 items-center gap-3 px-5 lg:px-[18px]">
+        <div className="flex h-14 shrink-0 items-center gap-3 px-5 lg:px-[18px]">
           <Link href="/panel" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--primary)] text-white">
             <Layers3 size={18} />
           </Link>
@@ -108,7 +108,7 @@ function Sidebar({ open, setOpen }) {
                 href={item.href}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "mb-0.5 flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13.5px] font-medium transition-colors lg:w-auto",
+                  "mb-0.5 flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px] font-medium transition-colors lg:w-auto",
                   isActive
                     ? "bg-[var(--primary-soft)] text-[var(--primary)]"
                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
@@ -306,7 +306,7 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
 
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--panel)]">
-      <div className="flex h-16 items-center gap-3 px-4 lg:px-6">
+      <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
         <button className="rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation">
           <Menu size={20} />
         </button>

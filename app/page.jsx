@@ -73,6 +73,13 @@ const stats = [
   { label: "Brands Running", value: "Growing", icon: TrendingUp },
 ];
 
+const steps = [
+  { number: "01", icon: PlugZap, title: "Connect your channels", desc: "One-click OAuth for Shopify and Amazon — no manual CSV uploads or API keys to hunt down." },
+  { number: "02", icon: ShoppingCart, title: "Orders sync automatically", desc: "New orders, inventory, and customer data flow in via real-time webhooks the moment they happen." },
+  { number: "03", icon: Truck, title: "Ship with any courier", desc: "Compare live rates across your connected shipping partners and generate a label in under 30 seconds." },
+  { number: "04", icon: CircleDollarSign, title: "Track the real P&L", desc: "Revenue, COGS, expenses, and Meta Ads ROAS roll up into one finance view — no spreadsheet reconciliation." },
+];
+
 const checks = [
   "Shopify & Amazon real-time sync",
   "Meta Ads ROAS attribution",
@@ -279,6 +286,34 @@ export default function Home() {
         </div>
       </section>
 
+      {/* ── How it works ── */}
+      <section id="how-it-works" className="border-y border-[var(--line)] bg-[var(--panel-soft)] py-20">
+        <div className="mx-auto max-w-7xl px-4 lg:px-6">
+          <div className="text-center">
+            <Badge tone="indigo" className="inline-flex items-center gap-1.5">
+              <Zap size={11} />
+              How it works
+            </Badge>
+            <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 md:text-4xl">
+              Live in minutes, not weeks
+            </h2>
+          </div>
+
+          <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+            {steps.map((step) => (
+              <div key={step.number} className="relative rounded-2xl border border-[var(--line)] bg-white p-6">
+                <span className="text-4xl font-extrabold text-[var(--primary-soft)]">{step.number}</span>
+                <div className="mt-3 grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
+                  <step.icon size={19} />
+                </div>
+                <h3 className="mt-4 text-base font-bold text-slate-900">{step.title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{step.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
       {/* ── CTA ── */}
       <section className="mx-auto max-w-7xl px-4 py-16 lg:px-6">
         <div className="rounded-3xl border border-[var(--line)] bg-white p-10 text-center shadow-sm md:p-16">
@@ -308,14 +343,38 @@ export default function Home() {
 
       {/* ── Footer ── */}
       <footer className="border-t border-[var(--line)] bg-white">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 lg:px-6">
-          <div className="flex items-center gap-2">
-            <div className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--primary)] text-white">
-              <Layers3 size={14} />
+        <div className="mx-auto max-w-7xl px-4 py-12 lg:px-6">
+          <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
+            <div>
+              <Link href="/" className="flex items-center gap-2">
+                <div className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--primary)] text-white">
+                  <Layers3 size={16} />
+                </div>
+                <span className="text-sm font-bold text-slate-900">Wokbook</span>
+              </Link>
+              <p className="mt-3 max-w-xs text-sm leading-6 text-slate-500">
+                The commerce operating system for DTC and multi-brand sellers — orders, shipping, finance, and ads in one panel.
+              </p>
             </div>
-            <span className="text-sm font-bold text-slate-700">Wokbook</span>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Product</p>
+              <ul className="mt-3 space-y-2.5">
+                <li><a href="#features" className="text-sm text-slate-600 hover:text-[var(--primary)]">Features</a></li>
+                <li><a href="#stats" className="text-sm text-slate-600 hover:text-[var(--primary)]">Platform</a></li>
+                <li><a href="#how-it-works" className="text-sm text-slate-600 hover:text-[var(--primary)]">How it works</a></li>
+              </ul>
+            </div>
+            <div>
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Account</p>
+              <ul className="mt-3 space-y-2.5">
+                <li><Link href="/login" className="text-sm text-slate-600 hover:text-[var(--primary)]">Login</Link></li>
+                <li><Link href="/signup" className="text-sm text-slate-600 hover:text-[var(--primary)]">Create company workspace</Link></li>
+              </ul>
+            </div>
           </div>
-          <p className="text-xs text-slate-400">Wokbook · Ecommerce Operating System — All rights reserved.</p>
+          <div className="mt-10 border-t border-[var(--line)] pt-6">
+            <p className="text-xs text-slate-400">Wokbook · Ecommerce Operating System — All rights reserved.</p>
+          </div>
         </div>
       </footer>
     </main>

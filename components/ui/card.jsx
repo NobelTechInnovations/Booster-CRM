@@ -13,13 +13,13 @@ export function Card({ className, ...props }) {
 }
 
 export function CardHeader({ className, ...props }) {
-  return <div className={cn("flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4", className)} {...props} />;
+  return <div className={cn("flex items-start justify-between gap-4 border-b border-[var(--line)] px-4 py-3.5", className)} {...props} />;
 }
 
 export function CardTitle({ className, ...props }) {
-  return <h2 className={cn("text-[15px] font-semibold tracking-tight text-[var(--foreground)]", className)} {...props} />;
+  return <h2 className={cn("text-[14px] font-semibold tracking-tight text-[var(--foreground)]", className)} {...props} />;
 }
 
 export function CardContent({ className, ...props }) {
-  return <div className={cn("p-5", className)} {...props} />;
+  return <div className={cn("p-4", className)} {...props} />;
 }

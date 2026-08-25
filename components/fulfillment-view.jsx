@@ -25,6 +25,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { KpiRowSkeleton, ListRowsSkeleton } from "@/components/ui/skeleton";
 import {
   listFulfillmentOrders,
   listFulfilledOrders,
@@ -783,7 +784,7 @@ export function FulfillmentView() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Badge tone="indigo">Fulfillment</Badge>
-            <h1 className="mt-2 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
+            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">
               Automated Fulfillment
             </h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">
@@ -885,9 +886,9 @@ export function FulfillmentView() {
               ) : null}
             </div>
           ) : null}
-          <CardContent className="p-0">
+          <CardContent className={isLoading ? "p-4" : "p-0"}>
             {isLoading ? (
-              <div className="p-8 text-center text-sm text-[var(--muted)]">Loading...</div>
+              <ListRowsSkeleton rows={4} />
             ) : fulfilledOrders.length === 0 ? (
               <div className="p-12 text-center">
                 <CheckCircle size={40} className="mx-auto mb-3 text-emerald-300" />
@@ -1129,9 +1130,9 @@ export function FulfillmentView() {
                 ) : null}
               </div>
             ) : null}
-            <CardContent className="p-0">
+            <CardContent className={isLoading ? "p-4" : "p-0"}>
               {isLoading ? (
-                <div className="p-8 text-center text-sm text-[var(--muted)]">Loading orders...</div>
+                <ListRowsSkeleton rows={5} />
               ) : filteredOrders.length === 0 ? (
                 <div className="p-12 text-center">
                   <Box size={40} className="mx-auto mb-3 text-slate-300" />

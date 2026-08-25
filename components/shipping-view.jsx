@@ -300,7 +300,7 @@ export function ShippingView() {
       <section className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Badge tone="indigo">Multi-Carrier Shipping Engine</Badge>
-          <h1 className="mt-2 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
+          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">
             Shipping Channels & Logistics
           </h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">

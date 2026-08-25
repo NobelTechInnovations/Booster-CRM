@@ -874,8 +874,8 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Channel Integrations</Badge>
-          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Channels</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Channels</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Connect your marketplaces and stores to sync orders, products, and inventory in real time.
           </p>
         </div>
@@ -1861,8 +1861,8 @@ function RecordsModuleView({ name }) {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{name}</Badge>
-          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{pageTitle}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">{pageTitle}</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Synced Shopify {pageTitle.toLowerCase()} across connected channels with detail view and Shopify update.
           </p>
         </div>
@@ -2066,8 +2066,8 @@ function ProductMappingView() {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="amber">Product Mapping</Badge>
-          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">Map Channel SKUs</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Map Channel SKUs</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Match the same real products across Shopify and Amazon when channel SKUs are different.
           </p>
         </div>
@@ -2210,8 +2210,8 @@ export function ModuleView({ name, setActiveView }) {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{page.eyebrow}</Badge>
-          <h1 className="mt-3 text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{page.title}</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">{page.subtitle}</p>
+          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">{page.title}</h1>
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">{page.subtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
           {name === "Settings" ? (
@@ -2290,7 +2290,7 @@ export function DashboardView() {
             <Badge tone="indigo">Live</Badge>
           </div>
           <h1 className="mt-3 text-xl font-bold tracking-normal text-slate-950 md:text-2xl">{session?.company?.name || "Wokbook"} Dashboard</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)] md:text-base">
+          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             One operational view for multi-channel sales, orders, inventory, raw materials, shipping, CRM, finance, ads, analytics, and automations.
           </p>
         </div>
