@@ -11,31 +11,29 @@ import { runMetaAdsSyncJob } from "./meta-ads-sync.job.js";
 export function startScheduler() {
   console.log("[Scheduler] Initializing OMS background automation tasks...");
 
-  // 1. Proactive token refresh every hour
-  cron.schedule("0 * * * *", () => {
+  // 1. Token refresh once daily at 5:30 AM IST (00:00 UTC)
+  cron.schedule("0 0 * * *", () => {
     runTokenRefreshJob().catch(console.error);
   });
 
-  // 2. Warehouse sync every 6 hours
-  cron.schedule("0 */6 * * *", () => {
+  // 2. Warehouse sync once daily at 6:30 AM IST (01:00 UTC)
+  cron.schedule("0 1 * * *", () => {
     runWarehouseSyncJob().catch(console.error);
   });
 
-  // 3. Tracking update for active shipments every 15 minutes
-  cron.schedule("*/15 * * * *", () => {
+  // 3. Tracking update once daily at 7:30 AM IST (02:00 UTC)
+  cron.schedule("0 2 * * *", () => {
     runTrackingUpdateJob().catch(console.error);
   });
 
-  // 4. Fallback Shopify data sync every 30 minutes
-  cron.schedule("*/30 * * * *", () => {
+  // 4. Shopify data sync once daily at 8:30 AM IST (03:00 UTC)
+  cron.schedule("0 3 * * *", () => {
     runShopifySyncJob().catch(console.error);
   });
 
-  // 5. Meta Ads spend + attribution sync once daily at 8am — matches
-  // vercel.json's production schedule ("30 2 * * *" UTC = 8am IST). This is
-  // the only thing that updates the "official" ad spend figure; the
-  // on-demand "Check Today" button (getMetaAdSpendToday) never persists.
-  cron.schedule("0 8 * * *", () => {
+  // 5. Meta Ads spend + attribution sync once daily at 8:00 AM IST
+  // 02:30 UTC = 08:00 AM IST
+  cron.schedule("30 2 * * *", () => {
     runMetaAdsSyncJob().catch(console.error);
   });
 
@@ -45,5 +43,12 @@ export function startScheduler() {
     runWarehouseSyncJob().catch(console.error);
   }, 5000);
 
-  console.log("[Scheduler] Background jobs scheduled: Token Refresh (1h), Tracking Update (15m), Warehouse Sync (6h), Shopify Sync (30m), Meta Ads Sync (daily 8am).");
+  console.log(
+    "[Scheduler] Background jobs scheduled: " +
+    "Token Refresh (daily 5:30am IST), " +
+    "Warehouse Sync (daily 6:30am IST), " +
+    "Tracking Update (daily 7:30am IST), " +
+    "Shopify Sync (daily 8:30am IST), " +
+    "Meta Ads Sync (daily 8:00am IST)."
+  );
 }

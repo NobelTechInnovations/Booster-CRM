@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["run", "dev"],
       "port": 3000
+    },
+    {
+      "name": "maharaja-parivaar",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/kartik/Desktop/Client/maharaja-collage && npm run dev -- -p 3010"],
+      "port": 3010,
+      "autoPort": true
     }
   ]
 }

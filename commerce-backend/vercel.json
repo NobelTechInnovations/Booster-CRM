@@ -1,9 +1,24 @@
 {
   "crons": [
-    { "path": "/api/cron/sync-tracking", "schedule": "*/15 * * * *" },
-    { "path": "/api/cron/sync-shopify", "schedule": "*/30 * * * *" },
-    { "path": "/api/cron/refresh-tokens", "schedule": "0 * * * *" },
-    { "path": "/api/cron/sync-warehouses", "schedule": "0 */6 * * *" },
-    { "path": "/api/cron/sync-meta-ads", "schedule": "30 2 * * *" }
+    {
+      "path": "/api/cron/sync-tracking",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/sync-shopify",
+      "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/refresh-tokens",
+      "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/sync-warehouses",
+      "schedule": "0 1 * * *"
+    },
+    {
+      "path": "/api/cron/sync-meta-ads",
+      "schedule": "30 2 * * *"
+    }
   ]
 }
