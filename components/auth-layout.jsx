@@ -18,19 +18,9 @@ export function AuthLayout({ eyebrow, title, text, children }) {
       <section
         className="relative hidden flex-col justify-between overflow-hidden px-10 py-10 lg:flex"
         style={{
-          background: "linear-gradient(155deg, #0b1533 0%, #1e1b4b 55%, #0b1533 100%)",
+          background: "linear-gradient(155deg, #0f2557 0%, #16326f 55%, #0f2557 100%)",
         }}
       >
-        {/* Decorative glow */}
-        <div
-          aria-hidden
-          className="pointer-events-none absolute inset-0"
-          style={{
-            background:
-              "radial-gradient(ellipse 70% 50% at 30% 40%, rgba(99,102,241,0.22) 0%, transparent 60%), radial-gradient(ellipse 50% 40% at 70% 70%, rgba(180,83,9,0.12) 0%, transparent 60%)",
-          }}
-        />
-
         {/* Logo */}
         <Link href="/" className="relative flex items-center gap-3">
           <div className="grid h-10 w-10 place-items-center rounded-xl bg-white/10 text-white ring-1 ring-white/20">

@@ -79,23 +79,27 @@ function Sidebar({ open, setOpen }) {
         className={cn("fixed inset-0 z-30 bg-slate-950/40 lg:hidden", open ? "block" : "hidden")}
         onClick={() => setOpen(false)}
       />
+      {/* Reserves the collapsed rail's width in the layout grid — the real
+          <aside> below is `fixed` so it can widen on hover without disturbing
+          this reserved column or the page content next to it. */}
+      <div className="hidden lg:block lg:w-[72px] lg:shrink-0" aria-hidden />
       <aside
         className={cn(
-          "fixed inset-y-0 left-0 z-40 w-64 flex-col border-r border-[var(--line)] bg-[var(--panel)] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-[72px]",
+          "group/rail fixed inset-y-0 left-0 z-40 w-64 flex-col border-r border-[var(--line)] bg-[var(--panel)] lg:top-0 lg:flex lg:h-screen lg:w-[72px] lg:overflow-hidden lg:shadow-none lg:transition-[width] lg:duration-150 lg:hover:w-64 lg:hover:shadow-xl lg:hover:overflow-visible",
           open ? "flex" : "hidden",
         )}
       >
-        <div className="flex h-16 shrink-0 items-center justify-between px-5 lg:justify-center lg:px-0">
-          <Link href="/panel" className="grid h-9 w-9 place-items-center rounded-lg bg-[var(--primary)] text-white">
+        <div className="flex h-16 shrink-0 items-center gap-3 px-5 lg:px-[18px]">
+          <Link href="/panel" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--primary)] text-white">
             <Layers3 size={18} />
           </Link>
-          <p className="text-sm font-bold tracking-tight text-slate-900 lg:hidden">Wokbook</p>
-          <button className="rounded-md p-2 text-slate-500 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)} aria-label="Close">
+          <p className="min-w-0 flex-1 truncate text-sm font-bold tracking-tight text-slate-900 lg:hidden lg:group-hover/rail:block">Wokbook</p>
+          <button className="ml-auto rounded-md p-2 text-slate-500 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)} aria-label="Close">
             <X size={18} />
           </button>
         </div>
 
-        <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 py-3 lg:flex lg:flex-col lg:items-center lg:gap-1 lg:px-2">
+        <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 py-3 lg:px-2">
           {menu.map((item) => {
             const isActive = pathname === item.href || (item.href !== "/panel" && pathname?.startsWith(item.href));
             return (
@@ -103,20 +107,15 @@ function Sidebar({ open, setOpen }) {
                 key={item.label}
                 href={item.href}
                 onClick={() => setOpen(false)}
-                title={item.label}
                 className={cn(
-                  "group relative mb-0.5 flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13.5px] font-medium transition-colors lg:mb-0 lg:w-10 lg:justify-center lg:px-0",
+                  "mb-0.5 flex h-10 w-full items-center gap-3 rounded-lg px-3 text-left text-[13.5px] font-medium transition-colors lg:w-auto",
                   isActive
                     ? "bg-[var(--primary-soft)] text-[var(--primary)]"
                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
                 )}
               >
-                <item.icon size={18} strokeWidth={isActive ? 2.25 : 1.9} />
-                <span className="lg:hidden">{item.label}</span>
-                {/* Hover label — desktop rail only */}
-                <span className="pointer-events-none absolute left-[calc(100%+10px)] z-50 hidden whitespace-nowrap rounded-md bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white opacity-0 shadow-lg transition-opacity group-hover:opacity-100 lg:block">
-                  {item.label}
-                </span>
+                <item.icon size={18} strokeWidth={isActive ? 2.25 : 1.9} className="shrink-0" />
+                <span className="whitespace-nowrap lg:hidden lg:group-hover/rail:inline">{item.label}</span>
               </Link>
             );
           })}
