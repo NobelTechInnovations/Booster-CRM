@@ -413,9 +413,12 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KpiTile
-          label="Total Expense" value={formatMoney(summary?.expenses, currency)} sub={`${summary?.expenseCount ?? 0} entries total`} tone="slate" icon={Wallet}
+          label="Total Expense"
+          value={formatMoney(summary?.expenses, currency)}
+          sub={`₹${(summary?.marketingSpend ?? 0).toLocaleString("en-IN")} marketing + ₹${(summary?.totalShippingCost ?? 0).toLocaleString("en-IN")} shipping + ₹${(summary?.otherExpenses ?? 0).toLocaleString("en-IN")} other`}
+          tone="slate" icon={Wallet}
           onClick={() => onNavigate("expenses")}
-          calc="Every rupee in the Expense ledger, every category combined — Marketing Spend + Shipping Cost's wallet-recharge piece + Other Expenses always sum back to exactly this number."
+          calc="Marketing Spend + Shipping Cost (the full figure — Amazon's real per-order fee plus Shopify's wallet recharge) + Other Expenses. This is everything actually subtracted in Net Profit below. Amazon's shipping fee isn't a row in the Expense ledger — it's a real figure captured directly on each order — so it won't appear if you total the Expenses tab by hand; it's included here so this card matches Net Profit exactly."
         />
         <KpiTile
           label="Marketing Spend" value={formatMoney(summary?.marketingSpend, currency)} sub={`${summary?.marketingExpenseCount ?? 0} entries · logged expenses only`} tone="indigo" icon={Megaphone}
@@ -425,7 +428,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
         <KpiTile
           label="Shipping Cost" value={formatMoney(summary?.totalShippingCost, currency)} sub="Amazon per-order + Shopify wallet recharge" tone="blue" icon={Truck}
           onClick={toggleShipping}
-          calc={`Amazon: real per-order shipping fee, fixed at import (₹${(summary?.shippingCost ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}). Shopify ships through a prepaid courier wallet — the courier deducts per shipment, so there's no clean per-order figure — its cost instead comes from every "Shipping" category Expense (wallet recharge amounts you log manually, ₹${(summary?.shippingExpense ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}, ${summary?.shippingExpenseCount ?? 0} entries). This whole amount is already inside Total Expense above — only the Amazon-only piece is subtracted again separately in Net Profit below, so it's never double counted.`}
+          calc={`Amazon: real per-order shipping fee, fixed at import (₹${(summary?.shippingCost ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}). Shopify ships through a prepaid courier wallet — the courier deducts per shipment, so there's no clean per-order figure — its cost instead comes from every "Shipping" category Expense (wallet recharge amounts you log manually, ₹${(summary?.shippingExpense ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}, ${summary?.shippingExpenseCount ?? 0} entries). Both pieces together are what's inside Total Expense and Net Profit — counted exactly once each, nothing here is added twice.`}
         />
         <KpiTile
           label="Other Expenses" value={formatMoney(summary?.otherExpenses, currency)} sub={`${summary?.otherExpenseCount ?? 0} entries · not marketing or shipping`} tone="rose" icon={Receipt}
@@ -449,7 +452,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
           sub={`${summary?.margin ?? 0}% margin`}
           tone={Number(summary?.netProfit) >= 0 ? "green" : "rose"}
           icon={Number(summary?.netProfit) >= 0 ? TrendingUp : TrendingDown}
-          calc="Total Revenue − Inventory Purchases − all logged Expenses (marketing + other, which already includes Shopify's shipping-wallet recharges) − Amazon's real per-order shipping cost. Meta's live API spend is not subtracted here — only what you've logged as actually paid counts. Margin = Net Profit ÷ Revenue."
+          calc="Total Revenue − Inventory Purchases − Total Expense (Marketing + Shipping Cost + Other Expenses, the same number shown on that card above). Meta's live API spend is not subtracted here — only what you've logged as actually paid counts. Margin = Net Profit ÷ Revenue."
         />
         <KpiTile
           label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined}

@@ -438,7 +438,16 @@ export async function getFinanceSummary({ companyId, from, to }) {
   const marketingSpend = marketingExpenseTotal;
   const revenue = toNumber(sales.revenue);
   const grossProfit = revenue - cogs;
-  const netProfit = revenue - cogs - expenseTotal - shippingCost;
+  // "Total Expense" = every category card added up: Marketing Spend +
+  // Shipping Cost (Amazon real fee + Shopify wallet recharge, i.e. the FULL
+  // totalShippingCost, not just its ledger piece) + Other Expenses. The
+  // Amazon shipping fee isn't a logged Expense row at all (it's a field on
+  // the order itself, from Amazon's own real per-order figure) — it used to
+  // be left out of "Total Expense" for that reason, which read as if it had
+  // gone missing even though it was still subtracted in Net Profit. Now
+  // Total Expense and Net Profit both account for it the same way.
+  const totalExpenseAllIn = marketingSpend + totalShippingCost + otherExpenseTotal;
+  const netProfit = revenue - cogs - totalExpenseAllIn;
   const margin = revenue ? (netProfit / revenue) * 100 : 0;
 
   return {
@@ -446,10 +455,14 @@ export async function getFinanceSummary({ companyId, from, to }) {
     orders: sales.orders,
     cogs: Math.round(cogs),
     grossProfit: Math.round(grossProfit),
-    // Every rupee logged in the Expense ledger, regardless of category —
-    // "Total Expense" card. marketingExpenses + shippingExpense + otherExpenses
-    // always sums back to exactly this.
-    expenses: Math.round(expenseTotal),
+    // "Total Expense" card — Marketing Spend + Shipping Cost (full: Amazon
+    // real fee + Shopify wallet recharge) + Other Expenses, i.e. everything
+    // subtracted in Net Profit below. NOT the same as the raw Expense ledger
+    // sum, since Amazon's shipping fee lives on the order, not an Expense row.
+    expenses: Math.round(totalExpenseAllIn),
+    // The raw Expense ledger sum (what listExpenses would total) — kept
+    // separately in case a future card wants just the logged-entries figure.
+    expenseLedgerTotal: Math.round(expenseTotal),
     marketingExpenses: Math.round(marketingExpenseTotal),
     marketingExpenseCount,
     shippingExpenseCount,
