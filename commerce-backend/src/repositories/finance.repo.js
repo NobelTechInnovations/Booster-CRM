@@ -410,6 +410,16 @@ export async function getFinanceSummary({ companyId, from, to }) {
   const cogs = purchases.reduce((sum, purchase) => sum + toNumber(purchase.totalAmount), 0);
   const expenseTotal = expenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
   const marketingExpenseTotal = expenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);
+  // Shopify ships through a prepaid courier wallet (top up in bulk, courier
+  // deducts per shipment) — there's no real per-order figure to trust, so its
+  // shipping cost is logged as a lump-sum "shipping" Expense (the recharge
+  // amount) instead of per-order. `shippingCost` (param above) is Amazon-only
+  // — real per-order figures fixed at import (see getShippingCostTotal).
+  // Combined for display since both are real, disjoint sources; NOT double
+  // counted in netProfit below since the shipping-category expense is already
+  // inside expenseTotal once — only the Amazon-only piece is added on top.
+  const shippingExpenseTotal = expenses.filter((e) => e.category === "shipping").reduce((sum, e) => sum + toNumber(e.amount), 0);
+  const totalShippingCost = shippingCost + shippingExpenseTotal;
   const otherExpenseTotal = expenseTotal - marketingExpenseTotal;
   // Ad spend grossed up by Meta's 18% GST — shown on the separate Meta Ad
   // Spend card as the real all-in cost, even though Meta's own dashboard
@@ -430,7 +440,13 @@ export async function getFinanceSummary({ companyId, from, to }) {
     marketingExpenses: Math.round(marketingExpenseTotal),
     otherExpenses: Math.round(otherExpenseTotal),
     marketingSpend: Math.round(marketingSpend),
+    // Amazon-only real per-order figure (also the piece actually subtracted
+    // in netProfit — see comment above).
     shippingCost: Math.round(shippingCost),
+    // Shopify's wallet-recharge total, already inside `expenses` above.
+    shippingExpense: Math.round(shippingExpenseTotal),
+    // Amazon + Shopify combined — what the "Shipping Cost" KPI card shows.
+    totalShippingCost: Math.round(totalShippingCost),
     adSpend: Math.round(adSpend.spend),
     adSpendGst: Math.round(adSpend.gstAmount ?? adSpend.spend * AD_GST_RATE),
     adSpendWithGst: Math.round(adSpendWithGst),

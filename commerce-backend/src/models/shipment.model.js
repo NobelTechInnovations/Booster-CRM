@@ -29,10 +29,16 @@ const shipmentSchema = new mongoose.Schema(
     courierName: { type: String },
 
     // Status lifecycle: created → awb_generated → picked_up → in_transit → delivered / cancelled
+    // (or pending_courier_assignment when the order was pushed to the courier
+    // but no AWB exists yet — e.g. ShipMozo before Auto Assign is configured)
     status:         { type: String, default: "created", index: true },
     trackingStatus: { type: String },
     trackingUrl:    { type: String },
     lastTrackedAt:  { type: Date },
+    // Free-text explanation for an incomplete/blocked state — e.g. ShipMozo's
+    // "enable Auto Assign to get an AWB" message when a courier hasn't been
+    // assigned yet.
+    note: { type: String },
 
     // Financial
     paymentMethod: { type: String },

@@ -80,9 +80,10 @@ financeRoutes.patch(
   "/orders/:orderId/shipping-cost",
   requirePermission("finance:manage"),
   asyncHandler(async (req, res) => {
-    const order = await updateOrderShippingCost({ companyId: req.auth.companyId, orderId: req.params.orderId, shippingCost: req.body?.shippingCost });
-    if (!order) throw new HttpError(404, "Order not found");
-    res.json({ message: "Shipping cost updated", order });
+    const result = await updateOrderShippingCost({ companyId: req.auth.companyId, orderId: req.params.orderId, shippingCost: req.body?.shippingCost });
+    if (!result) throw new HttpError(404, "Order not found");
+    if (result.error) throw new HttpError(400, result.error);
+    res.json({ message: "Shipping cost updated", order: result });
   }),
 );
 

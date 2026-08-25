@@ -1408,15 +1408,13 @@ function isSameDate(left, right) {
 }
 
 function formatMoney(value, currency = "INR") {
-  const rounded = Math.round(value || 0);
+  const amount = Number(value) || 0;
 
   if (currency === "INR") {
-    if (rounded >= 100000) return `₹${(rounded / 100000).toFixed(1)}L`;
-    if (rounded >= 1000) return `₹${Math.round(rounded / 1000)}k`;
-    return `₹${rounded}`;
+    return `₹${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
 
-  return `${currency} ${rounded.toLocaleString("en-IN")}`;
+  return `${currency} ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function dayLabel(date) {

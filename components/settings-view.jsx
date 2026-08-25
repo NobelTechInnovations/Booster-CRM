@@ -505,6 +505,11 @@ function WebhooksTab() {
   const [filterEndpoint, setFilterEndpoint] = useState("");
   const [viewingLead, setViewingLead] = useState(null);
   const [followUpLead, setFollowUpLead] = useState(null);
+  // No phone captured on the cart/order event (e.g. a Fastrr cart still at
+  // latest_stage:"INIT" before checkout) means there's no number to actually
+  // call — split those out from real, callable leads instead of mixing them
+  // into one list.
+  const [leadTab, setLeadTab] = useState("verified");
 
   async function refresh() {
     setIsLoading(true);
@@ -530,6 +535,10 @@ function WebhooksTab() {
     setLeads((prev) => prev.map((l) => ((l._id || l.id) === (updatedLead._id || updatedLead.id) ? updatedLead : l)));
     setViewingLead((prev) => (prev && (prev._id || prev.id) === (updatedLead._id || updatedLead.id) ? updatedLead : prev));
   }
+
+  const verifiedLeads = leads.filter((l) => l.customerPhone);
+  const unverifiedLeads = leads.filter((l) => !l.customerPhone);
+  const shownLeads = leadTab === "verified" ? verifiedLeads : unverifiedLeads;
 
   return (
     <div className="space-y-5">
@@ -590,8 +599,29 @@ function WebhooksTab() {
           </div>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {!leads.length ? (
-            <p className="py-6 text-center text-sm text-[var(--muted)]">No leads yet — they'll appear here as webhook events come in.</p>
+          <div className="mb-4 flex items-center gap-2 border-b border-[var(--line)]">
+            <button
+              onClick={() => setLeadTab("verified")}
+              className={`flex items-center gap-1.5 border-b-2 px-1 pb-2.5 text-sm font-semibold ${leadTab === "verified" ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+            >
+              Verified <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">{verifiedLeads.length}</span>
+            </button>
+            <button
+              onClick={() => setLeadTab("unverified")}
+              className={`flex items-center gap-1.5 border-b-2 px-1 pb-2.5 text-sm font-semibold ${leadTab === "unverified" ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+            >
+              Unverified <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">{unverifiedLeads.length}</span>
+            </button>
+          </div>
+          <p className="-mt-2 mb-3 text-xs text-[var(--muted)]">
+            {leadTab === "verified"
+              ? "Has a phone number captured from the webhook event — callable."
+              : "No phone number on the event yet (e.g. a cart still at an early checkout stage) — nothing to call until one comes in."}
+          </p>
+          {!shownLeads.length ? (
+            <p className="py-6 text-center text-sm text-[var(--muted)]">
+              {!leads.length ? "No leads yet — they'll appear here as webhook events come in." : `No ${leadTab} leads.`}
+            </p>
           ) : (
             <table className="w-full min-w-[820px] border-collapse text-sm">
               <thead>
@@ -607,7 +637,7 @@ function WebhooksTab() {
                 </tr>
               </thead>
               <tbody>
-                {leads.map((lead) => (
+                {shownLeads.map((lead) => (
                   <LeadRow key={lead._id || lead.id} lead={lead} onView={setViewingLead} onFollowUp={setFollowUpLead} />
                 ))}
               </tbody>

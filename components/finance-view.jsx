@@ -415,9 +415,9 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           calc="Sum of every manually-logged Expense NOT tagged 'marketing' in this range."
         />
         <KpiTile
-          label="Shipping Cost" value={formatMoney(summary?.shippingCost, currency)} sub="courier rate at ship time" tone="blue" icon={Truck}
+          label="Shipping Cost" value={formatMoney(summary?.totalShippingCost, currency)} sub="Amazon per-order + Shopify wallet recharge" tone="blue" icon={Truck}
           onClick={toggleShipping}
-          calc="Sum of each order's shippingCost — auto-captured from the real courier rate when shipped via this panel, or entered manually. Orders shipped outside this panel show ₹0 until filled in — not Shopify's own 'shipping charge' line, which is what the customer paid, not what the courier actually cost."
+          calc={`Amazon: real per-order shipping fee, fixed at import (₹${(summary?.shippingCost ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}). Shopify ships through a prepaid courier wallet — the courier deducts per shipment, so there's no clean per-order figure — its cost instead comes from every "Shipping" category Expense (wallet recharge amounts you log manually, ₹${(summary?.shippingExpense ?? 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}). Only the Amazon amount is subtracted separately in Net Profit below — the Shopify amount is already inside Expenses, so it isn't double counted.`}
         />
         <KpiTile
           label="Refunded/Returned Revenue"
@@ -426,7 +426,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           tone={summary?.refundedRevenue ? "amber" : "slate"}
           icon={RotateCcw}
           onClick={toggleRefunds}
-          calc="Sum of totalPrice for orders that are cancelled, or whose payment status is refunded/voided, in this range."
+          calc="Sum of totalPrice for orders that are cancelled, whose payment status is refunded/voided, or that a courier tagged rto/rto_initiated (Return to Origin — bounced back undelivered) in this range. Shopify test orders never enter this or any other total."
         />
       </div>
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -436,7 +436,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           sub={`${summary?.margin ?? 0}% margin`}
           tone={Number(summary?.netProfit) >= 0 ? "green" : "rose"}
           icon={Number(summary?.netProfit) >= 0 ? TrendingUp : TrendingDown}
-          calc="Total Revenue − Inventory Purchases − all logged Expenses (marketing + other) − Shipping Cost. Meta's live API spend is not subtracted here — only what you've logged as actually paid counts. Margin = Net Profit ÷ Revenue."
+          calc="Total Revenue − Inventory Purchases − all logged Expenses (marketing + other, which already includes Shopify's shipping-wallet recharges) − Amazon's real per-order shipping cost. Meta's live API spend is not subtracted here — only what you've logged as actually paid counts. Margin = Net Profit ÷ Revenue."
         />
         <KpiTile
           label="Avg Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub={groupBy} tone="blue" icon={ChartNoAxesCombined}
@@ -460,7 +460,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
           <CardHeader>
             <div>
               <CardTitle>Refunded / Returned Orders</CardTitle>
-              <p className="mt-1 text-sm text-[var(--muted)]">Cancelled, refunded, or voided orders in this range — kept out of Total Revenue.</p>
+              <p className="mt-1 text-sm text-[var(--muted)]">Cancelled, refunded, voided, or courier-RTO'd orders in this range — kept out of Total Revenue.</p>
             </div>
             <button onClick={() => setShowRefunds(false)} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
               <X size={18} />
@@ -487,7 +487,11 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
                     <tr key={o._id || o.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                       <td className="py-3 pr-4 font-semibold text-slate-900">{o.name}</td>
                       <td className="py-3 pr-4">{o.customerName || "-"}</td>
-                      <td className="py-3 pr-4"><Badge tone="amber">{o.cancelledAt ? "Cancelled" : o.financialStatus}</Badge></td>
+                      <td className="py-3 pr-4">
+                        <Badge tone={o.returnReason === "rto" ? "rose" : "amber"}>
+                          {o.returnReason === "rto" ? "RTO" : o.cancelledAt ? "Cancelled" : o.financialStatus}
+                        </Badge>
+                      </td>
                       <td className="py-3 pr-4">{new Date(o.cancelledAt || o.shopifyCreatedAt).toLocaleDateString("en-IN")}</td>
                       <td className="py-3 pr-0 text-right font-bold text-rose-700">{formatMoney(o.totalPrice, currency)}</td>
                     </tr>
@@ -503,10 +507,14 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, isLoading, onN
         <Card>
           <CardHeader>
             <div>
-              <CardTitle>Shipping Cost by Order</CardTitle>
+              <CardTitle>Shipping Cost by Order (Amazon)</CardTitle>
               <p className="mt-1 text-sm text-[var(--muted)]">
-                "Auto" = real courier rate captured when shipped via this panel. "Manual" = typed in. Unset (₹0, no badge) = shipped outside
-                this panel — click the amount to fill in the real cost.
+                Amazon orders only — these carry a real fixed shipping fee. "Auto" = captured when shipped via this panel. "Manual" = typed in.
+                Click the amount to fill in or correct it. Shopify orders don't appear here — its shipping runs on a prepaid courier wallet with no
+                real per-order figure, so that cost is logged as a lump-sum "Shipping" expense instead —{" "}
+                <button className="font-semibold text-indigo-700 hover:underline" onClick={() => onNavigate("expenses", "shipping")}>
+                  view/add it in Expenses
+                </button>.
               </p>
             </div>
             <button onClick={() => setShowShipping(false)} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">

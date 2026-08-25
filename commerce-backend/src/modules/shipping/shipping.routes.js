@@ -151,7 +151,7 @@ shippingRoutes.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const provider = getShippingProvider(req.params.provider, { companyId: req.auth.companyId });
-    const result = await provider.cancelOrder(req.body?.awbs || []);
+    const result = await provider.cancelOrder(req.body?.awbs || [], req.body?.orderIds || []);
     res.json(result);
   }),
 );

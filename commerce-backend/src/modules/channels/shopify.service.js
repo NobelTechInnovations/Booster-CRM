@@ -221,8 +221,11 @@ export async function fetchShopifyOrders(shop, accessToken) {
       status: "any",
       // note_attributes/landing_site/referring_site carry UTM data used to attribute Meta ad spend to orders — keep these.
       // fulfillments carries tracking number/url/company for orders fulfilled via Shopify admin or another channel.
+      // "test" flags orders placed via Shopify's Bogus Gateway / "This is a test
+      // order" checkbox — these never represent real revenue and must be excluded
+      // from every sales/expense total (see isTestOrder() below).
       fields:
-        "id,name,order_number,email,phone,customer,financial_status,fulfillment_status,note,note_attributes,tags,currency,total_price,subtotal_price,total_tax,payment_gateway_names,line_items,shipping_address,landing_site,referring_site,source_name,created_at,processed_at,cancelled_at,fulfillments",
+        "id,name,order_number,email,phone,customer,financial_status,fulfillment_status,note,note_attributes,tags,currency,total_price,subtotal_price,total_tax,payment_gateway_names,line_items,shipping_address,landing_site,referring_site,source_name,created_at,processed_at,cancelled_at,fulfillments,test",
     },
   });
 }

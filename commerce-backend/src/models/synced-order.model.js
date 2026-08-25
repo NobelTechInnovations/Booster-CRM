@@ -45,6 +45,16 @@ const syncedOrderSchema = new mongoose.Schema(
     isCOD:     { type: Boolean, default: false },
     codAmount:  { type: Number, default: 0 },
 
+    // Shopify's own test-order flag (Bogus Gateway / "This is a test order"
+    // checkbox) or a manual "test"/"test-order" tag — never real revenue, so
+    // every sales/expense total (Dashboard, Finance) excludes these outright.
+    isTestOrder: { type: Boolean, default: false, index: true },
+    // Courier/3PL tagged this order "rto"/"rto_initiated" ("Return to Origin"
+    // — shipment bounced back to us undelivered). Treated as a return: its
+    // value is excluded from revenue and it appears in the Refunds/Returns
+    // drill-down exactly like a financial-status refund.
+    isRTO: { type: Boolean, default: false, index: true },
+
     // Full shipping address (all fields needed for shipment creation)
     shippingAddress: {
       name:         String,

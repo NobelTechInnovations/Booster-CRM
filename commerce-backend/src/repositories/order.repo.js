@@ -45,6 +45,20 @@ function isCodPayment(order) {
   return gatewayCodMatch || isPending || tagCod;
 }
 
+// Shopify's own test-order flag (raw.test:true, set by the Bogus Gateway /
+// "This is a test order" checkout) or a manual "test"/"test-order" tag.
+// Either way this never represents real revenue or cost.
+export function isTestOrderPayload(order) {
+  if (order.test === true) return true;
+  return String(order.tags || "").toLowerCase().split(",").some((t) => t.trim().includes("test"));
+}
+
+// Courier/3PL RTO ("Return to Origin") tag — shipment bounced back to us
+// undelivered. Matches "rto", "rto_initiated", "rto-initiated" etc.
+export function isRtoPayload(order) {
+  return String(order.tags || "").toLowerCase().split(",").some((t) => /rto/.test(t.trim()));
+}
+
 export function normalizeOrder({ companyId, channelId, provider, shop, order }) {
   const customer        = order.customer || {};
   const shippingAddress = order.shipping_address || {};
@@ -86,6 +100,8 @@ export function normalizeOrder({ companyId, channelId, provider, shop, order }) 
     paymentGatewayNames,
     isCOD:     cod,
     codAmount:  cod ? totalPrice : 0,
+    isTestOrder: isTestOrderPayload(order),
+    isRTO:       isRtoPayload(order),
     shippingAddress: {
       name:         shippingAddress.name,
       address1:     shippingAddress.address1,
@@ -796,14 +812,14 @@ function isSameDate(left, right) {
   return startOfDay(left).getTime() === startOfDay(right).getTime();
 }
 
+// Always the full rupee value with 2 decimals, never abbreviated (no k/L) —
+// matches the app-wide formatMoney convention in lib/utils.js on the frontend.
 function formatMoney(value, currency = "INR") {
-  const rounded = Math.round(value || 0);
+  const amount = Number(value) || 0;
   if (currency === "INR") {
-    if (rounded >= 100000) return `₹${(rounded / 100000).toFixed(1)}L`;
-    if (rounded >= 1000) return `₹${Math.round(rounded / 1000)}k`;
-    return `₹${rounded}`;
+    return `₹${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   }
-  return `${currency} ${rounded.toLocaleString("en-IN")}`;
+  return `${currency} ${amount.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
 function dayLabel(date) {
@@ -858,10 +874,11 @@ export async function getDashboardSummary(companyId, { period } = {}) {
     : (() => { const d = new Date(periodRange.end); d.setDate(d.getDate() - 6); d.setHours(0, 0, 0, 0); return d; })();
   const trendDays = Math.max(1, Math.round((periodRange.end - trendStart) / 86400000) + 1);
 
-  // Exclude cancelled/voided/refunded orders from revenue — Shopify analytics does the same
-  const revenueOrders = orders.filter(
-    (o) => !o.cancelledAt && o.financialStatus !== "voided" && o.financialStatus !== "refunded",
-  );
+  // Exclude cancelled/voided/refunded/RTO orders and Shopify test orders from
+  // revenue — none of these are real sales. getSavedCommerceData deliberately
+  // doesn't pre-filter test orders (Orders/Fulfillment still need to show and
+  // manage them operationally), so isTestOrder is excluded here explicitly.
+  const revenueOrders = orders.filter((o) => isRevenueOrder(o) && !o.isTestOrder);
   const salesTotal = revenueOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0);
   const todaySales = revenueOrders
     .filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), today))
@@ -1022,6 +1039,10 @@ export function bucketLabel(key, groupBy) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(new Date(key));
 }
 
+// Every Finance function (revenue, shipping cost, refunds, mfg cost, ads
+// attribution) is built on this — excluding test orders here means they can
+// never leak into any expense/sales total anywhere, without having to
+// remember to filter them at each call site.
 export async function getOrdersInRange({ companyId, from, to, channelId }) {
   const { start, end } = parseDateRange({ from, to });
 
@@ -1033,6 +1054,7 @@ export async function getOrdersInRange({ companyId, from, to, channelId }) {
     const filter = {
       companyId: compFilter,
       shopifyCreatedAt: { $gte: start, $lte: end },
+      isTestOrder: { $ne: true },
       ...(channelId ? { channelId } : {}),
     };
     const orders = await SyncedOrder.find(filter).sort({ shopifyCreatedAt: 1 }).limit(20000).lean();
@@ -1044,6 +1066,7 @@ export async function getOrdersInRange({ companyId, from, to, channelId }) {
     o.shopifyCreatedAt &&
     new Date(o.shopifyCreatedAt) >= start &&
     new Date(o.shopifyCreatedAt) <= end &&
+    !o.isTestOrder &&
     (!channelId || String(o.channelId) === String(channelId));
 
   const orders = deduplicateRecords([...memory.orders.values()].filter(owned)).sort(
@@ -1053,9 +1076,20 @@ export async function getOrdersInRange({ companyId, from, to, channelId }) {
   return { orders, start, end };
 }
 
+// An order counts as "clean revenue" only if it wasn't cancelled/voided/
+// refunded and isn't a courier RTO ("Return to Origin" — shipment bounced
+// back to us undelivered, tagged rto/rto_initiated). RTO is functionally a
+// return, so its value is excluded from sales exactly like a refund.
+export function isRevenueOrder(order) {
+  return !order.cancelledAt
+    && order.financialStatus !== "voided"
+    && order.financialStatus !== "refunded"
+    && !order.isRTO;
+}
+
 export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", channelId }) {
   const { orders, start, end } = await getOrdersInRange({ companyId, from, to, channelId });
-  const validOrders = orders.filter((o) => !o.cancelledAt);
+  const validOrders = orders.filter(isRevenueOrder);
 
   const currency = orders.find((o) => o.currency)?.currency || "INR";
   const revenue = validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
@@ -1115,7 +1149,7 @@ export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", 
 
 export async function getSalesTotal({ companyId, from, to }) {
   const { orders } = await getOrdersInRange({ companyId, from, to });
-  const validOrders = orders.filter((o) => !o.cancelledAt);
+  const validOrders = orders.filter(isRevenueOrder);
 
   return {
     revenue: validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0),
@@ -1123,38 +1157,43 @@ export async function getSalesTotal({ companyId, from, to }) {
   };
 }
 
-// Sum of the actual courier rate captured at ship time for orders shipped in
-// this period — the real per-order freight cost, since it varies by
-// destination/weight rather than being a fixed per-SKU number.
+// Real per-order shipping cost only exists for Amazon (fixed at import, from
+// what Amazon actually displayed for that order). Shopify shipments go
+// through a prepaid courier wallet — the courier deducts per shipment from a
+// balance we top up in bulk, so there is no clean per-order figure to trust
+// or ask the user to enter one-by-one. Shopify's contribution to shipping
+// cost instead comes entirely from Expense{category:"shipping"} rows (the
+// wallet recharge amount, logged manually) — summed in finance.repo.js's
+// getFinanceSummary alongside this Amazon-only total, never inside it (that
+// would double count against expenseTotal, which already includes those
+// same Expense rows once).
 export async function getShippingCostTotal({ companyId, from, to }) {
   const { orders } = await getOrdersInRange({ companyId, from, to });
   return orders
-    .filter((o) => !o.cancelledAt)
+    .filter((o) => !o.cancelledAt && o.provider === "amazon")
     .reduce((sum, o) => sum + toNumber(o.shippingCost), 0);
 }
 
 // The order rows behind getShippingCostTotal — powers the Finance tab's
-// "Shipping Cost" card drilling into an order-wise table, and lets the user
-// see (and manually correct/fill in) shippingCost per order rather than
-// only trusting whatever this panel's own Ship flow auto-captured. Orders
-// fulfilled outside this panel (direct on Shopify, historical imports) have
-// no auto-captured value at all — shown as ₹0/unset, not a guess.
+// "Shipping Cost" card drilling into an order-wise table. Amazon only (see
+// getShippingCostTotal) — Shopify orders aren't listed here since there's no
+// real per-order figure to show or correct; their shipping cost is tracked
+// as a lump-sum "shipping" Expense (wallet recharge) instead.
 export async function listOrdersWithShippingCost({ companyId, from, to }) {
   const { orders } = await getOrdersInRange({ companyId, from, to });
   return orders
-    .filter((o) => !o.cancelledAt)
+    .filter((o) => !o.cancelledAt && o.provider === "amazon")
     .sort((a, b) => new Date(b.shopifyCreatedAt) - new Date(a.shopifyCreatedAt));
 }
 
-// Manual override/entry for an order's real shipping cost — for orders that
-// skipped this panel's Ship flow (so nothing was auto-captured), or to
-// correct an auto-captured value. Deliberately separate from Shopify's own
-// order-level "shipping charge" field (what the CUSTOMER paid), which is a
-// different number from what the business actually paid the courier and is
-// never used to populate this.
+// Manual override/entry for an order's real shipping cost — Amazon only (see
+// getShippingCostTotal above for why Shopify orders don't get this).
 export async function updateOrderShippingCost({ companyId, orderId, shippingCost }) {
   const order = await getOrderById({ companyId, orderId });
   if (!order) return null;
+  if (order.provider !== "amazon") {
+    return { error: "Shipping cost is only tracked per-order for Amazon. Log Shopify's courier-wallet recharge as a \"Shipping\" expense instead." };
+  }
   return updateOrderOmsStatus({
     companyId,
     shopifyOrderId: order.externalId,
@@ -1163,11 +1202,13 @@ export async function updateOrderShippingCost({ companyId, orderId, shippingCost
 }
 
 // Revenue that was refunded/cancelled/returned in this period — kept separate
-// from the main revenue total so it can be shown as its own line item.
+// from the main revenue total so it can be shown as its own line item. RTO
+// ("Return to Origin" — courier-tagged undelivered/bounced-back shipment) is
+// included here too: functionally identical to a refund for sales purposes.
 export async function getRefundedRevenueTotal({ companyId, from, to }) {
   const { orders } = await getOrdersInRange({ companyId, from, to });
   return orders
-    .filter((o) => o.cancelledAt || o.financialStatus === "refunded" || o.financialStatus === "voided")
+    .filter((o) => o.cancelledAt || o.financialStatus === "refunded" || o.financialStatus === "voided" || o.isRTO)
     .reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
 }
 
@@ -1177,7 +1218,8 @@ export async function getRefundedRevenueTotal({ companyId, from, to }) {
 export async function listRefundedOrders({ companyId, from, to }) {
   const { orders } = await getOrdersInRange({ companyId, from, to });
   return orders
-    .filter((o) => o.cancelledAt || o.financialStatus === "refunded" || o.financialStatus === "voided")
+    .filter((o) => o.cancelledAt || o.financialStatus === "refunded" || o.financialStatus === "voided" || o.isRTO)
+    .map((o) => ({ ...o, returnReason: o.isRTO ? "rto" : (o.cancelledAt ? "cancelled" : o.financialStatus) }))
     .sort((a, b) => new Date(b.cancelledAt || b.shopifyCreatedAt) - new Date(a.cancelledAt || a.shopifyCreatedAt));
 }
 

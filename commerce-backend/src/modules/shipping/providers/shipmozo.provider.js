@@ -49,9 +49,7 @@ export class ShipMozoProvider extends BaseShippingProvider {
     if (!channel) throw new HttpError(400, "Connect ShipMozo first");
 
     const publicKey = channel.credentials?.apiKey || channel.credentials?.username;
-    // const publicKey = "jpKMAvrkZPwTCZW8mXhJ";
     const privateKey = channel.credentials?.apiSecret || channel.credentials?.password;
-    // const privateKey = "uy4RPAYeNZZnMwgLG9HO";
 
     if (!publicKey || !privateKey) {
       throw new HttpError(400, "ShipMozo public-key and private-key are required. Reconnect channel.");
@@ -249,7 +247,18 @@ export class ShipMozoProvider extends BaseShippingProvider {
   }
 
   /**
-   * Pushes forward order via POST /push-order
+   * Pushes forward order via POST /push-order, then attempts to auto-assign a
+   * courier via POST /auto-assign-order to get a real AWB.
+   *
+   * Per ShipMozo's own docs, push-order's response ONLY ever contains
+   * `order_id`/`reference_id` — never an `awb_number`. An AWB only exists
+   * after a courier is assigned (Assign-Courier, Auto-Assign-Order, or
+   * Schedule-Pickup). The previous version of this code fell back to
+   * `reference_id` as if it were an AWB when none was present, then tried to
+   * fetch a shipping label for that fake "AWB" — that call always failed
+   * silently (label fetch errors were swallowed), so orders pushed here never
+   * actually got a real label and just sat as "order_created" forever with
+   * no visible error.
    */
   async createForwardOrder(payload, { syncedOrderId, shopifyOrderId, shopifyOrderName } = {}) {
     const { channel, publicKey, privateKey } = await this.ensureToken();
@@ -263,7 +272,31 @@ export class ShipMozoProvider extends BaseShippingProvider {
 
     const resData = body.data || {};
     const orderId = resData.order_id || payload.order_id;
-    const awbCode = resData.awb_number || resData.reference_id || "";
+
+    // Auto-Assign-Order requires the user to have configured Setting > Auto
+    // Assign on the ShipMozo panel itself — if they haven't, it returns
+    // result:"0" with {"error":"please setup auto assign"}. That's an
+    // expected, non-fatal outcome here: the order is still pushed and sits
+    // on the ShipMozo panel awaiting a manual courier assignment there. Only
+    // real, unexpected failures get logged as a warning.
+    let awbCode = "";
+    let courierName = "ShipMozo";
+    let assignError = "";
+    try {
+      const assignRes = await shipmozoFetch("/auto-assign-order", {
+        method: "POST",
+        publicKey,
+        privateKey,
+        body: { order_id: String(orderId) },
+      });
+      awbCode = assignRes.data?.awb_number || "";
+      courierName = assignRes.data?.courier_company || assignRes.data?.courier_company_service || "ShipMozo";
+    } catch (err) {
+      assignError = err.details?.data?.error || err.message;
+      if (assignError !== "please setup auto assign") {
+        console.warn("[ShipMozo] auto-assign-order failed:", assignError);
+      }
+    }
 
     let labelUrl = "";
     if (awbCode) {
@@ -286,8 +319,11 @@ export class ShipMozoProvider extends BaseShippingProvider {
       orderId: String(orderId),
       shipmentId: String(resData.reference_id || orderId),
       awbCode: String(awbCode),
-      courierName: "ShipMozo",
-      status: awbCode ? "awb_generated" : "order_created",
+      courierName,
+      // No AWB yet means the courier still needs assigning — either
+      // automatically (once auto-assign is set up on ShipMozo's panel) or
+      // manually there. Never claim "awb_generated" without a real AWB.
+      status: awbCode ? "awb_generated" : "pending_courier_assignment",
       paymentMethod: payload.payment_type,
       codAmount: payload.payment_type === "COD" ? Number(payload.cod_amount || 0) : 0,
       customerName: payload.consignee_name,
@@ -296,6 +332,9 @@ export class ShipMozoProvider extends BaseShippingProvider {
       labelUrl,
       request: payload,
       response: body,
+      note: awbCode ? undefined : (assignError === "please setup auto assign"
+        ? "Order pushed to ShipMozo — enable Setting > Auto Assign on the ShipMozo panel, or assign a courier there manually, to get an AWB and label."
+        : assignError || undefined),
     });
   }
 
@@ -332,15 +371,17 @@ export class ShipMozoProvider extends BaseShippingProvider {
   }
 
   /**
-   * Cancels order via POST /cancel-order
+   * Cancels order via POST /cancel-order. Per ShipMozo's docs both order_id
+   * AND awb_number are required — passing awb_number alone (as this used to)
+   * always failed with a validation error.
    */
-  async cancelOrder(awbs) {
+  async cancelOrder(awbs, orderIds = []) {
     const { publicKey, privateKey } = await this.ensureToken();
     const body = await shipmozoFetch("/cancel-order", {
       method: "POST",
       publicKey,
       privateKey,
-      body: { awb_number: awbs[0] },
+      body: { order_id: orderIds[0], awb_number: awbs[0] },
     });
     await updateShipmentsByAwb({ companyId: this.companyId, awbCodes: awbs, update: { status: "cancel_requested" } });
     return body;
