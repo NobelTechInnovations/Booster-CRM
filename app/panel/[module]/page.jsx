@@ -11,6 +11,7 @@ import { FinanceView } from "@/components/finance-view";
 import { OrdersView } from "@/components/orders-view";
 import { CustomersView } from "@/components/customers-view";
 import { InventoryView } from "@/components/inventory-view";
+import { AssetsView } from "@/components/assets-view";
 import { ReportsView } from "@/components/reports-view";
 import { AutomationView } from "@/components/automation-view";
 import { SettingsView } from "@/components/settings-view";
@@ -83,6 +84,7 @@ export default function ModulePage({ params }) {
     "products": "Products",
     "product-mapping": "Product Mapping",
     "inventory": "Inventory",
+    "assets": "Assets",
     "customers": "Customers",
     "finance": "Finance",
     "ads": "Ads",
@@ -135,6 +137,10 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Inventory") {
     return <InventoryView />;
+  }
+
+  if (activeViewName === "Assets") {
+    return <AssetsView />;
   }
 
   if (activeViewName === "Customers") {

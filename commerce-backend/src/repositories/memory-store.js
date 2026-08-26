@@ -19,6 +19,8 @@ export const memory = {
   expenses:       new Map(),
   adInsights:     new Map(),
   skuCosts:       new Map(),
+  assets:         new Map(),
+  assetMappings:  new Map(),
   automationRules: new Map(),
   webhookEndpoints: new Map(),
   webhookEvents:  new Map(),

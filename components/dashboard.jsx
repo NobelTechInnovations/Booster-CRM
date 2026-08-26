@@ -79,6 +79,7 @@ import {
   syncChannel,
   updateSyncedRecord,
   cancelFulfillmentOrder,
+  listAssets,
 } from "@/lib/api";
 import { useCommerceStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
@@ -1024,6 +1025,57 @@ function Metric({ label, value }) {
       <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
       <p className="mt-1 font-bold">{value}</p>
     </div>
+  );
+}
+
+// Which jars/stickers are running low, right on the main dashboard so it's
+// impossible to miss before it actually runs out. Fetches its own data
+// (rather than riding the big getChannelDashboard payload) since Assets is
+// an independent, newer feature.
+function LowStockAssetsPanel() {
+  const [assets, setAssets] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    listAssets()
+      .then((res) => setAssets(res.assets || []))
+      .catch(() => setAssets([]))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const lowStock = assets
+    .filter((a) => Number(a.currentStock) <= Number(a.lowStockThreshold))
+    .sort((a, b) => Number(a.currentStock) - Number(b.currentStock));
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Packaging — Running Low</CardTitle>
+          <p className="mt-1 text-sm text-[var(--muted)]">Jars, stickers, and other assets at or below their restock threshold.</p>
+        </div>
+        <a href="/panel/assets" className="text-xs font-semibold text-[var(--primary)] hover:underline">Manage assets →</a>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        {isLoading ? (
+          <p className="text-sm text-[var(--muted)]">Loading…</p>
+        ) : !assets.length ? (
+          <p className="text-sm text-[var(--muted)]">No assets tracked yet — add your jars and stickers on the Assets page.</p>
+        ) : !lowStock.length ? (
+          <p className="text-sm text-emerald-700">All packaging stock is above its restock threshold.</p>
+        ) : (
+          lowStock.map((a) => (
+            <div key={a._id || a.id} className="flex items-center justify-between rounded-md border border-rose-100 bg-rose-50/50 px-3 py-2 text-sm">
+              <div>
+                <p className="font-semibold text-slate-800">{a.name}{a.variant ? ` (${a.variant})` : ""}</p>
+                <p className="text-xs text-slate-500">Alert at {a.lowStockThreshold} {a.unit}</p>
+              </div>
+              <Badge tone="rose">{a.currentStock} {a.unit} left</Badge>
+            </div>
+          ))
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -2337,6 +2389,7 @@ export function DashboardView() {
       <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
         <InventoryPanel inventory={inventoryItems} />
         <div className="grid gap-4">
+          <LowStockAssetsPanel />
           <FinancePanel />
           <AutomationPanel />
         </div>

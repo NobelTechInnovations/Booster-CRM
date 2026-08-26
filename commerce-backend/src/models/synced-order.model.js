@@ -114,6 +114,12 @@ const syncedOrderSchema = new mongoose.Schema(
     // here — undefined means nobody has ever set a real figure for this order.
     shippingCostSource: { type: String, enum: ["auto", "manual"] },
 
+    // Set once this order's packaging assets (jars/stickers/etc) have been
+    // deducted from stock, so shipping the same order twice (a retry, a
+    // re-sync) never double-counts the consumption. Never set for orders
+    // that existed before this feature shipped — see deductAssetsForOrder().
+    assetsDeducted: { type: Boolean, default: false },
+
     // Tracking pulled from Shopify's fulfillments (admin-side or another channel/app)
     trackingNumber:  String,
     trackingUrl:     String,

@@ -4,6 +4,7 @@ import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
 import { updateShipmentsByAwb, updateShipmentById, getShipmentByAwb, listShipmentsByIds, markLabelsDownloaded } from "../../repositories/shipment.repo.js";
 import { PDFDocument } from "pdf-lib";
+import { deductAssetsForOrder } from "../../repositories/asset.repo.js";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
 
@@ -161,6 +162,16 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
     // fulfillment system to confirm against — our own record is authoritative.
     await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
     updatedOrder.fulfillmentStatus = "fulfilled";
+  }
+
+  // Packaging assets (jars/stickers/etc) get deducted right here — the real
+  // "this order physically left the building" moment. Best-effort and never
+  // allowed to fail the actual shipment: a missing SKU->asset mapping just
+  // means that line item's consumption isn't tracked yet.
+  try {
+    await deductAssetsForOrder({ companyId, order: updatedOrder });
+  } catch (err) {
+    console.warn(`[Fulfillment] Asset deduction failed for ${order.name}:`, err.message);
   }
 
   return { shipment, order: updatedOrder, shopifyPushError };
