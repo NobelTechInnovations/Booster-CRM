@@ -204,7 +204,7 @@ export function AutomationView() {
   const totalRuns = rules.reduce((sum, r) => sum + (r.runCount || 0), 0);
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="indigo">Automation</Badge>

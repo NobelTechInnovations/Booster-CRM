@@ -36,6 +36,22 @@ const webhookLeadSchema = new mongoose.Schema(
     customerEmail: String,
     customerPhone: String,
     cartValue: Number,
+    // What product(s) the shopper looked at/added — from real cart contents
+    // when available, else parsed from the landing-page URL. The whole point
+    // of this field: know what to talk about on the follow-up call.
+    productInterest: String,
+    landingPageUrl: String,
+    ipAddress: String,
+
+    // IP -> approximate location, resolved lazily (not at webhook-ingest
+    // time — keeps the inbound receiver fast) via a separate geo lookup call.
+    // likelyLanguage is a general-knowledge Indian-state -> language guess,
+    // not a verified fact about this specific person.
+    geoCity: String,
+    geoRegion: String,
+    geoCountry: String,
+    likelyLanguage: String,
+    geoResolvedAt: Date,
 
     eventCount: { type: Number, default: 0 },
     firstEventAt: Date,

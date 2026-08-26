@@ -338,7 +338,7 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
         </button>
         <div className="mx-1 hidden h-8 w-px bg-[var(--line)] sm:block" />
         <div className="hidden items-center gap-2 sm:flex">
-          <div className="grid h-9 w-9 place-items-center rounded-full bg-gradient-to-br from-indigo-600 to-[var(--navy)] text-xs font-bold text-white shadow-sm">
+          <div className="grid h-9 w-9 place-items-center rounded-full bg-[var(--primary)] text-xs font-bold text-white shadow-sm">
             {initials}
           </div>
           <button

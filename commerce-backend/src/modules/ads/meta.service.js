@@ -251,6 +251,65 @@ export async function getMetaAdSpendToday({ companyId, channelId }) {
   return { date: today, spend, currency: channel.external?.adAccountCurrency || "INR" };
 }
 
+/**
+ * Age/gender breakdown of who Meta actually served and converted your ads to
+ * — for ad-targeting decisions (which segment to put more budget behind).
+ * This is Meta's own reported breakdown of ad delivery, not anything derived
+ * from your order/customer data (neither Shopify nor Amazon captures gender
+ * at all, so there's no other real source for this). Live on-demand call,
+ * same "don't write to AdInsight" pattern as getMetaAdSpendToday — this is
+ * a separate breakdown dimension from the per-ad daily sync, not a
+ * duplicate of it.
+ */
+export async function getAdsDemographics({ companyId, channelId, from, to }) {
+  const channel = await getChannelForSync({ channelId, companyId });
+  if (!channel || channel.provider !== "meta") throw new HttpError(404, "Meta Ads channel not found");
+  if (!channel.external?.adAccountId) throw new HttpError(400, "Select a Meta ad account before checking demographics");
+
+  const since = from ? toIsoDay(new Date(from)) : toIsoDay(new Date(Date.now() - 29 * 86400000));
+  const until = to ? toIsoDay(new Date(to)) : toIsoDay(new Date());
+
+  const params = new URLSearchParams({
+    level: "account",
+    breakdowns: "age,gender",
+    time_range: JSON.stringify({ since, until }),
+    fields: "spend,impressions,clicks,actions",
+    limit: "200",
+    access_token: channel.credentials.accessToken,
+  });
+
+  const body = await metaFetch(`${GRAPH_BASE()}/${channel.external.adAccountId}/insights?${params.toString()}`);
+  const rows = (body.data || []).map((row) => {
+    const purchaseAction = (row.actions || []).find((a) => a.action_type === "purchase" || a.action_type === "omni_purchase");
+    return {
+      age: row.age || "unknown",
+      gender: row.gender || "unknown",
+      spend: Number(row.spend || 0),
+      impressions: Number(row.impressions || 0),
+      clicks: Number(row.clicks || 0),
+      purchases: purchaseAction ? Number(purchaseAction.value || 0) : 0,
+    };
+  });
+
+  // Gender-only rollup — the most common "who should we target more" view.
+  const byGender = new Map();
+  for (const row of rows) {
+    const entry = byGender.get(row.gender) || { gender: row.gender, spend: 0, impressions: 0, clicks: 0, purchases: 0 };
+    entry.spend += row.spend;
+    entry.impressions += row.impressions;
+    entry.clicks += row.clicks;
+    entry.purchases += row.purchases;
+    byGender.set(row.gender, entry);
+  }
+
+  return {
+    range: { from: since, to: until },
+    currency: channel.external?.adAccountCurrency || "INR",
+    byAgeGender: rows.sort((a, b) => b.spend - a.spend),
+    byGender: [...byGender.values()].sort((a, b) => b.spend - a.spend),
+  };
+}
+
 // ─── Revenue attribution (UTM match against synced Shopify orders) ─────────
 
 const MAX_ATTRIBUTION_DAY_DRIFT_MS = 3 * 86400000; // Meta's insight date is ad-account-local; order timestamps are UTC.

@@ -68,7 +68,7 @@ export function AuthLayout({ eyebrow, title, text, children }) {
         <div className="w-full max-w-md">
           {/* Mobile logo */}
           <Link href="/" className="mb-8 flex items-center justify-center gap-2.5 lg:hidden">
-            <div className="grid h-9 w-9 place-items-center rounded-xl bg-gradient-to-br from-indigo-600 to-[var(--navy)] text-white">
+            <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--primary)] text-white">
               <Layers3 size={18} />
             </div>
             <span className="text-sm font-bold text-slate-900">Wokbook</span>

@@ -870,7 +870,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Channel Integrations</Badge>
@@ -1857,7 +1857,7 @@ function RecordsModuleView({ name }) {
         : records.filter((record) => !record.email).length;
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{name}</Badge>
@@ -2062,7 +2062,7 @@ function ProductMappingView() {
   const mappedCount = mappings.filter((mapping) => mapping.mappings?.some((entry) => entry.provider === "shopify") && mapping.mappings?.some((entry) => entry.provider === "amazon")).length;
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="amber">Product Mapping</Badge>
@@ -2206,7 +2206,7 @@ export function ModuleView({ name, setActiveView }) {
   if (!page) return null;
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{page.eyebrow}</Badge>
@@ -2283,7 +2283,7 @@ export function DashboardView() {
   const inventoryItems = dashboardData?.inventory || [];
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <div className="flex flex-wrap items-center gap-2">

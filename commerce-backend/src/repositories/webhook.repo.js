@@ -5,6 +5,7 @@ import { WebhookEndpoint } from "../models/webhook-endpoint.model.js";
 import { WebhookEvent } from "../models/webhook-event.model.js";
 import { WebhookLead } from "../models/webhook-lead.model.js";
 import { extractLeadInfo } from "../modules/webhooks/webhook.service.js";
+import { lookupIpGeo, guessLanguage } from "../utils/geo-lookup.js";
 import { memory, id, clone, now } from "./memory-store.js";
 
 // Same Schema.Types.Mixed id-filter fix applied everywhere else in this repo
@@ -140,6 +141,12 @@ async function upsertWebhookLead({ companyId, endpointId, provider, leadKey, typ
     ...(info.email ? { customerEmail: info.email } : {}),
     ...(info.phone ? { customerPhone: info.phone } : {}),
     ...(info.cartValue !== undefined ? { cartValue: info.cartValue } : {}),
+    // productInterest can legitimately change across events for the same
+    // cart (they added a different item), so it's always refreshed to the
+    // latest — same as latestStage. ip/landingPageUrl too.
+    ...(info.productInterest ? { productInterest: info.productInterest } : {}),
+    ...(info.landingPageUrl ? { landingPageUrl: info.landingPageUrl } : {}),
+    ...(info.ip ? { ipAddress: info.ip } : {}),
     lastEventAt: now_,
   };
 
@@ -167,7 +174,7 @@ async function upsertWebhookLead({ companyId, endpointId, provider, leadKey, typ
 
 // ─── Leads (grouped events) ─────────────────────────────────────────────────
 
-export async function listWebhookLeads({ companyId, endpointId, provider, limit = 200 }) {
+export async function listWebhookLeads({ companyId, endpointId, provider, limit = 2000 }) {
   const filter = {
     companyId: mixedIdFilter(companyId),
     ...(endpointId ? { endpointId: mixedIdFilter(endpointId) } : {}),
@@ -198,6 +205,55 @@ export async function getWebhookLead({ companyId, leadId }) {
     if (String(lead._id) === String(leadId) && String(lead.companyId) === String(companyId)) return clone(lead);
   }
   return null;
+}
+
+// Resolves a lead's captured IP to an approximate city/region and a likely
+// follow-up language — lazily, on request, never at webhook-ingest time (an
+// external HTTP call on every inbound webhook would slow down the receiver
+// and risk provider retries). An IP's location doesn't change, so once
+// resolved it's cached on the lead forever — re-fetching would just burn the
+// free geo API's rate limit for the same answer.
+export async function resolveLeadGeo({ companyId, leadId }) {
+  const lead = await getWebhookLead({ companyId, leadId });
+  if (!lead) return null;
+  if (lead.geoResolvedAt) return lead; // already cached
+  if (!lead.ipAddress) return lead; // nothing to resolve
+
+  const geo = await lookupIpGeo(lead.ipAddress);
+  const update = {
+    geoResolvedAt: new Date(),
+    ...(geo ? {
+      geoCity: geo.city,
+      geoRegion: geo.region,
+      geoCountry: geo.country,
+      likelyLanguage: guessLanguage({ country: geo.country, regionCode: geo.regionCode }) || undefined,
+    } : {}),
+  };
+
+  if (isMongoConnected()) {
+    return WebhookLead.findOneAndUpdate({ _id: leadId, companyId: mixedIdFilter(companyId) }, { $set: update }, { new: true }).lean();
+  }
+  const memLead = [...memory.webhookLeads.values()].find((l) => String(l._id) === String(leadId) && String(l.companyId) === String(companyId));
+  if (memLead) Object.assign(memLead, update);
+  return memLead ? clone(memLead) : lead;
+}
+
+// Best-effort batch version for a leads table on screen — resolves whichever
+// of the given leads aren't cached yet, skipping/ignoring individual
+// failures (a bad IP or a rate-limit hit on one lead shouldn't block the
+// rest). Callers should keep the batch small (the leads actually visible),
+// not the entire leads table — see lookupIpGeo's rate-limit note.
+export async function resolveLeadsGeoBulk({ companyId, leadIds }) {
+  const results = await Promise.all(
+    leadIds.map(async (leadId) => {
+      try {
+        return await resolveLeadGeo({ companyId, leadId });
+      } catch (_err) {
+        return null;
+      }
+    }),
+  );
+  return results.filter(Boolean);
 }
 
 // All raw events belonging to one lead's timeline — for the drawer.
@@ -248,7 +304,7 @@ export async function addLeadFollowUp({ companyId, leadId, note, outcome, nextFo
   return null;
 }
 
-export async function listWebhookEvents({ companyId, endpointId, provider, limit = 200 }) {
+export async function listWebhookEvents({ companyId, endpointId, provider, limit = 2000 }) {
   const filter = {
     companyId: mixedIdFilter(companyId),
     ...(endpointId ? { endpointId: mixedIdFilter(endpointId) } : {}),

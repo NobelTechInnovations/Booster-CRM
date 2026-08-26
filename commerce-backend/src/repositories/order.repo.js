@@ -1117,6 +1117,12 @@ export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", 
 
   const productTotals = new Map();
   const channelTotals = new Map();
+  // City/state come straight from each order's real shipping address — the
+  // same field the courier actually ships to — never inferred/guessed.
+  // Grouped case-insensitively since Shopify/Amazon addresses arrive with
+  // inconsistent capitalization ("Mumbai" vs "MUMBAI" vs "mumbai").
+  const cityTotals = new Map();
+  const stateTotals = new Map();
   for (const order of validOrders) {
     for (const item of order.lineItems || []) {
       const key = item.title || item.sku || "Unknown";
@@ -1131,6 +1137,24 @@ export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", 
     channelEntry.revenue += toNumber(order.totalPrice);
     channelEntry.orders += 1;
     channelTotals.set(channelKey, channelEntry);
+
+    const addr = order.shippingAddress || {};
+    const rawCity = String(addr.city || "").trim();
+    const rawState = String(addr.province || "").trim();
+    if (rawCity) {
+      const cityKey = rawCity.toLowerCase();
+      const cityEntry = cityTotals.get(cityKey) || { city: rawCity, province: rawState, revenue: 0, orders: 0 };
+      cityEntry.revenue += toNumber(order.totalPrice);
+      cityEntry.orders += 1;
+      cityTotals.set(cityKey, cityEntry);
+    }
+    if (rawState) {
+      const stateKey = rawState.toLowerCase();
+      const stateEntry = stateTotals.get(stateKey) || { province: rawState, revenue: 0, orders: 0 };
+      stateEntry.revenue += toNumber(order.totalPrice);
+      stateEntry.orders += 1;
+      stateTotals.set(stateKey, stateEntry);
+    }
   }
 
   const topProducts = [...productTotals.values()]
@@ -1138,11 +1162,29 @@ export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", 
     .slice(0, 10)
     .map((product) => ({ ...product, revenue: Math.round(product.revenue) }));
 
+  const topCities = [...cityTotals.values()]
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10)
+    .map((c) => ({ ...c, revenue: Math.round(c.revenue) }));
+
+  const topStates = [...stateTotals.values()]
+    .sort((a, b) => b.revenue - a.revenue)
+    .slice(0, 10)
+    .map((s) => ({ ...s, revenue: Math.round(s.revenue) }));
+
+  const geoTaggedOrders = validOrders.filter((o) => o.shippingAddress?.city || o.shippingAddress?.province).length;
+
   return {
     range: { from: start.toISOString(), to: end.toISOString(), groupBy },
     totals: { currency, revenue: Math.round(revenue), orders: orderCount, aov: Math.round(aov) },
     trend,
     topProducts,
+    topCities,
+    topStates,
+    // So the UI can be honest about coverage — e.g. historical-import orders
+    // sometimes only captured a state, or neither, and that's not the same
+    // as "zero orders from anywhere".
+    geoTaggedOrders,
     channelBreakdown: [...channelTotals.values()].map((channel) => ({ ...channel, revenue: Math.round(channel.revenue) })),
   };
 }

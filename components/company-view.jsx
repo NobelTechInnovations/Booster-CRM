@@ -222,7 +222,7 @@ export function CompanyView({ onCompanyUpdate }) {
               </SectionCard>
 
               {/* Quick facts */}
-              <div className="rounded-xl border border-[var(--line)] bg-gradient-to-br from-indigo-50 to-white p-4">
+              <div className="rounded-xl border border-[var(--line)] bg-[var(--primary-soft)] p-4">
                 <p className="mb-3 text-xs font-bold uppercase tracking-wide text-indigo-700">Workspace summary</p>
                 <dl className="space-y-2 text-sm">
                   {[

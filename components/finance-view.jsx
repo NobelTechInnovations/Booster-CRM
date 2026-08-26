@@ -17,6 +17,7 @@ import {
   MousePointerClick,
   Gauge,
   Layers,
+  MapPin,
   Package,
   Pencil,
   Percent,
@@ -72,6 +73,7 @@ import {
   getFinanceTrend,
   getUnitEconomics,
   getMetaAdSpendToday,
+  getAdsDemographics,
   getSalesAnalytics,
   linkAdProduct,
   listAdsChannels,
@@ -176,12 +178,12 @@ function formatCompact(value) {
 }
 
 const tileAccent = {
-  green: "from-emerald-500 to-emerald-400",
-  amber: "from-amber-500 to-amber-400",
-  rose: "from-rose-500 to-rose-400",
-  blue: "from-blue-500 to-blue-400",
-  indigo: "from-indigo-500 to-indigo-400",
-  slate: "from-slate-400 to-slate-300",
+  green: "bg-emerald-500",
+  amber: "bg-amber-500",
+  rose: "bg-rose-500",
+  blue: "bg-blue-500",
+  indigo: "bg-[var(--primary)]",
+  slate: "bg-slate-300",
 };
 
 const tileIconTone = {
@@ -197,15 +199,15 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc 
   return (
     <Card
       className={cn(
-        "relative overflow-hidden p-4 text-left hover:shadow-[0_1px_2px_rgba(15,23,42,0.04),0_16px_32px_-18px_rgba(15,23,42,0.22)]",
-        onClick && "cursor-pointer transition hover:-translate-y-0.5 hover:border-indigo-200",
+        "relative overflow-hidden p-4 text-left",
+        onClick && "cursor-pointer hover:border-slate-300",
       )}
       onClick={onClick}
       role={onClick ? "button" : undefined}
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => (e.key === "Enter" || e.key === " ") && onClick() : undefined}
     >
-      <div className={cn("absolute inset-x-0 top-0 h-[3px] bg-gradient-to-r", tileAccent[tone] || tileAccent.slate)} />
+      <div className={cn("absolute inset-x-0 top-0 h-[3px]", tileAccent[tone] || tileAccent.slate)} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[13px] font-medium text-[var(--muted)]">{label}</p>
@@ -249,7 +251,7 @@ function RangeControls({ preset, setPreset, custom, setCustom, groupBy, setGroup
             className={cn(
               "h-8 rounded-lg px-2.5 text-xs font-semibold transition-all",
               preset === item.key
-                ? "bg-gradient-to-b from-[#4338ca] to-[var(--primary)] text-white shadow-[0_3px_8px_-2px_rgba(55,48,163,0.55)]"
+                ? "bg-[var(--primary)] text-white"
                 : "text-slate-600 hover:bg-slate-100",
             )}
           >
@@ -776,6 +778,58 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
                     <p className="font-semibold">{channel.orders} orders</p>
                   </div>
                   <p className="font-bold">{formatMoney(channel.revenue, currency)}</p>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Top Cities</CardTitle>
+              <p className="mt-1 text-xs text-[var(--muted)]">
+                {analytics?.geoTaggedOrders ?? 0} of {analytics?.totals?.orders ?? 0} orders in range have a usable shipping city — the rest only captured a raw address string.
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {(analytics?.topCities || []).length === 0 ? (
+              <p className="text-sm text-[var(--muted)]">No city data in this range yet.</p>
+            ) : (
+              analytics.topCities.map((c) => (
+                <div key={c.city} className="flex items-center justify-between rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <MapPin size={14} className="shrink-0 text-[var(--primary)]" />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{c.city}</p>
+                      <p className="text-xs text-[var(--muted)]">{c.province || "—"} · {c.orders} orders</p>
+                    </div>
+                  </div>
+                  <p className="font-bold">{formatMoney(c.revenue, currency)}</p>
+                </div>
+              ))
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle>Top States</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {(analytics?.topStates || []).length === 0 ? (
+              <p className="text-sm text-[var(--muted)]">No state data in this range yet.</p>
+            ) : (
+              analytics.topStates.map((s) => (
+                <div key={s.province} className="flex items-center justify-between rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={14} className="text-[var(--primary)]" />
+                    <p className="font-semibold">{s.province}</p>
+                    <span className="text-xs text-[var(--muted)]">{s.orders} orders</span>
+                  </div>
+                  <p className="font-bold">{formatMoney(s.revenue, currency)}</p>
                 </div>
               ))
             )}
@@ -1639,6 +1693,8 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
   const [linkTarget, setLinkTarget] = useState(null);
   const [todaySpend, setTodaySpend] = useState(null);
   const [checkingToday, setCheckingToday] = useState(false);
+  const [demographics, setDemographics] = useState(null);
+  const [loadingDemographics, setLoadingDemographics] = useState(false);
 
   const channelId = adsChannel?._id || adsChannel?.id;
   const hasAdAccount = Boolean(adsChannel?.external?.adAccountId);
@@ -1707,6 +1763,21 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
     }
   }
 
+  // Meta's own age/gender delivery breakdown for the selected range — live
+  // on demand, nothing written anywhere (same pattern as checkToday above).
+  async function loadDemographics() {
+    setLoadingDemographics(true);
+    setActionError("");
+    try {
+      const result = await getAdsDemographics(channelId, { from: range.from, to: range.to });
+      setDemographics(result);
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setLoadingDemographics(false);
+    }
+  }
+
   async function recompute() {
     setRecomputing(true);
     setActionError("");
@@ -1741,6 +1812,10 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
             <Button variant="secondary" className="h-9" onClick={checkToday} disabled={checkingToday || !hasAdAccount} title="Live look at today's spend so far — doesn't change the official figure">
               <Eye size={14} className={checkingToday ? "animate-pulse" : ""} />
               {checkingToday ? "Checking…" : "Check Today"}
+            </Button>
+            <Button variant="secondary" className="h-9" onClick={loadDemographics} disabled={loadingDemographics || !hasAdAccount} title="Meta's reported age/gender breakdown of who saw/converted your ads">
+              <Users size={14} className={loadingDemographics ? "animate-pulse" : ""} />
+              {loadingDemographics ? "Loading…" : "Demographics"}
             </Button>
             <Button variant="secondary" className="h-9" onClick={recompute} disabled={recomputing}>
               <Link2 size={14} className={recomputing ? "animate-pulse" : ""} />
@@ -1781,6 +1856,65 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
           </div>
         </CardContent>
       </Card>
+
+      {demographics ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Audience Demographics</CardTitle>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                Meta's own reported breakdown of who your ads were served to and converted, {demographics.range?.from} to {demographics.range?.to}. Not derived from your order/customer data — neither Shopify nor Amazon captures gender.
+              </p>
+            </div>
+            <button onClick={() => setDemographics(null)} className="rounded-md p-1.5 text-slate-500 hover:bg-slate-100" aria-label="Close">
+              <X size={18} />
+            </button>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">By Gender</p>
+              <div className="grid gap-2 sm:grid-cols-3">
+                {(demographics.byGender || []).length === 0 ? (
+                  <p className="text-sm text-[var(--muted)]">No delivery data for this range yet.</p>
+                ) : demographics.byGender.map((g) => (
+                  <div key={g.gender} className="rounded-md border border-[var(--line)] px-3 py-2.5">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{g.gender}</p>
+                    <p className="mt-1 text-lg font-bold">{formatMoney(g.spend, demographics.currency)}</p>
+                    <p className="text-xs text-[var(--muted)]">{g.clicks.toLocaleString("en-IN")} clicks · {g.purchases} purchases</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div>
+              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">By Age & Gender</p>
+              <div className="overflow-x-auto rounded-md border border-[var(--line)]">
+                <table className="w-full min-w-[480px] border-collapse text-sm">
+                  <thead>
+                    <tr className="border-b border-[var(--line)] bg-slate-50 text-left text-xs uppercase text-slate-500">
+                      <th className="px-3 py-2 font-semibold">Age</th>
+                      <th className="px-3 py-2 font-semibold">Gender</th>
+                      <th className="px-3 py-2 text-right font-semibold">Spend</th>
+                      <th className="px-3 py-2 text-right font-semibold">Clicks</th>
+                      <th className="px-3 py-2 text-right font-semibold">Purchases</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(demographics.byAgeGender || []).map((row, i) => (
+                      <tr key={i} className="border-b border-slate-100 last:border-0">
+                        <td className="px-3 py-2">{row.age}</td>
+                        <td className="px-3 py-2 capitalize">{row.gender}</td>
+                        <td className="px-3 py-2 text-right font-semibold">{formatMoney(row.spend, demographics.currency)}</td>
+                        <td className="px-3 py-2 text-right">{row.clicks.toLocaleString("en-IN")}</td>
+                        <td className="px-3 py-2 text-right">{row.purchases}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
         <KpiTile
@@ -2020,7 +2154,7 @@ export function FinanceView({ defaultTab = "overview" }) {
   }, [range.from, range.to, groupBy]);
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Finance</Badge>
@@ -2040,7 +2174,7 @@ export function FinanceView({ defaultTab = "overview" }) {
             className={cn(
               "flex h-10 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-all",
               activeTab === tab.key
-                ? "bg-gradient-to-b from-[#4338ca] to-[var(--primary)] text-white shadow-[0_4px_10px_-3px_rgba(55,48,163,0.55)]"
+                ? "bg-[var(--primary)] text-white"
                 : "text-slate-600 hover:bg-slate-100",
             )}
           >

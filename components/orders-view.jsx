@@ -322,7 +322,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
     >
       <div className="w-full max-w-3xl rounded-2xl border border-[var(--line)] bg-white shadow-2xl">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-[var(--line)] bg-gradient-to-r from-[var(--primary-soft)] to-white px-6 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--line)] bg-[var(--primary-soft)] px-6 py-4">
           <div className="flex items-center gap-3">
             <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100">
               <ArrowLeft size={17} />
@@ -757,7 +757,7 @@ export function OrdersView() {
   }, [orders]);
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       {/* Header */}
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>

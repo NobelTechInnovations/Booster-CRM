@@ -45,6 +45,7 @@ import {
   listWebhookLeads,
   getWebhookLeadEvents,
   logWebhookLeadFollowUp,
+  resolveLeadsGeoBulk,
 } from "@/lib/api";
 
 function SectionCard({ icon: Icon, title, desc, children }) {
@@ -310,6 +311,16 @@ const FOLLOW_UP_OUTCOMES = [
 
 const LEAD_STATUS_TONE = { new: "slate", follow_up_scheduled: "amber", converted: "green", no_response: "rose", closed: "slate" };
 
+function leadFollowUpCountdown(date) {
+  const diff = new Date(date) - new Date();
+  if (diff <= 0) return "Overdue";
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `in ${mins}m`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `in ${hrs}h`;
+  return `in ${Math.floor(hrs / 24)}d`;
+}
+
 // Same outcome/status log as the customer follow-up flow — kept identical so
 // a webhook lead and a synced customer read the same way once you're calling them.
 function LogFollowUpModal({ lead, onClose, onLogged }) {
@@ -398,6 +409,15 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
               {lead.cartValue ? <span className="font-semibold text-slate-700">{formatMoney(lead.cartValue)}</span> : null}
               <Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge>
             </div>
+            {lead.productInterest ? (
+              <p className="mt-2 text-xs text-slate-600"><span className="font-semibold text-slate-500">Interested in:</span> {lead.productInterest}</p>
+            ) : null}
+            {(lead.geoCity || lead.geoRegion) ? (
+              <p className="mt-1 text-xs text-slate-600">
+                <span className="font-semibold text-slate-500">Location:</span> {[lead.geoCity, lead.geoRegion].filter(Boolean).join(", ")}
+                {lead.likelyLanguage ? <span className="ml-1.5 font-semibold text-indigo-700">· likely {lead.likelyLanguage}</span> : null}
+              </p>
+            ) : null}
           </div>
           <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
@@ -471,6 +491,8 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
 }
 
 function LeadRow({ lead, onView, onFollowUp }) {
+  const hasGeo = lead.geoResolvedAt && (lead.geoCity || lead.geoRegion);
+  const geoPending = !lead.geoResolvedAt && lead.ipAddress;
   return (
     <tr className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/60" onClick={() => onView(lead)}>
       <td className="py-2.5 pr-3">
@@ -482,12 +504,37 @@ function LeadRow({ lead, onView, onFollowUp }) {
           </div>
         </div>
       </td>
-      <td className="py-2.5 pr-3"><Badge tone="slate">{lead.provider}</Badge></td>
+      <td className="max-w-[220px] py-2.5 pr-3">
+        {lead.productInterest ? (
+          <p className="truncate text-xs font-medium text-slate-700" title={lead.productInterest}>{lead.productInterest}</p>
+        ) : (
+          <span className="text-xs text-slate-300">—</span>
+        )}
+      </td>
+      <td className="py-2.5 pr-3">
+        {hasGeo ? (
+          <div>
+            <p className="text-xs font-medium text-slate-700">{[lead.geoCity, lead.geoRegion].filter(Boolean).join(", ") || "—"}</p>
+            {lead.likelyLanguage ? <Badge tone="indigo" className="mt-1">{lead.likelyLanguage}</Badge> : null}
+          </div>
+        ) : geoPending ? (
+          <span className="text-xs text-slate-400">Locating…</span>
+        ) : (
+          <span className="text-xs text-slate-300">—</span>
+        )}
+      </td>
       <td className="py-2.5 pr-3 text-xs font-medium text-slate-700">{lead.latestStage || lead.latestType}</td>
       <td className="py-2.5 pr-3 text-sm font-semibold text-slate-800">{lead.cartValue ? formatMoney(lead.cartValue) : "—"}</td>
       <td className="py-2.5 pr-3 text-center text-xs font-medium text-slate-500">{lead.eventCount}</td>
       <td className="py-2.5 pr-3 text-xs text-slate-500">{new Date(lead.lastEventAt).toLocaleString("en-IN")}</td>
-      <td className="py-2.5 pr-3"><Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge></td>
+      <td className="py-2.5 pr-3">
+        <Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge>
+        {lead.nextFollowUpAt ? (
+          <p className={cn("mt-1 text-[11px] font-semibold", new Date(lead.nextFollowUpAt) < new Date() ? "text-rose-600" : "text-amber-700")}>
+            {leadFollowUpCountdown(lead.nextFollowUpAt)}
+          </p>
+        ) : null}
+      </td>
       <td className="py-2.5 pr-0 text-right" onClick={(e) => e.stopPropagation()}>
         <button onClick={() => onFollowUp(lead)} className="rounded-md p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700" title="Log follow-up">
           <PhoneCall size={15} />
@@ -538,7 +585,46 @@ function WebhooksTab() {
 
   const verifiedLeads = leads.filter((l) => l.customerPhone);
   const unverifiedLeads = leads.filter((l) => !l.customerPhone);
-  const shownLeads = leadTab === "verified" ? verifiedLeads : unverifiedLeads;
+  // Soonest/overdue first — a logged follow-up is worthless as a reminder if
+  // it's buried at whatever position it happened to sort to in the main list.
+  const followUpLeads = leads
+    .filter((l) => l.nextFollowUpAt)
+    .sort((a, b) => new Date(a.nextFollowUpAt) - new Date(b.nextFollowUpAt));
+  const overdueFollowUpCount = followUpLeads.filter((l) => new Date(l.nextFollowUpAt) < new Date()).length;
+  const shownLeads = leadTab === "verified" ? verifiedLeads : leadTab === "unverified" ? unverifiedLeads : followUpLeads;
+
+  // Auto-locate verified leads (the callable ones) as soon as they load —
+  // "outside the drawer" means this has to just show up, not wait for a
+  // click. Batched in groups of 25 to stay well under the free geo API's
+  // rate limit; once a lead is resolved (success or not) it's marked
+  // geoResolvedAt so this naturally stops re-requesting it.
+  useEffect(() => {
+    const pendingIds = verifiedLeads
+      .filter((l) => l.ipAddress && !l.geoResolvedAt)
+      .map((l) => l._id || l.id);
+    if (!pendingIds.length) return;
+
+    let cancelled = false;
+    async function locateInBatches() {
+      for (let i = 0; i < pendingIds.length; i += 25) {
+        if (cancelled) return;
+        try {
+          const res = await resolveLeadsGeoBulk(pendingIds.slice(i, i + 25));
+          const resolved = res.leads || [];
+          if (cancelled || !resolved.length) continue;
+          setLeads((prev) => prev.map((l) => {
+            const match = resolved.find((r) => String(r._id || r.id) === String(l._id || l.id));
+            return match ? { ...l, ...match } : l;
+          }));
+        } catch (_err) {
+          // best-effort — a failed batch just leaves those rows showing "—"
+        }
+      }
+    }
+    locateInBatches();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [leads]);
 
   return (
     <div className="space-y-5">
@@ -612,22 +698,33 @@ function WebhooksTab() {
             >
               Unverified <span className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[11px] text-slate-600">{unverifiedLeads.length}</span>
             </button>
+            <button
+              onClick={() => setLeadTab("followups")}
+              className={`flex items-center gap-1.5 border-b-2 px-1 pb-2.5 text-sm font-semibold ${leadTab === "followups" ? "border-indigo-600 text-indigo-700" : "border-transparent text-slate-500 hover:text-slate-700"}`}
+            >
+              Follow-ups <span className={cn("rounded-full px-1.5 py-0.5 text-[11px]", overdueFollowUpCount ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600")}>{followUpLeads.length}</span>
+            </button>
           </div>
           <p className="-mt-2 mb-3 text-xs text-[var(--muted)]">
             {leadTab === "verified"
               ? "Has a phone number captured from the webhook event — callable."
-              : "No phone number on the event yet (e.g. a cart still at an early checkout stage) — nothing to call until one comes in."}
+              : leadTab === "unverified"
+              ? "No phone number on the event yet (e.g. a cart still at an early checkout stage) — nothing to call until one comes in."
+              : "Every lead with a follow-up call scheduled, soonest (or most overdue) first."}
           </p>
           {!shownLeads.length ? (
             <p className="py-6 text-center text-sm text-[var(--muted)]">
-              {!leads.length ? "No leads yet — they'll appear here as webhook events come in." : `No ${leadTab} leads.`}
+              {!leads.length ? "No leads yet — they'll appear here as webhook events come in."
+                : leadTab === "followups" ? "No follow-ups scheduled — log one from a lead's timeline."
+                : `No ${leadTab} leads.`}
             </p>
           ) : (
-            <table className="w-full min-w-[820px] border-collapse text-sm">
+            <table className="w-full min-w-[1080px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
                   <th className="py-2.5 pr-3 font-semibold">Customer</th>
-                  <th className="py-2.5 pr-3 font-semibold">Provider</th>
+                  <th className="py-2.5 pr-3 font-semibold">Interested in</th>
+                  <th className="py-2.5 pr-3 font-semibold">Location</th>
                   <th className="py-2.5 pr-3 font-semibold">Stage</th>
                   <th className="py-2.5 pr-3 font-semibold">Cart value</th>
                   <th className="py-2.5 pr-3 text-center font-semibold">Events</th>
@@ -762,7 +859,7 @@ export function SettingsView() {
             className={cn(
               "flex h-10 items-center gap-2 rounded-lg px-3.5 text-sm font-semibold transition-all",
               activeTab === tab.key
-                ? "bg-gradient-to-b from-[#4338ca] to-[var(--primary)] text-white shadow-[0_4px_10px_-3px_rgba(55,48,163,0.55)]"
+                ? "bg-[var(--primary)] text-white"
                 : "text-slate-600 hover:bg-slate-100",
             )}
           >

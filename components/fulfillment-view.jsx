@@ -399,7 +399,7 @@ function CourierSelectModal({
     >
       <div className="bg-white rounded-xl shadow-2xl border border-[var(--line)] w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)] bg-gradient-to-r from-indigo-50 to-white">
+        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)] bg-[var(--primary-soft)]">
           <div className="flex items-center gap-3">
             <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white shrink-0">
               <Truck size={18} />
@@ -778,7 +778,7 @@ export function FulfillmentView() {
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
       {/* Header */}
       <section className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-4">

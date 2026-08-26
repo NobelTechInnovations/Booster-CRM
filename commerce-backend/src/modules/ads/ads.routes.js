@@ -13,6 +13,7 @@ import {
   selectMetaAdAccount,
   syncAdInsights,
   getMetaAdSpendToday,
+  getAdsDemographics,
 } from "./meta.service.js";
 
 export const adsRoutes = Router();
@@ -115,6 +116,22 @@ adsRoutes.get(
   requireAuth,
   asyncHandler(async (req, res) => {
     const result = await getMetaAdSpendToday({ companyId: req.auth.companyId, channelId: req.params.channelId });
+    res.json(result);
+  }),
+);
+
+// Age/gender delivery breakdown — Meta's own reported demographics for who
+// saw/converted the ads, for targeting decisions. Live call, not synced/stored.
+adsRoutes.get(
+  "/:channelId/demographics",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await getAdsDemographics({
+      companyId: req.auth.companyId,
+      channelId: req.params.channelId,
+      from: req.query.from,
+      to: req.query.to,
+    });
     res.json(result);
   }),
 );

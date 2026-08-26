@@ -44,7 +44,48 @@ function safeEqual(a, b) {
 
 function flatten(payload) {
   const p = payload || {};
-  return { ...p, ...(typeof p.data === "object" ? p.data : {}), ...(typeof p.payload === "object" ? p.payload : {}) };
+  return {
+    ...p,
+    ...(typeof p.data === "object" ? p.data : {}),
+    ...(typeof p.payload === "object" ? p.payload : {}),
+    // Fastrr nests the ip/landing-page fields one level down here rather than
+    // at the top level — verified against real payloads (see cart_attributes
+    // .landing_page_url / .ipv4_address on every real event we've received).
+    ...(typeof p.cart_attributes === "object" ? p.cart_attributes : {}),
+  };
+}
+
+// Turns a Shopify product-page URL's slug into a readable title — the only
+// thing we have to go on when the cart itself is empty (shopper hasn't added
+// anything yet, just landed on a product page). "guntur-teekha-lal-mirch-...
+// -250g" -> "Guntur Teekha Lal Mirch ... 250g". Deliberately just a slug
+// humanizer, not a guess at the real product title.
+function humanizeProductSlug(slug) {
+  return slug
+    .split("-")
+    .map((word) => (word.length ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(" ");
+}
+
+// What product(s) the shopper actually seems interested in — for a lead list
+// where "which product" is the whole point of following up. Prefers the real
+// cart contents (item_name_list / items[].name — verified against real Fastrr
+// payloads) since that's literally what's in their cart; falls back to
+// parsing a /products/<slug> URL when the cart is still empty (shopper is
+// just browsing a product page, hasn't added it yet).
+export function extractProductInterest(payload) {
+  const flat = flatten(payload);
+
+  const namesFromList = Array.isArray(flat.item_name_list) ? flat.item_name_list.filter(Boolean) : [];
+  const namesFromItems = Array.isArray(flat.items) ? flat.items.map((item) => item?.name || item?.title).filter(Boolean) : [];
+  const cartNames = [...new Set([...namesFromList, ...namesFromItems])];
+  if (cartNames.length) return cartNames.join(", ");
+
+  const landingUrl = flat.landing_page_url || flat.landing_site || "";
+  const productMatch = String(landingUrl).match(/\/products\/([a-z0-9-]+)/i);
+  if (productMatch) return humanizeProductSlug(productMatch[1]);
+
+  return "";
 }
 
 // Pulls out the customer/cart info common to abandoned-cart style payloads.
@@ -62,7 +103,10 @@ export function extractLeadInfo(provider, payload) {
   const stage = flat.latest_stage || flat.stage || "";
   const cartValueRaw = flat.total_price ?? flat.amount ?? flat.total ?? flat.cart_value;
   const cartValue = cartValueRaw !== undefined ? Number(cartValueRaw) : undefined;
-  return { name, phone, email, stage, cartValue };
+  const ip = flat.ipv4_address || flat.ip_address || flat.ip || "";
+  const landingPageUrl = flat.landing_page_url || flat.landing_site || "";
+  const productInterest = extractProductInterest(payload);
+  return { name, phone, email, stage, cartValue, ip, landingPageUrl, productInterest };
 }
 
 // Groups repeat events from the same underlying lead — a Fastrr cart moving

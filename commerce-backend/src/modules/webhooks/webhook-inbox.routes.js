@@ -15,6 +15,8 @@ import {
   getWebhookLead,
   listEventsForLead,
   addLeadFollowUp,
+  resolveLeadGeo,
+  resolveLeadsGeoBulk,
 } from "../../repositories/webhook.repo.js";
 import { verifyWebhookSignature, extractEventSummary, extractLeadKey } from "./webhook.service.js";
 
@@ -117,6 +119,30 @@ webhookInboxRoutes.get(
     if (!lead) throw new HttpError(404, "Lead not found");
     const events = await listEventsForLead({ companyId: req.auth.companyId, endpointId: lead.endpointId, leadKey: lead.leadKey });
     res.json({ lead, events });
+  }),
+);
+
+// Resolves one lead's captured IP to a city/region + likely follow-up
+// language. Cached on the lead after the first call — see resolveLeadGeo().
+webhookInboxRoutes.post(
+  "/leads/:leadId/resolve-geo",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const lead = await resolveLeadGeo({ companyId: req.auth.companyId, leadId: req.params.leadId });
+    if (!lead) throw new HttpError(404, "Lead not found");
+    res.json({ lead });
+  }),
+);
+
+// Batch version for a leads table on screen — pass only the leads actually
+// visible, not the whole table (see resolveLeadsGeoBulk's rate-limit note).
+webhookInboxRoutes.post(
+  "/leads/resolve-geo-bulk",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const leadIds = Array.isArray(req.body?.leadIds) ? req.body.leadIds.slice(0, 50) : [];
+    const leads = await resolveLeadsGeoBulk({ companyId: req.auth.companyId, leadIds });
+    res.json({ leads });
   }),
 );
 
