@@ -206,7 +206,7 @@ function MappingFormModal({ product, assets, existing, onClose, onSaved }) {
     try {
       const consumes = rows.filter((r) => r.assetId).map((r) => ({ assetId: r.assetId, quantity: Number(r.quantity) || 1 }));
       const res = await saveAssetMapping({
-        sku: product.sku,
+        sku: product.mappingKey,
         productTitle: product.productTitle,
         variantTitle: product.variantTitle,
         consumes,
@@ -226,7 +226,10 @@ function MappingFormModal({ product, assets, existing, onClose, onSaved }) {
         <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
           <div>
             <h2 className="text-base font-bold text-slate-900">What does this consume?</h2>
-            <p className="text-xs text-slate-500">{product.productTitle} {product.variantTitle ? `— ${product.variantTitle}` : ""} · SKU {product.sku}</p>
+            <p className="text-xs text-slate-500">
+              {product.productTitle} {product.variantTitle ? `— ${product.variantTitle}` : ""} ·{" "}
+              {product.hasSku ? `SKU ${product.sku}` : <span className="text-amber-600">No SKU set in Shopify</span>}
+            </p>
           </div>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
@@ -404,17 +407,38 @@ function MappingTab({ assets, mappings, isLoading, onRefresh }) {
 
   const assetById = useMemo(() => new Map(assets.map((a) => [String(a._id || a.id), a])), [assets]);
 
+  // Same "every variant gets a row, even with no real Shopify SKU" rule the
+  // Inventory & Costing page uses — skipping unSKU'd variants here (the
+  // previous behavior) silently dropped products from this list that the
+  // Products/Inventory pages both still show, which read as "not fetching
+  // all products". The synthetic identifier is just a stable mapping key,
+  // not a real SKU — same convention SkuCost already relies on.
   const rows = useMemo(() => {
     const out = [];
     for (const product of products) {
-      const variants = product.variants?.length ? product.variants : [];
+      const variants = product.variants?.length
+        ? product.variants
+        : [{ externalId: product.externalId, title: "Default Title", sku: "" }];
       for (const v of variants) {
-        if (!v.sku) continue; // can't map what has no SKU
-        out.push({ sku: v.sku, productTitle: product.title, variantTitle: v.title === "Default Title" ? "" : v.title });
+        // mappingKey is what's actually saved/looked-up against — real SKU
+        // when Shopify has one set, else a stable synthetic id (same
+        // convention as SkuCost/Inventory & Costing). sku/hasSku are purely
+        // for display, so "no SKU set" reads honestly instead of showing
+        // that synthetic id as if it were a real one.
+        const mappingKey = v.sku || `novar-${v.externalId || product.externalId}`;
+        out.push({
+          mappingKey,
+          sku: v.sku || "",
+          hasSku: Boolean(v.sku),
+          productTitle: product.title,
+          variantTitle: v.title === "Default Title" ? "" : v.title,
+        });
       }
     }
     const q = search.trim().toLowerCase();
-    return q ? out.filter((r) => r.sku.toLowerCase().includes(q) || r.productTitle.toLowerCase().includes(q)) : out;
+    return q
+      ? out.filter((r) => (r.sku || r.mappingKey).toLowerCase().includes(q) || r.productTitle.toLowerCase().includes(q))
+      : out;
   }, [products, search]);
 
   async function removeMapping(sku) {
@@ -443,7 +467,7 @@ function MappingTab({ assets, mappings, isLoading, onRefresh }) {
           {isLoading || loadingProducts ? (
             <TableSkeleton rows={6} cols={4} />
           ) : !rows.length ? (
-            <p className="p-8 text-center text-sm text-[var(--muted)]">No SKU'd products found — set a SKU in Shopify/product mapping first.</p>
+            <p className="p-8 text-center text-sm text-[var(--muted)]">No synced products found yet — sync a channel first.</p>
           ) : !assets.length ? (
             <p className="p-8 text-center text-sm text-[var(--muted)]">Add at least one asset (jar/sticker) first, then come back to map products to it.</p>
           ) : (
@@ -458,14 +482,16 @@ function MappingTab({ assets, mappings, isLoading, onRefresh }) {
               </thead>
               <tbody>
                 {rows.map((row) => {
-                  const mapping = mappingBySku.get(row.sku);
+                  const mapping = mappingBySku.get(row.mappingKey);
                   return (
-                    <tr key={row.sku} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                    <tr key={row.mappingKey} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                       <td className="px-4 py-2.5">
                         <p className="max-w-xs truncate font-semibold text-slate-800">{row.productTitle}</p>
                         {row.variantTitle ? <p className="text-xs text-slate-400">{row.variantTitle}</p> : null}
                       </td>
-                      <td className="px-4 py-2.5 font-mono text-xs text-slate-600">{row.sku}</td>
+                      <td className="px-4 py-2.5 font-mono text-xs text-slate-600">
+                        {row.hasSku ? row.sku : <span className="font-sans italic text-amber-600">No SKU set</span>}
+                      </td>
                       <td className="px-4 py-2.5">
                         {mapping?.consumes?.length ? (
                           <div className="flex flex-wrap gap-1">
@@ -486,7 +512,7 @@ function MappingTab({ assets, mappings, isLoading, onRefresh }) {
                             <Link2 size={14} />
                           </button>
                           {mapping ? (
-                            <button onClick={() => removeMapping(row.sku)} className="rounded-md p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600" title="Remove mapping">
+                            <button onClick={() => removeMapping(row.mappingKey)} className="rounded-md p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-600" title="Remove mapping">
                               <Trash2 size={14} />
                             </button>
                           ) : null}
@@ -505,7 +531,7 @@ function MappingTab({ assets, mappings, isLoading, onRefresh }) {
         <MappingFormModal
           product={mappingTarget}
           assets={assets}
-          existing={mappingBySku.get(mappingTarget.sku)}
+          existing={mappingBySku.get(mappingTarget.mappingKey)}
           onClose={() => setMappingTarget(null)}
           onSaved={onRefresh}
         />
