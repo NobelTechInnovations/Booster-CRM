@@ -21,6 +21,12 @@ const assetSchema = new mongoose.Schema(
     currentStock: { type: Number, default: 0 },
     lowStockThreshold: { type: Number, default: 20 },
 
+    // What one unit of this actually costs you — feeds into real per-order
+    // profit (Dashboard) and per-SKU margin (Inventory & Costing) as
+    // "packaging cost", on top of the SKU's own buying price. 0 until set,
+    // never guessed.
+    unitCost: { type: Number, default: 0 },
+
     notes: { type: String, trim: true },
   },
   { timestamps: true },

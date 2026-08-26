@@ -7,6 +7,7 @@ import { SyncedCustomer } from "../models/synced-customer.model.js";
 import { ProductMapping } from "../models/product-mapping.model.js";
 import { memory, id, clone, now, toDate, toNumber, fullName } from "./memory-store.js";
 import { listSkuCosts } from "./sku-cost.repo.js";
+import { listAssetMappings, listAssets } from "./asset.repo.js";
 
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
@@ -856,8 +857,54 @@ function resolvePeriodRange(period, today) {
   return { start: today, end };
 }
 
+// Real per-order profit — replaces what used to be a flat "totalPrice × 18%"
+// guess everywhere it was shown (this dashboard's trend chart and Recent
+// Orders table). Cost = each line item's SKU buying price (SkuCost) + its
+// mapped packaging cost (Asset unitCost via AssetMapping), both ₹0 until
+// actually set — never a guessed percentage. Same "never fabricate" rule
+// getMfgCostTotal already follows for Finance.
+async function buildOrderCostLookup(companyId) {
+  const [skuCosts, assetMappings, assets] = await Promise.all([
+    listSkuCosts(companyId),
+    listAssetMappings(companyId),
+    listAssets(companyId),
+  ]);
+
+  const buyingPriceBySku = new Map(skuCosts.map((c) => [c.sku, toNumber(c.buyingPrice)]));
+  const assetCostById = new Map(assets.map((a) => [String(a._id || a.id), toNumber(a.unitCost)]));
+  const packagingCostBySku = new Map();
+  for (const mapping of assetMappings) {
+    const cost = (mapping.consumes || []).reduce(
+      (sum, c) => sum + (assetCostById.get(String(c.assetId)) || 0) * toNumber(c.quantity),
+      0,
+    );
+    packagingCostBySku.set(mapping.sku, cost);
+  }
+
+  return { buyingPriceBySku, packagingCostBySku };
+}
+
+// Cost only counts for line items with a real Shopify SKU — items without
+// one (synthetic "novar-..." identifiers used elsewhere for costing) can't
+// be matched from an order's own line-item data, same limitation
+// getMfgCostTotal already has. Uncosted items contribute ₹0 cost, same as
+// there — this can overstate profit for products you haven't priced yet,
+// never understate it with a guess.
+function computeOrderCost(order, { buyingPriceBySku, packagingCostBySku }) {
+  let cost = 0;
+  for (const item of order.lineItems || []) {
+    if (!item.sku) continue;
+    const qty = toNumber(item.quantity) || 1;
+    cost += ((buyingPriceBySku.get(item.sku) || 0) + (packagingCostBySku.get(item.sku) || 0)) * qty;
+  }
+  return cost;
+}
+
 export async function getDashboardSummary(companyId, { period } = {}) {
-  const { orders, products, customers, channels } = await getSavedCommerceData(companyId);
+  const [{ orders, products, customers, channels }, costLookup] = await Promise.all([
+    getSavedCommerceData(companyId),
+    buildOrderCostLookup(companyId),
+  ]);
   const today = startOfDay(new Date());
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
@@ -912,13 +959,14 @@ export async function getDashboardSummary(companyId, { period } = {}) {
       return d >= bucketStart && d <= bucketEnd;
     });
     const sales = bucketOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0);
+    const bucketCost = bucketOrders.reduce((total, order) => total + computeOrderCost(order, costLookup), 0);
 
     return {
       day: useWeeklyBuckets
         ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(bucketStart)
         : (trendDays <= 7 ? dayLabel(bucketStart) : new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short" }).format(bucketStart)),
       sales,
-      profit: Math.round(sales * 0.18),
+      profit: Math.round(sales - bucketCost),
       orders: bucketOrders.length,
     };
   });
@@ -993,7 +1041,7 @@ export async function getDashboardSummary(companyId, { period } = {}) {
       payment: order.financialStatus || "unknown",
       courier: order.fulfillmentStatus === "fulfilled" ? "Fulfilled" : "Pending",
       total: formatMoney(order.totalPrice, order.currency || currency),
-      profit: formatMoney(toNumber(order.totalPrice) * 0.18, order.currency || currency),
+      profit: formatMoney(toNumber(order.totalPrice) - computeOrderCost(order, costLookup), order.currency || currency),
     })),
     inventory: products.slice(0, 8).map((product) => ({
       sku: product.variants?.find((variant) => variant.sku)?.sku || product.handle || product.externalId,

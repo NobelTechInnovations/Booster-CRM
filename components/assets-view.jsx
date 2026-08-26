@@ -19,7 +19,7 @@ import {
   deleteAssetMapping,
   listSyncedRecords,
 } from "@/lib/api";
-import { cn } from "@/lib/utils";
+import { cn, formatMoney } from "@/lib/utils";
 
 const CATEGORY_LABEL = { jar: "Jar", sticker: "Sticker", other: "Other" };
 const CATEGORY_TONE = { jar: "blue", sticker: "indigo", other: "slate" };
@@ -34,6 +34,7 @@ function AssetFormModal({ initial, onClose, onSaved }) {
     unit: initial?.unit || "pcs",
     currentStock: initial?.currentStock ?? 0,
     lowStockThreshold: initial?.lowStockThreshold ?? 20,
+    unitCost: initial?.unitCost ?? 0,
     notes: initial?.notes || "",
   });
   const [saving, setSaving] = useState(false);
@@ -110,6 +111,12 @@ function AssetFormModal({ initial, onClose, onSaved }) {
                 className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--primary)]" />
             </label>
           </div>
+          <label className="block text-sm font-semibold text-slate-700">
+            Cost per unit (₹)
+            <input type="number" min="0" step="0.01" value={form.unitCost} onChange={(e) => setField("unitCost", e.target.value)} placeholder="e.g. 3.50"
+              className="mt-1 h-9 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--primary-soft)]" />
+            <span className="mt-1 block text-xs font-normal text-slate-400">Feeds real per-order profit and packaging cost in Inventory & Costing — leave 0 if you haven't priced it yet.</span>
+          </label>
           {initial ? (
             <p className="rounded-md bg-slate-50 px-3 py-2 text-xs text-slate-500">
               Use the +/− buttons on the row to change stock (restock or correction) — editing here won't touch the count.
@@ -333,6 +340,7 @@ function AssetsTab({ assets, isLoading, onRefresh }) {
                   <th className="px-4 py-2.5 font-semibold">Category</th>
                   <th className="px-4 py-2.5 text-right font-semibold">Stock</th>
                   <th className="px-4 py-2.5 text-right font-semibold">Alert at</th>
+                  <th className="px-4 py-2.5 text-right font-semibold">Cost/unit</th>
                   <th className="px-4 py-2.5 font-semibold" />
                 </tr>
               </thead>
@@ -352,6 +360,13 @@ function AssetsTab({ assets, isLoading, onRefresh }) {
                         {low ? <Badge tone="rose" className="ml-2">Low</Badge> : null}
                       </td>
                       <td className="px-4 py-2.5 text-right text-slate-500">{a.lowStockThreshold}</td>
+                      <td className="px-4 py-2.5 text-right">
+                        {Number(a.unitCost) > 0 ? (
+                          <span className="font-semibold text-slate-700">{formatMoney(a.unitCost)}</span>
+                        ) : (
+                          <span className="text-xs text-amber-600">Not set</span>
+                        )}
+                      </td>
                       <td className="px-4 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-1">
                           <button onClick={() => setAdjustingAsset(a)} className="rounded-md p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-[var(--primary)]" title="Restock / adjust">
@@ -477,6 +492,7 @@ function MappingTab({ assets, mappings, isLoading, onRefresh }) {
                   <th className="px-4 py-2.5 font-semibold">Product</th>
                   <th className="px-4 py-2.5 font-semibold">SKU</th>
                   <th className="px-4 py-2.5 font-semibold">Consumes</th>
+                  <th className="px-4 py-2.5 text-right font-semibold">Packaging cost</th>
                   <th className="px-4 py-2.5 font-semibold" />
                 </tr>
               </thead>
@@ -504,6 +520,21 @@ function MappingTab({ assets, mappings, isLoading, onRefresh }) {
                           </div>
                         ) : (
                           <span className="text-xs text-slate-300">Not mapped</span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2.5 text-right">
+                        {mapping?.consumes?.length ? (
+                          (() => {
+                            const total = mapping.consumes.reduce((sum, c) => sum + (Number(assetById.get(String(c.assetId))?.unitCost) || 0) * Number(c.quantity || 0), 0);
+                            const allCosted = mapping.consumes.every((c) => Number(assetById.get(String(c.assetId))?.unitCost) > 0);
+                            return total > 0 ? (
+                              <span className="font-semibold text-slate-700">{formatMoney(total)}{!allCosted ? <span className="ml-1 text-[10px] font-normal text-amber-600">(partial)</span> : null}</span>
+                            ) : (
+                              <span className="text-xs text-amber-600">Set asset cost</span>
+                            );
+                          })()
+                        ) : (
+                          <span className="text-xs text-slate-300">—</span>
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">

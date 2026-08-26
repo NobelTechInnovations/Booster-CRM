@@ -316,7 +316,7 @@ function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderC
         <CardHeader>
           <div>
             <CardTitle>Sales, Profit, Orders</CardTitle>
-            <p className="mt-1 text-sm text-[var(--muted)]">Daily operating pulse across connected channels.</p>
+            <p className="mt-1 text-sm text-[var(--muted)]">Daily operating pulse across connected channels. Profit = revenue − known SKU buying price − known packaging cost — set both in Inventory & Costing / Assets for an accurate line.</p>
           </div>
           <Badge tone="indigo">{PERIOD_LABELS[period] || "Today"}: {formatPeriodMoney(periodSales)} · {periodOrderCount || 0} orders</Badge>
         </CardHeader>
@@ -945,7 +945,9 @@ function OrdersPanel({ orders }) {
       <CardHeader>
         <div>
           <CardTitle>Central Order Panel</CardTitle>
-          <p className="mt-1 text-sm text-[var(--muted)]">Confirm, pack, ship, cancel, return, refund, exchange.</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">
+            Confirm, pack, ship, cancel, return, refund, exchange. Profit = order total − (SKU buying price + mapped packaging cost) — ₹0 for either where you haven&apos;t set a cost yet, so it reads high until you do, never guessed.
+          </p>
         </div>
         <Button>
           <Sparkles size={16} />

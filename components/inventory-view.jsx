@@ -16,7 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { KpiRowSkeleton, TableSkeleton } from "@/components/ui/skeleton";
-import { listSyncedRecords, listSkuCosts, saveSkuCost } from "@/lib/api";
+import { listSyncedRecords, listSkuCosts, saveSkuCost, listAssetMappings, listAssets } from "@/lib/api";
 
 function money(n) {
   const v = Number(n || 0);
@@ -80,6 +80,8 @@ function CostCell({ value, onSave, prefix = "₹" }) {
 export function InventoryView() {
   const [products, setProducts] = useState([]);
   const [costs, setCosts] = useState({}); // sku -> costRecord
+  const [assetMappings, setAssetMappings] = useState([]);
+  const [assets, setAssets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -89,14 +91,18 @@ export function InventoryView() {
     setIsLoading(true);
     setError("");
     try {
-      const [prodRes, costRes] = await Promise.all([
+      const [prodRes, costRes, mappingRes, assetRes] = await Promise.all([
         listSyncedRecords("products"),
         listSkuCosts().catch(() => ({ costs: [] })),
+        listAssetMappings().catch(() => ({ mappings: [] })),
+        listAssets().catch(() => ({ assets: [] })),
       ]);
       setProducts(prodRes.records || []);
       const costMap = {};
       for (const c of costRes.costs || []) costMap[c.sku] = c;
       setCosts(costMap);
+      setAssetMappings(mappingRes.mappings || []);
+      setAssets(assetRes.assets || []);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -105,6 +111,19 @@ export function InventoryView() {
   }
 
   useEffect(() => { loadData(); }, []);
+
+  // Same "unitCost per asset, summed across whatever a SKU consumes"
+  // calculation the Assets page itself shows — kept in sync by reading the
+  // same two collections, not a separately-maintained number.
+  const packagingCostByIdentifier = useMemo(() => {
+    const assetCostById = new Map(assets.map((a) => [String(a._id || a.id), Number(a.unitCost || 0)]));
+    const map = new Map();
+    for (const mapping of assetMappings) {
+      const total = (mapping.consumes || []).reduce((sum, c) => sum + (assetCostById.get(String(c.assetId)) || 0) * Number(c.quantity || 0), 0);
+      map.set(mapping.sku, total);
+    }
+    return map;
+  }, [assetMappings, assets]);
 
   // Flatten products -> one row per variant. Every variant gets its own costable
   // row, even ones with no SKU set in Shopify — a synthetic identifier keeps
@@ -120,9 +139,11 @@ export function InventoryView() {
         const cost = costs[identifier] || {};
         const sellingPrice = Number(v.price || 0);
         const buyingPrice = Number(cost.buyingPrice || 0);
+        const packagingCost = packagingCostByIdentifier.get(identifier) || 0;
+        const totalCost = buyingPrice + packagingCost;
         const mrp = Number(cost.mrp || 0);
         const weightGrams = Number(cost.weightGrams || 0);
-        const margin = sellingPrice - buyingPrice;
+        const margin = sellingPrice - totalCost;
         const marginPercent = sellingPrice > 0 ? (margin / sellingPrice) * 100 : 0;
         out.push({
           key: `${product.externalId}::${v.externalId || identifier}`,
@@ -134,16 +155,19 @@ export function InventoryView() {
           sellingPrice,
           inventoryQuantity: Number(v.inventoryQuantity || 0),
           buyingPrice,
+          packagingCost,
+          totalCost,
           mrp,
           weightGrams,
           margin,
           marginPercent,
           hasCost: Boolean(cost.buyingPrice || cost.mrp),
+          hasPackagingMapping: assetMappings.some((m) => m.sku === identifier && m.consumes?.length),
         });
       }
     }
     return out;
-  }, [products, costs]);
+  }, [products, costs, packagingCostByIdentifier, assetMappings]);
 
   const filteredRows = useMemo(() => {
     let list = rows;
@@ -184,8 +208,10 @@ export function InventoryView() {
         <Badge tone="indigo">Stock Control</Badge>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Inventory & Costing</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
-          Live stock synced from Shopify, plus per-variant buying price and MRP to track real margin. Shipping cost
-          isn&rsquo;t fixed here since it varies by destination and weight — check live courier rates from Fulfillment instead.
+          Live stock synced from Shopify, plus per-variant buying price and MRP to track real margin. Packaging cost (jars, stickers) is set
+          per-asset in Assets and pulled in here automatically via the product mapping — margin below is selling price minus buying price
+          and packaging cost combined. Shipping cost isn&rsquo;t fixed here since it varies by destination and weight — check live
+          courier rates from Fulfillment instead.
         </p>
       </section>
 
@@ -289,6 +315,7 @@ export function InventoryView() {
                   <th className="py-3 px-3 font-semibold text-right">Selling Price</th>
                   <th className="py-3 px-3 font-semibold text-right">MRP</th>
                   <th className="py-3 px-3 font-semibold text-right">Buying Price</th>
+                  <th className="py-3 px-3 font-semibold text-right">Packaging Cost</th>
                   <th className="py-3 px-3 font-semibold text-right">Weight (g)</th>
                   <th className="py-3 pl-3 pr-4 font-semibold text-right">Margin</th>
                 </tr>
@@ -314,6 +341,15 @@ export function InventoryView() {
                     </td>
                     <td className="py-3 px-3 text-right">
                       <CostCell value={row.buyingPrice} onSave={(v) => updateCost(row, "buyingPrice", v)} />
+                    </td>
+                    <td className="py-3 px-3 text-right">
+                      {row.hasPackagingMapping ? (
+                        <span className={row.packagingCost > 0 ? "font-semibold text-slate-700" : "text-xs text-amber-600"}>
+                          {row.packagingCost > 0 ? money(row.packagingCost) : "Set asset cost"}
+                        </span>
+                      ) : (
+                        <a href="/panel/assets" className="text-xs text-slate-400 hover:text-[var(--primary)] hover:underline">Map in Assets →</a>
+                      )}
                     </td>
                     <td className="py-3 px-3 text-right">
                       <CostCell value={row.weightGrams} onSave={(v) => updateCost(row, "weightGrams", v)} prefix="g" />

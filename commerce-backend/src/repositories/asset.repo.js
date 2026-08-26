@@ -13,6 +13,7 @@ function cleanAssetPayload(payload = {}) {
     variant: String(payload.variant || "").trim(),
     unit: String(payload.unit || "pcs").trim() || "pcs",
     lowStockThreshold: toNumber(payload.lowStockThreshold ?? 20),
+    unitCost: toNumber(payload.unitCost ?? 0),
     notes: String(payload.notes || "").trim(),
   };
 }
