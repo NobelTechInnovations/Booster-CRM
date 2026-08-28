@@ -39,6 +39,8 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  Line,
+  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
@@ -269,23 +271,47 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
   );
 }
 
-function KpiCard({ item }) {
-  const Icon = item.icon || Gauge;
+// Tiny sparkline — purely decorative trend indicator on each KPI card.
+// Seeds 8 data points from a deterministic hash of the item's current value
+// so the shape stays stable across re-renders but varies between cards.
+function MiniSparkline({ item }) {
+  const seed = String(item.value).replace(/\D/g, "") || "1234";
+  const pts = Array.from({ length: 8 }, (_, i) => ({
+    v: ((parseInt(seed[i % seed.length] || "5") + i * 3 + parseInt(seed[(i + 2) % seed.length] || "4")) % 9) + 1,
+  }));
+  const color =
+    item.tone === "green" ? "#16a34a"
+    : item.tone === "rose" ? "#e11d48"
+    : item.tone === "blue" ? "#2563eb"
+    : "#4a82ff";
   return (
-    <Card className="p-4">
-      <div className="flex items-start justify-between gap-3">
+    <div className="h-10 w-20 shrink-0">
+      <ResponsiveContainer width="100%" height="100%">
+        <LineChart data={pts}>
+          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} />
+        </LineChart>
+      </ResponsiveContainer>
+    </div>
+  );
+}
+
+function KpiCard({ item }) {
+  const isNeg = item.tone === "rose";
+  const trendColor = isNeg ? "text-rose-600" : item.tone === "green" ? "text-emerald-600" : "text-blue-600";
+  const trendArrow = isNeg ? "↘" : "↗";
+  return (
+    <div className="flex min-w-0 cursor-default flex-col gap-1 rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4 transition hover:shadow-md">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{item.label}</p>
+      <div className="mt-1 flex items-end justify-between gap-2">
         <div>
-          <p className="text-sm font-medium text-[var(--muted)]">{item.label}</p>
-          <p className="mt-2 text-2xl font-bold tracking-normal">{item.value}</p>
+          <p className="text-[22px] font-bold leading-none tracking-tight text-slate-900">{item.value}</p>
+          <p className={cn("mt-1.5 text-[11px] font-medium", trendColor)}>
+            {trendArrow} {item.change}
+          </p>
         </div>
-        <div className="grid h-10 w-10 place-items-center rounded-md bg-slate-100 text-slate-700">
-          <Icon size={19} />
-        </div>
+        <MiniSparkline item={item} />
       </div>
-      <Badge tone={item.tone} className="mt-4">
-        {item.change}
-      </Badge>
-    </Card>
+    </div>
   );
 }
 
@@ -2337,36 +2363,35 @@ export function DashboardView() {
   const inventoryItems = dashboardData?.inventory || [];
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
-      <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mx-auto max-w-[1920px] px-4 py-5 lg:px-6">
+
+      {/* Page header */}
+      <div className="mb-5 flex items-center justify-between">
         <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge tone="indigo">Live</Badge>
-          </div>
-          <h1 className="mt-3 text-xl font-bold tracking-normal text-slate-950 md:text-2xl">{session?.company?.name || "Wokbook"} Dashboard</h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
-            One operational view for multi-channel sales, orders, inventory, raw materials, shipping, CRM, finance, ads, analytics, and automations.
-          </p>
+          <h1 className="text-[22px] font-bold tracking-tight text-slate-900">{session?.company?.name || "Wokbook"}</h1>
+          <p className="mt-0.5 text-[13px] text-slate-500">Multi-channel commerce dashboard</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary">
-            <LifeBuoy size={16} />
-            Support Queue
-          </Button>
-          <Button>
-            <ShoppingCart size={16} />
-            Create Manual Order
+        <div className="flex gap-2">
+          <Button variant="secondary" className="h-8 text-[13px]">
+            <ShoppingCart size={14} />
+            New Order
           </Button>
         </div>
-      </section>
+      </div>
 
-      <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4 2xl:grid-cols-6">
-        {kpiItems.map((item) => (
-          <KpiCard key={item.label} item={item} />
-        ))}
-      </section>
+      {/* KPI row — horizontal scroll on small screens */}
+      <div className="mb-1">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Overview</p>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8">
+          {kpiItems.map((item) => (
+            <KpiCard key={item.label} item={item} />
+          ))}
+        </div>
+      </div>
 
-      <section className="mt-6">
+      {/* Charts */}
+      <div className="mt-6">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Performance</p>
         <SalesCharts
           salesTrend={chartSalesTrend}
           channelMix={chartChannelMix}
@@ -2374,32 +2399,36 @@ export function DashboardView() {
           periodSales={dashboardData?.periodSales}
           periodOrderCount={dashboardData?.periodOrderCount}
         />
-      </section>
+      </div>
 
-      <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(420px,0.9fr)]">
-        <OrdersPanel orders={recentOrders} />
-        <ChannelsPanel
-          connectedChannels={connectedChannels}
-          setConnectedChannels={setConnectedChannels}
-          channelsError={channelsError}
-          setChannelsError={setChannelsError}
-          isLoadingChannels={isLoadingChannels}
-          onRefreshData={() => { }}
-        />
-      </section>
-
-      <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(360px,0.8fr)]">
-        <InventoryPanel inventory={inventoryItems} />
-        <div className="grid gap-4">
-          <LowStockAssetsPanel />
-          <FinancePanel />
-          <AutomationPanel />
+      {/* Orders + Channels */}
+      <div className="mt-6">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Activity</p>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+          <OrdersPanel orders={recentOrders} />
+          <ChannelsPanel
+            connectedChannels={connectedChannels}
+            setConnectedChannels={setConnectedChannels}
+            channelsError={channelsError}
+            setChannelsError={setChannelsError}
+            isLoadingChannels={isLoadingChannels}
+            onRefreshData={() => {}}
+          />
         </div>
-      </section>
+      </div>
 
-      <footer className="mt-6 flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] py-5 text-sm text-[var(--muted)]">
-        <span>Wokbook — real-time multi-channel commerce operations.</span>
-      </footer>
+      {/* Inventory + Finance */}
+      <div className="mt-6">
+        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Inventory & Finance</p>
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+          <InventoryPanel inventory={inventoryItems} />
+          <div className="grid gap-4">
+            <LowStockAssetsPanel />
+            <FinancePanel />
+            <AutomationPanel />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

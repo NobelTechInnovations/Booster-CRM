@@ -31,13 +31,13 @@
 
 :root {
   color-scheme: light;
-  /* Flat blue theme */
-  --background: #f4f6fa;
-  --foreground: #101728;
-  --muted: #5b6577;
-  --line: #e2e5ec;
+  /* Brandstack-matched theme — light background, white cards, crisp borders */
+  --background: #f1f3f7;
+  --foreground: #0d1524;
+  --muted: #637083;
+  --line: #e3e6ed;
   --panel: #ffffff;
-  --panel-soft: #f7f8fc;
+  --panel-soft: #f6f8fb;
   --navy: #172f6b;
   --navy-soft: #1e3d8c;
   --primary: #4a82ff;
@@ -48,9 +48,7 @@
   --amber: #d97706;
   --green: #16a34a;
   --rose: #e11d48;
-  /* One thin, flat shadow — not the two-layer soft-glow stack this used to
-     be. Less shadow everywhere, per the flat/reference-matched direction. */
-  --shadow: 0 1px 2px rgb(15 23 42 / 0.05);
+  --shadow: 0 1px 3px rgb(15 23 42 / 0.06), 0 1px 2px rgb(15 23 42 / 0.04);
 }
 
 * {

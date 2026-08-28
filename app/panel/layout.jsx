@@ -10,12 +10,10 @@ import {
   Bell,
   Building2,
   ChevronDown,
-  ChevronRight,
   Layers3,
   LogOut,
   Menu,
   RefreshCw,
-  Search,
   X,
   Gauge,
   PackageCheck,
@@ -33,8 +31,10 @@ import {
   BarChart2,
   ClipboardList,
   Settings,
+  Sparkles,
+  Check,
+  Plus,
 } from "lucide-react";
-import { Button } from "@/components/ui/button";
 import {
   clearSession,
   getSession,
@@ -47,181 +47,97 @@ import {
 } from "@/lib/api";
 import { useCommerceStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
-import { Plus, Check } from "lucide-react";
 
-// Grouped sidebar navigation — top-level groups expand/collapse; single items
-// navigate directly. A group is active when any of its children is the current page.
+// ─── Navigation structure ─────────────────────────────────────────────────────
+// Each group either has a direct href (single) or children (group).
+// Children are shown as a horizontal sub-nav at the top of the content area.
+
 const NAV_GROUPS = [
-  { label: "Dashboard", icon: Gauge, href: "/panel", single: true },
-  {
-    label: "Orders",
-    icon: ShoppingCart,
-    children: [
-      { label: "Orders", icon: ShoppingCart, href: "/panel/orders" },
-      { label: "Fulfillment", icon: PackageCheck, href: "/panel/fulfillment" },
-      { label: "Customers", icon: UserRound, href: "/panel/customers" },
-    ],
-  },
-  {
-    label: "Products",
-    icon: Package,
-    children: [
-      { label: "Products", icon: Package, href: "/panel/products" },
-      { label: "Product Mapping", icon: Workflow, href: "/panel/product-mapping" },
-      { label: "Inventory", icon: Boxes, href: "/panel/inventory" },
-      { label: "Assets & Stock", icon: Package2, href: "/panel/assets" },
-    ],
-  },
-  {
-    label: "Finance",
-    icon: CircleDollarSign,
-    children: [
-      { label: "Overview", icon: CircleDollarSign, href: "/panel/finance" },
-      { label: "Ads & ROAS", icon: Activity, href: "/panel/ads" },
-      { label: "Analytics", icon: BarChart2, href: "/panel/finance?tab=sales" },
-    ],
-  },
-  {
-    label: "Channels",
-    icon: PlugZap,
-    children: [
-      { label: "Sales Channels", icon: PlugZap, href: "/panel/channels" },
-      { label: "Shipping Partners", icon: Truck, href: "/panel/shipping" },
-    ],
-  },
-  {
-    label: "Admin",
-    icon: Building2,
-    children: [
-      { label: "Company", icon: Building2, href: "/panel/company" },
-      { label: "Users", icon: Users, href: "/panel/users" },
-      { label: "Automation", icon: Workflow, href: "/panel/automation" },
-      { label: "Reports", icon: ClipboardList, href: "/panel/reports" },
-    ],
-  },
-  { label: "Settings", icon: Settings, href: "/panel/settings", single: true },
+  { label: "Dashboard",  icon: Gauge,           href: "/panel",            single: true },
+  { label: "Orders",     icon: ShoppingCart,    href: "/panel/orders",     children: [
+    { label: "Orders",      icon: ShoppingCart,  href: "/panel/orders" },
+    { label: "Fulfillment", icon: PackageCheck,  href: "/panel/fulfillment" },
+    { label: "Customers",   icon: UserRound,     href: "/panel/customers" },
+  ]},
+  { label: "Products",   icon: Package,         href: "/panel/products",   children: [
+    { label: "Products",        icon: Package,   href: "/panel/products" },
+    { label: "Product Mapping", icon: Workflow,  href: "/panel/product-mapping" },
+    { label: "Inventory",       icon: Boxes,     href: "/panel/inventory" },
+    { label: "Assets & Stock",  icon: Package2,  href: "/panel/assets" },
+  ]},
+  { label: "Finance",    icon: CircleDollarSign, href: "/panel/finance",   children: [
+    { label: "Overview",    icon: CircleDollarSign, href: "/panel/finance" },
+    { label: "Ads & ROAS",  icon: Activity,         href: "/panel/ads" },
+    { label: "Analytics",   icon: BarChart2,         href: "/panel/finance?tab=sales" },
+  ]},
+  { label: "Channels",   icon: PlugZap,         href: "/panel/channels",   children: [
+    { label: "Sales Channels",    icon: PlugZap, href: "/panel/channels" },
+    { label: "Shipping Partners", icon: Truck,   href: "/panel/shipping" },
+  ]},
+  { label: "Admin",      icon: Building2,       href: "/panel/company",    children: [
+    { label: "Company",    icon: Building2,    href: "/panel/company" },
+    { label: "Users",      icon: Users,        href: "/panel/users" },
+    { label: "Automation", icon: Workflow,      href: "/panel/automation" },
+    { label: "Reports",    icon: ClipboardList, href: "/panel/reports" },
+  ]},
+  { label: "Settings",   icon: Settings,        href: "/panel/settings",   single: true },
 ];
 
-// Minimal icon rail (no visible labels — matches the compact enterprise
-// dashboard reference), with a floating label on hover so every item stays
-// identifiable without adding visual weight. Mobile keeps a slide-in drawer
-// with labels shown, since a pure icon rail doesn't work well touch-first.
-
-function NavGroup({ group, pathname, onClose }) {
-  // A group is "active" when the current path is one of its children.
-  const childPaths = (group.children || []).map((c) => c.href.split("?")[0]);
-  const isGroupActive = childPaths.some((p) => pathname === p || (p !== "/panel" && pathname?.startsWith(p)));
-
-  // Auto-open the group when it contains the current page; otherwise closed.
-  const [open, setOpen] = useState(isGroupActive);
-
-  // Single top-level links (Dashboard, Settings) — no dropdown.
-  if (group.single) {
-    const isActive = pathname === group.href || (group.href !== "/panel" && pathname?.startsWith(group.href));
-    return (
-      <Link
-        href={group.href}
-        onClick={onClose}
-        className={cn(
-          "mb-0.5 flex h-9 w-full items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors",
-          isActive ? "bg-[var(--primary-soft)] text-[var(--primary)]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
-        )}
-      >
-        <group.icon size={18} strokeWidth={isActive ? 2.25 : 1.9} className="shrink-0" />
-        <span className="whitespace-nowrap lg:hidden lg:group-hover/rail:inline">{group.label}</span>
-      </Link>
-    );
+// Returns the active NAV_GROUP based on the current pathname
+function getActiveGroup(pathname) {
+  for (const group of NAV_GROUPS) {
+    if (group.single) {
+      if (pathname === group.href || (group.href !== "/panel" && pathname?.startsWith(group.href))) return null;
+      continue;
+    }
+    const isActive = group.children?.some((c) => {
+      const base = c.href.split("?")[0];
+      return pathname === base || (base !== "/panel" && pathname?.startsWith(base));
+    });
+    if (isActive) return group;
   }
+  return null;
+}
+
+// ─── Sub-nav bar ─────────────────────────────────────────────────────────────
+// Horizontal tabs shown at top of content when current page is in a group.
+
+function SubNavBar({ pathname }) {
+  const group = getActiveGroup(pathname);
+  if (!group?.children?.length) return null;
 
   return (
-    <div className="mb-0.5">
-      {/* Group header — clicking opens/closes the children list */}
-      <button
-        onClick={() => setOpen((v) => !v)}
-        className={cn(
-          "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors",
-          isGroupActive ? "text-[var(--primary)]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
-        )}
-      >
-        <group.icon size={18} strokeWidth={isGroupActive ? 2.25 : 1.9} className="shrink-0" />
-        <span className="flex flex-1 items-center justify-between whitespace-nowrap lg:hidden lg:group-hover/rail:flex">
-          {group.label}
-          <ChevronDown size={14} className={cn("ml-1 transition-transform text-slate-400", open && "rotate-180")} />
-        </span>
-      </button>
-      {/* Child links — visible on mobile always; on desktop only when the rail is hovered/expanded */}
-      {open ? (
-        <div className="ml-4 mt-0.5 border-l border-[var(--line)] pl-2 lg:hidden lg:group-hover/rail:block">
-          {group.children.map((child) => {
-            const childBase = child.href.split("?")[0];
-            const isActive = pathname === childBase || (childBase !== "/panel" && pathname?.startsWith(childBase));
-            return (
-              <Link
-                key={child.label}
-                href={child.href}
-                onClick={onClose}
-                className={cn(
-                  "mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors",
-                  isActive ? "bg-[var(--primary-soft)] text-[var(--primary)]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
-                )}
-              >
-                <child.icon size={14} strokeWidth={isActive ? 2.25 : 1.9} className="shrink-0" />
-                <span className="whitespace-nowrap">{child.label}</span>
-              </Link>
-            );
-          })}
-        </div>
-      ) : null}
+    <div className="border-b border-[var(--line)] bg-[var(--panel)]">
+      <nav className="flex items-center px-6">
+        {group.children.map((child) => {
+          const base = child.href.split("?")[0];
+          const isActive = pathname === base || (base !== "/panel" && pathname?.startsWith(base));
+          return (
+            <Link
+              key={child.href}
+              href={child.href}
+              className={cn(
+                "flex items-center gap-1.5 border-b-2 px-4 py-3 text-[13px] font-medium transition-colors",
+                isActive
+                  ? "border-[var(--primary)] text-[var(--primary)]"
+                  : "border-transparent text-slate-500 hover:text-slate-800",
+              )}
+            >
+              <child.icon size={13} />
+              {child.label}
+            </Link>
+          );
+        })}
+      </nav>
     </div>
   );
 }
 
-function Sidebar({ open, setOpen }) {
-  const pathname = usePathname();
+// ─── Brand Switcher (in sidebar) ─────────────────────────────────────────────
 
-  return (
-    <>
-      <button
-        aria-label="Close navigation"
-        className={cn("fixed inset-0 z-30 bg-slate-950/40 lg:hidden", open ? "block" : "hidden")}
-        onClick={() => setOpen(false)}
-      />
-      {/* Reserves the collapsed rail's width in the layout grid — the real
-          <aside> below is `fixed` so it can widen on hover without disturbing
-          this reserved column or the page content next to it. */}
-      <div className="hidden lg:block lg:w-[72px] lg:shrink-0" aria-hidden />
-      <aside
-        className={cn(
-          "group/rail fixed inset-y-0 left-0 z-40 w-64 flex-col border-r border-[var(--line)] bg-[var(--panel)] lg:top-0 lg:flex lg:h-screen lg:w-[72px] lg:overflow-hidden lg:shadow-none lg:transition-[width] lg:duration-150 lg:hover:w-64 lg:hover:shadow-xl lg:hover:overflow-visible",
-          open ? "flex" : "hidden",
-        )}
-      >
-        <div className="flex h-14 shrink-0 items-center gap-3 px-5 lg:px-[18px]">
-          <Link href="/panel" className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[var(--primary)] text-white">
-            <Layers3 size={18} />
-          </Link>
-          <p className="min-w-0 flex-1 truncate text-sm font-bold tracking-tight text-slate-900 lg:hidden lg:group-hover/rail:block">Wokbook</p>
-          <button className="ml-auto rounded-md p-2 text-slate-500 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)} aria-label="Close">
-            <X size={18} />
-          </button>
-        </div>
-
-        <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 py-3 lg:px-2">
-          {NAV_GROUPS.map((group) => (
-            <NavGroup
-              key={group.label}
-              group={group}
-              pathname={pathname}
-              onClose={() => setOpen(false)}
-            />
-          ))}
-        </nav>
-      </aside>
-    </>
-  );
-}
-
-function BrandSwitcher({ session, companyName }) {
+function BrandSwitcher({ session }) {
+  const { company } = useCommerceStore();
+  const companyName = session?.company?.name || company || "—";
   const [open, setOpen] = useState(false);
   const [companies, setCompanies] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -233,14 +149,9 @@ function BrandSwitcher({ session, companyName }) {
 
   async function loadCompanies() {
     setLoading(true);
-    try {
-      const res = await listMyCompanies();
-      setCompanies(res.companies || []);
-    } catch (_error) {
-      setCompanies([]);
-    } finally {
-      setLoading(false);
-    }
+    try { setCompanies((await listMyCompanies()).companies || []); }
+    catch (_) { setCompanies([]); }
+    finally { setLoading(false); }
   }
 
   function toggleOpen() {
@@ -253,114 +164,90 @@ function BrandSwitcher({ session, companyName }) {
   }
 
   async function handleSwitch(companyId) {
-    if (String(companyId) === String(session?.company?._id || session?.company?.id)) {
-      setOpen(false);
-      return;
-    }
+    const currentId = String(session?.company?._id || session?.company?.id || "");
+    if (String(companyId) === currentId) { setOpen(false); return; }
     setSwitching(companyId);
-    try {
-      await switchCompany(companyId);
-      window.location.href = "/panel";
-    } catch (_error) {
-      setSwitching("");
-    }
+    try { await switchCompany(companyId); window.location.href = "/panel"; }
+    catch (_) { setSwitching(""); }
   }
 
-  async function handleAddBrand(event) {
-    event.preventDefault();
+  async function handleAddBrand(e) {
+    e.preventDefault();
     if (!newBrandName.trim()) return;
-    setAddError("");
-    setAdding(true);
-    try {
-      await createBrand(newBrandName.trim());
-      window.location.href = "/panel";
-    } catch (error) {
-      setAddError(error.message);
-      setAdding(false);
-    }
+    setAddError(""); setAdding(true);
+    try { await createBrand(newBrandName.trim()); window.location.href = "/panel"; }
+    catch (err) { setAddError(err.message); setAdding(false); }
   }
 
   const currentCompanyId = String(session?.company?._id || session?.company?.id || "");
 
   return (
-    <div className="relative hidden md:block">
+    <div className="relative px-3 py-2">
       <button
         onClick={toggleOpen}
-        className="flex min-w-0 items-center gap-2 rounded-full border border-[var(--line)] bg-[var(--panel-soft)] px-3.5 py-1.5 transition hover:border-[var(--primary)]/40"
+        className="flex w-full items-center gap-2 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 py-2 text-left transition hover:bg-slate-100"
       >
-        <Building2 size={15} className="text-[var(--primary)]" />
-        <span className="max-w-[160px] truncate text-sm font-semibold text-slate-800">{companyName}</span>
-        <ChevronDown size={14} className={cn("text-slate-400 transition-transform", open && "rotate-180")} />
+        <div className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-[var(--primary)] text-[10px] font-bold text-white">
+          {(companyName[0] || "W").toUpperCase()}
+        </div>
+        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">{companyName}</span>
+        <ChevronDown size={13} className={cn("shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
       </button>
 
       {open ? (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-[calc(100%+8px)] z-40 w-72 rounded-xl border border-[var(--line)] bg-white p-2 shadow-xl">
+          <div className="absolute left-3 right-3 top-[calc(100%-4px)] z-40 rounded-xl border border-[var(--line)] bg-white p-2 shadow-xl">
             <p className="px-2 pb-1.5 pt-1 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Your Brands</p>
             {loading ? (
-              <div className="px-2 py-3 text-sm text-slate-400">Loading brands…</div>
+              <div className="px-2 py-3 text-sm text-slate-400">Loading…</div>
             ) : (
-              <div className="max-h-64 space-y-0.5 overflow-y-auto">
+              <div className="max-h-48 space-y-0.5 overflow-y-auto">
                 {companies.map((c) => {
                   const isCurrent = String(c.companyId) === currentCompanyId;
-                  const isSwitching = switching === c.companyId;
                   return (
                     <button
                       key={c.companyId}
                       onClick={() => handleSwitch(c.companyId)}
-                      disabled={isSwitching}
+                      disabled={!!switching}
                       className={cn(
                         "flex w-full items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left text-sm transition",
-                        isCurrent ? "bg-indigo-50 text-indigo-900" : "hover:bg-slate-50 text-slate-700",
+                        isCurrent ? "bg-indigo-50 text-indigo-900" : "text-slate-700 hover:bg-slate-50",
                       )}
                     >
-                      <span className="min-w-0">
-                        <span className="block truncate font-semibold">{c.companyName}</span>
-                        <span className="block text-[11px] text-slate-400">{c.role}</span>
-                      </span>
-                      {isCurrent ? <Check size={15} className="shrink-0 text-indigo-600" /> : null}
-                      {isSwitching ? <span className="shrink-0 text-[11px] text-slate-400">Switching…</span> : null}
+                      <span className="truncate font-medium">{c.companyName}</span>
+                      {isCurrent ? <Check size={14} className="shrink-0 text-indigo-600" /> : null}
                     </button>
                   );
                 })}
               </div>
             )}
-
-            <div className="mt-1.5 border-t border-[var(--line)] pt-1.5">
+            <div className="mt-1 border-t border-[var(--line)] pt-1">
               {!showAddBrand ? (
                 <button
                   onClick={() => setShowAddBrand(true)}
-                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-semibold text-indigo-700 hover:bg-indigo-50"
+                  className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-sm text-slate-500 hover:bg-slate-50"
                 >
-                  <Plus size={15} />
-                  Add New Brand
+                  <Plus size={14} /> Add New Brand
                 </button>
               ) : (
                 <form onSubmit={handleAddBrand} className="space-y-2 px-1 py-1">
                   <input
                     autoFocus
-                    className="h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-sm outline-none focus:border-indigo-600 focus:ring-2 focus:ring-indigo-100"
-                    placeholder="Brand / company name"
+                    className="h-8 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+                    placeholder="Brand name"
                     value={newBrandName}
                     onChange={(e) => setNewBrandName(e.target.value)}
                   />
-                  {addError ? <p className="text-xs font-medium text-rose-700">{addError}</p> : null}
+                  {addError ? <p className="text-xs text-rose-600">{addError}</p> : null}
                   <div className="flex gap-1.5">
-                    <Button type="submit" className="h-8 flex-1 text-xs" disabled={adding}>
-                      {adding ? "Creating…" : "Create Brand"}
-                    </Button>
-                    <button
-                      type="button"
-                      onClick={() => setShowAddBrand(false)}
-                      className="h-8 rounded-lg px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100"
-                    >
+                    <button type="submit" disabled={adding} className="flex-1 rounded-lg bg-indigo-600 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">
+                      {adding ? "Creating…" : "Create"}
+                    </button>
+                    <button type="button" onClick={() => setShowAddBrand(false)} className="rounded-lg px-3 text-xs text-slate-500 hover:bg-slate-100">
                       Cancel
                     </button>
                   </div>
-                  <p className="px-0.5 text-[11px] leading-4 text-slate-400">
-                    Creates a new workspace with its own channels, orders, and data — same login, separate brand.
-                  </p>
                 </form>
               )}
             </div>
@@ -371,7 +258,173 @@ function BrandSwitcher({ session, companyName }) {
   );
 }
 
-// Maps the topbar <select> label to the backend's period key.
+// ─── Sidebar ─────────────────────────────────────────────────────────────────
+
+function Sidebar({ open, setOpen, session, onLogout }) {
+  const pathname = usePathname();
+  const { company } = useCommerceStore();
+  const companyName = session?.company?.name || company || "Wokbook";
+  const userLabel = session?.user?.name || session?.user?.email || companyName;
+  const initials = userLabel.trim().split(/\s+/).slice(0, 2).map((p) => p[0]).join("").toUpperCase() || "W";
+
+  return (
+    <>
+      {/* Mobile overlay */}
+      <button
+        aria-label="Close navigation"
+        className={cn("fixed inset-0 z-30 bg-slate-950/40 lg:hidden", open ? "block" : "hidden")}
+        onClick={() => setOpen(false)}
+      />
+
+      {/* Desktop rail spacer — reserves 220px in the grid */}
+      <div className="hidden lg:block lg:w-[220px] lg:shrink-0" aria-hidden />
+
+      <aside
+        className={cn(
+          "fixed inset-y-0 left-0 z-40 flex w-[220px] flex-col border-r border-[var(--line)] bg-[var(--panel)]",
+          open ? "flex" : "hidden lg:flex",
+        )}
+      >
+        {/* Logo */}
+        <div className="flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--line)] px-4">
+          <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-[var(--primary)] text-white">
+            <Layers3 size={16} />
+          </div>
+          <span className="text-[15px] font-bold tracking-tight text-slate-900">Wokbook</span>
+          <button className="ml-auto rounded-md p-1.5 text-slate-400 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Brand switcher */}
+        <BrandSwitcher session={session} />
+
+        {/* Nav */}
+        <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 pb-2 pt-1">
+          {NAV_GROUPS.map((group) => {
+            // Determine if this group contains the active page
+            let isActive = false;
+            if (group.single) {
+              isActive = pathname === group.href || (group.href !== "/panel" && pathname?.startsWith(group.href));
+            } else {
+              isActive = group.children?.some((c) => {
+                const base = c.href.split("?")[0];
+                return pathname === base || (base !== "/panel" && pathname?.startsWith(base));
+              }) ?? false;
+            }
+
+            const href = group.single ? group.href : (group.href || group.children?.[0]?.href);
+
+            return (
+              <Link
+                key={group.label}
+                href={href}
+                onClick={() => setOpen(false)}
+                className={cn(
+                  "mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-colors",
+                  isActive
+                    ? "bg-indigo-50 text-indigo-700"
+                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+                )}
+              >
+                <group.icon size={16} strokeWidth={isActive ? 2.25 : 1.9} className="shrink-0" />
+                <span>{group.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        {/* User footer */}
+        <div className="border-t border-[var(--line)] p-3">
+          <div className="flex items-center gap-2.5">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">
+              {initials}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-[13px] font-semibold text-slate-800">{userLabel}</p>
+              <p className="truncate text-[11px] text-slate-400">{session?.user?.role || "Admin"}</p>
+            </div>
+            <button
+              onClick={onLogout}
+              className="grid h-7 w-7 shrink-0 place-items-center rounded-md text-slate-400 hover:bg-rose-50 hover:text-rose-600"
+              title="Logout"
+            >
+              <LogOut size={14} />
+            </button>
+          </div>
+        </div>
+      </aside>
+    </>
+  );
+}
+
+// ─── Topbar ───────────────────────────────────────────────────────────────────
+// Slim bar: mobile-menu button | period selector + live dot + sync + bell
+
+function Topbar({ setOpen, onSyncAll, canSync, period, setPeriod }) {
+  return (
+    <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center justify-between border-b border-[var(--line)] bg-[var(--panel)] px-4 lg:px-6">
+      {/* Mobile hamburger */}
+      <button
+        className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden"
+        onClick={() => setOpen(true)}
+        aria-label="Open navigation"
+      >
+        <Menu size={20} />
+      </button>
+
+      {/* Right controls */}
+      <div className="ml-auto flex items-center gap-2">
+        {/* Live status */}
+        <span className="hidden items-center gap-1.5 text-[12px] font-medium text-slate-500 sm:flex">
+          <span className="h-2 w-2 rounded-full bg-emerald-400" />
+          Live
+        </span>
+
+        {/* Period select */}
+        <select
+          className="h-8 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-2.5 text-[13px] font-medium text-slate-700 outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+          value={period}
+          onChange={(e) => setPeriod(e.target.value)}
+        >
+          <option>Today</option>
+          <option>Yesterday</option>
+          <option>This Month</option>
+          <option>Last 90 Days</option>
+          <option>Lifetime</option>
+        </select>
+
+        {/* Sync */}
+        <button
+          onClick={onSyncAll}
+          disabled={!canSync}
+          className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
+          title="Sync channels"
+        >
+          <RefreshCw size={13} />
+          <span className="hidden sm:inline">Sync</span>
+        </button>
+
+        {/* Bell */}
+        <button
+          className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] text-slate-500 transition hover:bg-slate-100"
+          aria-label="Notifications"
+        >
+          <Bell size={15} />
+        </button>
+
+        {/* AI button */}
+        <button className="flex h-8 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 text-[13px] font-semibold text-white transition hover:bg-indigo-700">
+          <Sparkles size={13} />
+          <span className="hidden sm:inline">AI</span>
+        </button>
+      </div>
+    </header>
+  );
+}
+
+// ─── Maps period label to backend key ─────────────────────────────────────────
+
 function periodToKey(period) {
   switch (period) {
     case "Yesterday": return "yesterday";
@@ -382,76 +435,11 @@ function periodToKey(period) {
   }
 }
 
-function Topbar({ setOpen, session, onSyncAll, canSync }) {
-  const { company, period, setPeriod } = useCommerceStore();
-  const router = useRouter();
-  const companyName = session?.company?.name || company;
-  const userLabel = session?.user?.name || session?.user?.email || "";
-  const initials = (userLabel || companyName || "U")
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0])
-    .join("")
-    .toUpperCase();
-
-  function logout() {
-    clearSession();
-    router.push("/login");
-  }
-
-  return (
-    <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-[var(--panel)]">
-      <div className="flex h-14 items-center gap-3 px-4 lg:px-6">
-        <button className="rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation">
-          <Menu size={20} />
-        </button>
-        <BrandSwitcher session={session} companyName={companyName} />
-        <div className="relative flex-1">
-          <Search className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={16} />
-          <input
-            className="h-[38px] w-full rounded-full border border-[var(--line)] bg-[var(--panel-soft)] pl-10 pr-3 text-sm outline-none transition placeholder:text-slate-400 focus:border-[var(--primary)] focus:bg-white focus:ring-4 focus:ring-[var(--primary-soft)]"
-            placeholder="Search orders, SKU, customer..."
-          />
-        </div>
-        <select
-          className="hidden h-9 rounded-md border border-[var(--line)] bg-[var(--panel)] px-3 text-sm font-semibold outline-none focus:border-[var(--primary)] md:block shadow-sm"
-          value={period}
-          onChange={(event) => setPeriod(event.target.value)}
-        >
-          <option>Today</option>
-          <option>Yesterday</option>
-          <option>This Month</option>
-          <option>Last 90 Days</option>
-          <option>Lifetime</option>
-        </select>
-        <Button variant="secondary" className="hidden h-9 sm:inline-flex" onClick={onSyncAll} disabled={!canSync}>
-          <RefreshCw size={14} className="mr-1" />
-          Sync
-        </Button>
-        <button className="grid h-9 w-9 place-items-center rounded-full border border-[var(--line)] bg-[var(--panel)] text-slate-500 transition hover:border-[var(--primary)]/30 hover:bg-[var(--primary-soft)] hover:text-[var(--primary)]" aria-label="Notifications">
-          <Bell size={16} />
-        </button>
-        <div className="mx-1 hidden h-8 w-px bg-[var(--line)] sm:block" />
-        <div className="hidden items-center gap-2 sm:flex">
-          <div className="grid h-9 w-9 place-items-center rounded-full bg-[var(--primary)] text-xs font-bold text-white shadow-sm">
-            {initials}
-          </div>
-          <button
-            className="grid h-9 w-9 place-items-center rounded-full text-slate-400 transition hover:bg-rose-50 hover:text-rose-600"
-            aria-label="Logout"
-            onClick={logout}
-          >
-            <LogOut size={16} />
-          </button>
-        </div>
-      </div>
-    </header>
-  );
-}
+// ─── Panel layout ─────────────────────────────────────────────────────────────
 
 export default function PanelLayout({ children }) {
   const router = useRouter();
+  const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const {
     session,
@@ -464,13 +452,12 @@ export default function PanelLayout({ children }) {
     setChannelsError,
     setIsLoadingChannels,
     period,
+    setPeriod,
   } = useCommerceStore();
 
-  // Ensure functions persist properly. Note: we are defining them here so they use the current state/setters
   async function refreshChannels() {
     setChannelsError("");
     setIsLoadingChannels(true);
-
     try {
       const result = await listChannels();
       setConnectedChannels(result.channels || []);
@@ -491,45 +478,41 @@ export default function PanelLayout({ children }) {
   }
 
   async function syncAllChannels() {
-    const syncableChannels = connectedChannels.filter((channel) => channel.status === "connected");
+    const syncable = (Array.isArray(connectedChannels) ? connectedChannels : []).filter((ch) => ch.status === "connected");
     setChannelsError("");
-
     try {
-      for (const channel of syncableChannels) {
-        const channelId = channel._id || channel.id;
+      for (const ch of syncable) {
+        const channelId = ch._id || ch.id;
         const result = await syncChannel(channelId);
-        setConnectedChannels((current) =>
-          current.map((entry) => (String(entry._id || entry.id) === String(channelId) ? { ...entry, ...result.channel, _id: entry._id || result.channel.id } : entry)),
+        setConnectedChannels((cur) =>
+          cur.map((e) => (String(e._id || e.id) === String(channelId) ? { ...e, ...result.channel, _id: e._id || result.channel.id } : e)),
         );
       }
-
       await Promise.all([refreshChannels(), refreshDashboardData()]);
     } catch (error) {
       setChannelsError(error.message);
     }
   }
 
+  function logout() {
+    clearSession();
+    router.push("/login");
+  }
+
   useEffect(() => {
-    const savedSession = getSession();
-
-    if (!savedSession?.token) {
-      router.replace("/login");
-      return;
-    }
-
-    setSession(savedSession);
+    const saved = getSession();
+    if (!saved?.token) { router.replace("/login"); return; }
+    setSession(saved);
     setCheckingSession(false);
   }, [router, setSession, setCheckingSession]);
 
   useEffect(() => {
     if (!session?.token) return;
-
     refreshChannels();
     refreshDashboardData();
-  }, [session?.token]); // Intentionally limiting dependency array to token to avoid loop if object ref changes
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.token]);
 
-  // Re-fetch dashboard data (trend/channel mix/recent orders) when the topbar
-  // period selector changes — the KPI cards depend on this refetch too.
   useEffect(() => {
     if (!session?.token) return;
     refreshDashboardData();
@@ -547,18 +530,32 @@ export default function PanelLayout({ children }) {
             <Layers3 size={24} />
           </div>
           <p className="mt-4 font-semibold text-slate-800">Opening secure panel</p>
-          <p className="mt-1 text-sm text-[var(--muted)]">Checking company session...</p>
+          <p className="mt-1 text-sm text-[var(--muted)]">Checking session…</p>
         </div>
       </div>
     );
   }
 
+  const canSync = Array.isArray(connectedChannels) && connectedChannels.some((ch) => ch.status === "connected");
+
   return (
-    <div className="min-h-screen lg:grid lg:grid-cols-[72px_minmax(0,1fr)] bg-[var(--background)]">
-      <Sidebar open={open} setOpen={setOpen} />
-      <main className="min-w-0 flex flex-col min-h-screen">
-        <Topbar setOpen={setOpen} session={session} onSyncAll={syncAllChannels} canSync={Array.isArray(connectedChannels) && connectedChannels.some((channel) => channel.status === "connected")} />
+    <div className="min-h-screen bg-[var(--background)] lg:grid lg:grid-cols-[220px_minmax(0,1fr)]">
+      <Sidebar open={open} setOpen={setOpen} session={session} onLogout={logout} />
+
+      <main className="flex min-h-screen min-w-0 flex-col">
+        <Topbar
+          setOpen={setOpen}
+          onSyncAll={syncAllChannels}
+          canSync={canSync}
+          period={period}
+          setPeriod={setPeriod}
+        />
+
+        {/* Horizontal sub-nav for active group's children */}
+        <SubNavBar pathname={pathname} />
+
         <FollowUpReminderBanner onOpenCustomer={(customer) => setFollowUpCustomer(customer)} />
+
         <div className="flex-1">
           {children}
         </div>
