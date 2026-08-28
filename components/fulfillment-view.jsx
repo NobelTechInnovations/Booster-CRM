@@ -40,6 +40,7 @@ import {
   listAllShipments,
   checkServiceability,
   linkWarehouse,
+  pushTrackingToShopify,
 } from "@/lib/api";
 
 // For providers (Velocity) with no "list warehouses" API — lets the user
@@ -723,6 +724,20 @@ export function FulfillmentView() {
     }
   }
 
+  async function handlePushTracking(order) {
+    const orderIdToUse = order.externalId || order._id || order.id;
+    setCancellingId(orderIdToUse);
+    setMessage({ type: "", text: "" });
+    try {
+      const res = await pushTrackingToShopify(orderIdToUse);
+      setMessage({ type: "success", text: res.message });
+    } catch (err) {
+      setMessage({ type: "error", text: err.message });
+    } finally {
+      setCancellingId("");
+    }
+  }
+
   function toggleToShipSelected(id) {
     setSelectedToShipIds((prev) => {
       const next = new Set(prev);
@@ -964,7 +979,19 @@ export function FulfillmentView() {
                             {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
                           </p>
                           {order.awbCode ? (
-                            <div className="mt-2 flex justify-end gap-1.5">
+                            <div className="mt-2 flex flex-wrap justify-end gap-1.5">
+                              {order.provider === "shopify" ? (
+                                <Button
+                                  variant="secondary"
+                                  className="h-8 px-2.5 text-xs"
+                                  disabled={cancellingId === (order.externalId || order._id || order.id)}
+                                  onClick={() => handlePushTracking(order)}
+                                  title="Send tracking number and courier name to Shopify. Safe — only updates the fulfillment record, never the order itself."
+                                >
+                                  <Send size={13} />
+                                  Push to Shopify
+                                </Button>
+                              ) : null}
                               <Button
                                 variant="secondary"
                                 className="h-8 px-2.5 text-xs"

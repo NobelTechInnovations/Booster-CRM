@@ -10,6 +10,7 @@ import {
   Bell,
   Building2,
   ChevronDown,
+  ChevronRight,
   Layers3,
   LogOut,
   Menu,
@@ -29,6 +30,7 @@ import {
   UserRound,
   CircleDollarSign,
   Activity,
+  BarChart2,
   ClipboardList,
   Settings,
 } from "lucide-react";
@@ -47,30 +49,133 @@ import { useCommerceStore } from "@/lib/store";
 import { cn } from "@/lib/utils";
 import { Plus, Check } from "lucide-react";
 
-const menu = [
-  { label: "Dashboard", icon: Gauge, href: "/panel" },
-  { label: "Fulfillment", icon: PackageCheck, href: "/panel/fulfillment" },
-  { label: "Company", icon: Building2, href: "/panel/company" },
-  { label: "Users", icon: Users, href: "/panel/users" },
-  { label: "Orders", icon: ShoppingCart, href: "/panel/orders" },
-  { label: "Products", icon: Package, href: "/panel/products" },
-  { label: "Product Mapping", icon: Workflow, href: "/panel/product-mapping" },
-  { label: "Inventory", icon: Boxes, href: "/panel/inventory" },
-  { label: "Assets", icon: Package2, href: "/panel/assets" },
-  { label: "Channels", icon: PlugZap, href: "/panel/channels" },
-  { label: "Shipping", icon: Truck, href: "/panel/shipping" },
-  { label: "Customers", icon: UserRound, href: "/panel/customers" },
-  { label: "Finance", icon: CircleDollarSign, href: "/panel/finance" },
-  { label: "Ads", icon: Activity, href: "/panel/ads" },
-  { label: "Automation", icon: Workflow, href: "/panel/automation" },
-  { label: "Reports", icon: ClipboardList, href: "/panel/reports" },
-  { label: "Settings", icon: Settings, href: "/panel/settings" },
+// Grouped sidebar navigation — top-level groups expand/collapse; single items
+// navigate directly. A group is active when any of its children is the current page.
+const NAV_GROUPS = [
+  { label: "Dashboard", icon: Gauge, href: "/panel", single: true },
+  {
+    label: "Orders",
+    icon: ShoppingCart,
+    children: [
+      { label: "Orders", icon: ShoppingCart, href: "/panel/orders" },
+      { label: "Fulfillment", icon: PackageCheck, href: "/panel/fulfillment" },
+      { label: "Customers", icon: UserRound, href: "/panel/customers" },
+    ],
+  },
+  {
+    label: "Products",
+    icon: Package,
+    children: [
+      { label: "Products", icon: Package, href: "/panel/products" },
+      { label: "Product Mapping", icon: Workflow, href: "/panel/product-mapping" },
+      { label: "Inventory", icon: Boxes, href: "/panel/inventory" },
+      { label: "Assets & Stock", icon: Package2, href: "/panel/assets" },
+    ],
+  },
+  {
+    label: "Finance",
+    icon: CircleDollarSign,
+    children: [
+      { label: "Overview", icon: CircleDollarSign, href: "/panel/finance" },
+      { label: "Ads & ROAS", icon: Activity, href: "/panel/ads" },
+      { label: "Analytics", icon: BarChart2, href: "/panel/finance?tab=sales" },
+    ],
+  },
+  {
+    label: "Channels",
+    icon: PlugZap,
+    children: [
+      { label: "Sales Channels", icon: PlugZap, href: "/panel/channels" },
+      { label: "Shipping Partners", icon: Truck, href: "/panel/shipping" },
+    ],
+  },
+  {
+    label: "Admin",
+    icon: Building2,
+    children: [
+      { label: "Company", icon: Building2, href: "/panel/company" },
+      { label: "Users", icon: Users, href: "/panel/users" },
+      { label: "Automation", icon: Workflow, href: "/panel/automation" },
+      { label: "Reports", icon: ClipboardList, href: "/panel/reports" },
+    ],
+  },
+  { label: "Settings", icon: Settings, href: "/panel/settings", single: true },
 ];
 
 // Minimal icon rail (no visible labels — matches the compact enterprise
 // dashboard reference), with a floating label on hover so every item stays
 // identifiable without adding visual weight. Mobile keeps a slide-in drawer
 // with labels shown, since a pure icon rail doesn't work well touch-first.
+
+function NavGroup({ group, pathname, onClose }) {
+  // A group is "active" when the current path is one of its children.
+  const childPaths = (group.children || []).map((c) => c.href.split("?")[0]);
+  const isGroupActive = childPaths.some((p) => pathname === p || (p !== "/panel" && pathname?.startsWith(p)));
+
+  // Auto-open the group when it contains the current page; otherwise closed.
+  const [open, setOpen] = useState(isGroupActive);
+
+  // Single top-level links (Dashboard, Settings) — no dropdown.
+  if (group.single) {
+    const isActive = pathname === group.href || (group.href !== "/panel" && pathname?.startsWith(group.href));
+    return (
+      <Link
+        href={group.href}
+        onClick={onClose}
+        className={cn(
+          "mb-0.5 flex h-9 w-full items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors",
+          isActive ? "bg-[var(--primary-soft)] text-[var(--primary)]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+        )}
+      >
+        <group.icon size={18} strokeWidth={isActive ? 2.25 : 1.9} className="shrink-0" />
+        <span className="whitespace-nowrap lg:hidden lg:group-hover/rail:inline">{group.label}</span>
+      </Link>
+    );
+  }
+
+  return (
+    <div className="mb-0.5">
+      {/* Group header — clicking opens/closes the children list */}
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className={cn(
+          "flex h-9 w-full items-center gap-3 rounded-lg px-3 text-[13px] font-medium transition-colors",
+          isGroupActive ? "text-[var(--primary)]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+        )}
+      >
+        <group.icon size={18} strokeWidth={isGroupActive ? 2.25 : 1.9} className="shrink-0" />
+        <span className="flex flex-1 items-center justify-between whitespace-nowrap lg:hidden lg:group-hover/rail:flex">
+          {group.label}
+          <ChevronDown size={14} className={cn("ml-1 transition-transform text-slate-400", open && "rotate-180")} />
+        </span>
+      </button>
+      {/* Child links — visible on mobile always; on desktop only when the rail is hovered/expanded */}
+      {open ? (
+        <div className="ml-4 mt-0.5 border-l border-[var(--line)] pl-2 lg:hidden lg:group-hover/rail:block">
+          {group.children.map((child) => {
+            const childBase = child.href.split("?")[0];
+            const isActive = pathname === childBase || (childBase !== "/panel" && pathname?.startsWith(childBase));
+            return (
+              <Link
+                key={child.label}
+                href={child.href}
+                onClick={onClose}
+                className={cn(
+                  "mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-[12px] font-medium transition-colors",
+                  isActive ? "bg-[var(--primary-soft)] text-[var(--primary)]" : "text-slate-500 hover:bg-slate-100 hover:text-slate-800",
+                )}
+              >
+                <child.icon size={14} strokeWidth={isActive ? 2.25 : 1.9} className="shrink-0" />
+                <span className="whitespace-nowrap">{child.label}</span>
+              </Link>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function Sidebar({ open, setOpen }) {
   const pathname = usePathname();
 
@@ -102,25 +207,14 @@ function Sidebar({ open, setOpen }) {
         </div>
 
         <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 py-3 lg:px-2">
-          {menu.map((item) => {
-            const isActive = pathname === item.href || (item.href !== "/panel" && pathname?.startsWith(item.href));
-            return (
-              <Link
-                key={item.label}
-                href={item.href}
-                onClick={() => setOpen(false)}
-                className={cn(
-                  "mb-0.5 flex h-9 w-full items-center gap-3 rounded-lg px-3 text-left text-[13px] font-medium transition-colors lg:w-auto",
-                  isActive
-                    ? "bg-[var(--primary-soft)] text-[var(--primary)]"
-                    : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
-                )}
-              >
-                <item.icon size={18} strokeWidth={isActive ? 2.25 : 1.9} className="shrink-0" />
-                <span className="whitespace-nowrap lg:hidden lg:group-hover/rail:inline">{item.label}</span>
-              </Link>
-            );
-          })}
+          {NAV_GROUPS.map((group) => (
+            <NavGroup
+              key={group.label}
+              group={group}
+              pathname={pathname}
+              onClose={() => setOpen(false)}
+            />
+          ))}
         </nav>
       </aside>
     </>

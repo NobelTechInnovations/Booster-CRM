@@ -487,6 +487,59 @@ export async function markShopifyOrderFulfilled({ shop, shopifyOrderId, awbCode,
 }
 
 /**
+ * (Re-)pushes the tracking number and courier for an already-shipped order
+ * to Shopify. Safe to call on any order that has an awbCode — never updates
+ * the full order, only creates (or re-creates) the fulfillment record with
+ * tracking_info. Useful when the automatic push at ship-time failed due to a
+ * transient Shopify API error, or when tracking details need correcting.
+ */
+export async function pushTrackingToShopify({ companyId, orderId }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) throw new HttpError(404, "Order not found");
+  if (!order.awbCode) throw new HttpError(400, "No AWB assigned to this order yet — ship it first");
+  if (order.provider !== "shopify" || !order.shop) {
+    return { message: "Non-Shopify order — tracking is only pushed to Shopify stores" };
+  }
+
+  const shipment = order.shipmentId
+    ? (await listShipmentsByIds({ companyId, shipmentIds: [order.shipmentId] }))[0]
+    : null;
+
+  const trackingUrl = shipment?.trackingUrl || shipment?.labelUrl || order.labelUrl || "";
+  const courierName = shipment?.courierName || order.shippingProvider || "";
+
+  try {
+    const fulfillResult = await markShopifyOrderFulfilled({
+      shop: order.shop,
+      shopifyOrderId: order.externalId,
+      awbCode: order.awbCode,
+      trackingUrl,
+      courierName,
+    });
+
+    if (fulfillResult?.skipped) {
+      return { message: "Order is already marked fulfilled on Shopify — tracking is already there", skipped: true };
+    }
+
+    // Record the Shopify fulfillment ID so cancel can undo it later.
+    const shopifyFulfillmentId = fulfillResult?.fulfillment?.id;
+    if (shopifyFulfillmentId && shipment) {
+      await updateShipmentById({ shipmentId: shipment._id || shipment.id, companyId, update: { shopifyFulfillmentId: String(shopifyFulfillmentId) } });
+    }
+
+    await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
+
+    return {
+      message: `Tracking pushed to Shopify — AWB ${order.awbCode} via ${courierName || "courier"}`,
+      awbCode: order.awbCode,
+      trackingUrl,
+    };
+  } catch (err) {
+    throw new HttpError(502, `Shopify tracking push failed: ${err.message}`);
+  }
+}
+
+/**
  * Cancel a pending order in OMS and push cancel to Shopify
  */
 export async function cancelOrderFulfillment({ companyId, orderId, reason = "customer" }) {

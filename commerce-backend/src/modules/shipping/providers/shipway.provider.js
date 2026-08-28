@@ -230,6 +230,9 @@ export class ShipwayProvider extends BaseShippingProvider {
       length: options.length || 10,
       width: options.breadth || 10,
       height: options.height || 10,
+
+      // User-selected carrier from the rate comparison screen
+      ...(options.courierId ? { carrier_id: options.courierId } : {}),
     };
   }
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { use } from "react";
+import { use, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { useCommerceStore } from "@/lib/store";
 import { ChannelsView, ModuleView } from "@/components/dashboard";
 import { CompanyView } from "@/components/company-view";
@@ -21,6 +22,8 @@ export default function ModulePage({ params }) {
   // Use React.use() to unwrap the params promise (Next.js 15 app router behavior)
   const resolvedParams = use(params);
   const moduleName = resolvedParams.module; // "channels", "company", etc.
+  const searchParams = useSearchParams();
+  const tabParam = searchParams?.get("tab") || null;
   
   const {
     session,
@@ -160,7 +163,8 @@ export default function ModulePage({ params }) {
   }
 
   if (activeViewName === "Finance") {
-    return <FinanceView defaultTab="overview" />;
+    // Support ?tab=sales (or any valid tab) from sidebar Analytics link
+    return <FinanceView defaultTab={tabParam || "overview"} />;
   }
 
   if (activeViewName === "Ads") {

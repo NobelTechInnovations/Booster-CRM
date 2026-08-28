@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, getFulfilledOrders, shipOrder, shipOrdersBulk, downloadLabelsBulk, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, shipOrdersBulk, downloadLabelsBulk, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder, pushTrackingToShopify } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -130,6 +130,19 @@ fulfillmentRoutes.post(
   asyncHandler(async (req, res) => {
     const { orderId } = req.params;
     const result = await syncShipmentStatus({ companyId: req.auth.companyId, orderId });
+    res.json(result);
+  }),
+);
+
+// Retry pushing tracking info to Shopify for an already-shipped order — safe
+// to call any number of times. Only updates tracking_info, never the order
+// itself, so it can't break order data.
+fulfillmentRoutes.post(
+  "/orders/:orderId/push-tracking",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const result = await pushTrackingToShopify({ companyId: req.auth.companyId, orderId });
     res.json(result);
   }),
 );

@@ -332,7 +332,8 @@ export class VelocityProvider extends BaseShippingProvider {
       height:  options.height || 10,
       weight:  options.weight || Math.max(0.5, (order.lineItems || []).reduce((sum, item) => sum + ((item.grams || 0) * item.quantity / 1000), 0)),
 
-      ...(options.carrierId ? { carrier_id: options.carrierId } : {}),
+      // courierId is the carrier_id the user selected from the rate list
+      ...(options.courierId ? { carrier_id: options.courierId } : {}),
     };
   }
 

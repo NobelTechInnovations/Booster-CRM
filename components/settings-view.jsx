@@ -299,20 +299,63 @@ function EndpointCard({ endpoint, onRefresh }) {
   );
 }
 
-const FOLLOW_UP_OUTCOMES = [
-  { value: "called", label: "Called" },
-  { value: "no_answer", label: "No answer" },
-  { value: "interested", label: "Interested" },
-  { value: "converted", label: "Converted" },
-  { value: "follow_up_later", label: "Follow up later" },
-  { value: "not_interested", label: "Not interested" },
-  { value: "other", label: "Other" },
+// All possible follow-up outcomes — getFollowUpOutcomes() filters these down
+// by the lead's current state so the dropdown only shows relevant choices.
+const ALL_FOLLOW_UP_OUTCOMES = [
+  { value: "called",          label: "Called",           forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "no_answer",       label: "No answer",        forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "interested",      label: "Interested",       forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "converted",       label: "Converted ✓",      forStatuses: ["new", "follow_up_scheduled", "interested"] },
+  { value: "follow_up_later", label: "Follow up later",  forStatuses: ["new", "follow_up_scheduled", "interested", "no_response"] },
+  { value: "not_interested",  label: "Not interested",   forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "other",           label: "Other",            forStatuses: null /* always shown */ },
 ];
+
+function getFollowUpOutcomes(currentStatus) {
+  return ALL_FOLLOW_UP_OUTCOMES.filter(
+    (o) => !o.forStatuses || o.forStatuses.includes(currentStatus || "new"),
+  );
+}
+
+// Used in the follow-up history panel to resolve a stored value back to its label
+function outcomeLabel(value) {
+  return ALL_FOLLOW_UP_OUTCOMES.find((o) => o.value === value)?.label || value;
+}
+
+// ─── IST date helpers ────────────────────────────────────────────────────────
+// Indian Standard Time = UTC+5:30. The browser's datetime-local input always
+// emits the value in the *local* timezone. We explicitly treat the user's
+// input as IST and store the correct UTC equivalent on the server.
+
+// Convert a datetime-local string ("2026-08-28T14:00") entered in IST to an
+// ISO UTC string for storage, preserving the user's actual intent.
+function istInputToUtcIso(localValue) {
+  if (!localValue) return undefined;
+  // The input value has no timezone info — append +05:30 so JS parses it as IST.
+  const date = new Date(`${localValue}:00+05:30`);
+  return isNaN(date.getTime()) ? undefined : date.toISOString();
+}
+
+// Format a stored UTC ISO string for display in IST.
+function formatIST(utcString) {
+  if (!utcString) return "";
+  return new Date(utcString).toLocaleString("en-IN", { timeZone: "Asia/Kolkata" });
+}
+
+// Return a datetime-local–compatible string from a stored UTC ISO, in IST,
+// so pre-populated inputs show the correct IST time.
+function utcToIstInput(utcString) {
+  if (!utcString) return "";
+  const ist = new Date(new Date(utcString).toLocaleString("en-US", { timeZone: "Asia/Kolkata" }));
+  // "YYYY-MM-DDTHH:MM"
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${ist.getFullYear()}-${pad(ist.getMonth() + 1)}-${pad(ist.getDate())}T${pad(ist.getHours())}:${pad(ist.getMinutes())}`;
+}
 
 const LEAD_STATUS_TONE = { new: "slate", follow_up_scheduled: "amber", converted: "green", no_response: "rose", closed: "slate" };
 
 function leadFollowUpCountdown(date) {
-  const diff = new Date(date) - new Date();
+  const diff = new Date(date) - Date.now();
   if (diff <= 0) return "Overdue";
   const mins = Math.floor(diff / 60000);
   if (mins < 60) return `in ${mins}m`;
@@ -324,12 +367,27 @@ function leadFollowUpCountdown(date) {
 // Same outcome/status log as the customer follow-up flow — kept identical so
 // a webhook lead and a synced customer read the same way once you're calling them.
 function LogFollowUpModal({ lead, onClose, onLogged }) {
-  const [outcome, setOutcome] = useState("called");
+  const currentStatus = lead.followUpStatus || "new";
+  const outcomes = getFollowUpOutcomes(currentStatus);
+  const [outcome, setOutcome] = useState(outcomes[0]?.value || "called");
   const [note, setNote] = useState("");
-  const [followUpStatus, setFollowUpStatus] = useState(lead.followUpStatus || "new");
-  const [nextFollowUpAt, setNextFollowUpAt] = useState("");
+  const [followUpStatus, setFollowUpStatus] = useState(currentStatus);
+  // Stored in IST-formatted string for the datetime-local input; converted to
+  // UTC before sending so the server always stores real UTC.
+  const [nextFollowUpAt, setNextFollowUpAt] = useState(
+    lead.nextFollowUpAt ? utcToIstInput(lead.nextFollowUpAt) : "",
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // When the user picks "Converted", auto-advance the status so they don't
+  // have to set it manually in a second step.
+  function handleOutcomeChange(val) {
+    setOutcome(val);
+    if (val === "converted") setFollowUpStatus("converted");
+    else if (val === "not_interested") setFollowUpStatus("closed");
+    else if (val === "interested" && followUpStatus === "new") setFollowUpStatus("follow_up_scheduled");
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
@@ -337,7 +395,11 @@ function LogFollowUpModal({ lead, onClose, onLogged }) {
     setError("");
     try {
       const result = await logWebhookLeadFollowUp(lead._id || lead.id, {
-        outcome, note, followUpStatus, nextFollowUpAt: nextFollowUpAt || undefined,
+        outcome,
+        note,
+        followUpStatus,
+        // Convert IST local input to UTC before sending to the server.
+        nextFollowUpAt: istInputToUtcIso(nextFollowUpAt),
       });
       onLogged(result.lead);
       onClose();
@@ -353,8 +415,8 @@ function LogFollowUpModal({ lead, onClose, onLogged }) {
       <form onSubmit={handleSubmit} className="space-y-3">
         <label className="block text-sm font-semibold text-slate-700">
           Outcome
-          <select className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={outcome} onChange={(e) => setOutcome(e.target.value)}>
-            {FOLLOW_UP_OUTCOMES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+          <select className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={outcome} onChange={(e) => handleOutcomeChange(e.target.value)}>
+            {outcomes.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         </label>
         <label className="block text-sm font-semibold text-slate-700">
@@ -368,8 +430,9 @@ function LogFollowUpModal({ lead, onClose, onLogged }) {
           </select>
         </label>
         <label className="block text-sm font-semibold text-slate-700">
-          Next follow-up (optional)
+          Next follow-up (optional) — IST
           <input type="datetime-local" className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" value={nextFollowUpAt} onChange={(e) => setNextFollowUpAt(e.target.value)} />
+          <span className="text-[11px] text-slate-400">Times are in India Standard Time (IST = UTC+5:30)</span>
         </label>
         <label className="block text-sm font-semibold text-slate-700">
           Note
@@ -437,8 +500,8 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
                 {lead.followUps.map((f) => (
                   <div key={f._id} className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2 text-xs">
                     <div className="flex items-center justify-between">
-                      <span className="font-semibold text-indigo-700">{FOLLOW_UP_OUTCOMES.find((o) => o.value === f.outcome)?.label || f.outcome}</span>
-                      <span className="text-slate-400">{new Date(f.calledAt).toLocaleString("en-IN")}</span>
+                      <span className="font-semibold text-indigo-700">{outcomeLabel(f.outcome)}</span>
+                      <span className="text-slate-400">{formatIST(f.calledAt)}</span>
                     </div>
                     {f.note ? <p className="mt-1 text-slate-600">{f.note}</p> : null}
                     <p className="mt-1 text-[10px] text-slate-400">by {f.createdByName}</p>
@@ -466,7 +529,7 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
                         <span className={cn("h-2 w-2 shrink-0 rounded-full", idx === 0 ? "bg-indigo-600" : "bg-slate-300")} />
                         <div>
                           <p className="text-sm font-semibold text-slate-800">{event.type}</p>
-                          <p className="flex items-center gap-1 text-[11px] text-slate-400"><Clock size={10} />{new Date(event.receivedAt).toLocaleString("en-IN")}</p>
+                          <p className="flex items-center gap-1 text-[11px] text-slate-400"><Clock size={10} />{formatIST(event.receivedAt)}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
@@ -490,7 +553,7 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
   );
 }
 
-function LeadRow({ lead, onView, onFollowUp }) {
+function LeadRow({ lead, duplicateCount, onView, onFollowUp }) {
   const hasGeo = lead.geoResolvedAt && (lead.geoCity || lead.geoRegion);
   const geoPending = !lead.geoResolvedAt && lead.ipAddress;
   return (
@@ -499,7 +562,12 @@ function LeadRow({ lead, onView, onFollowUp }) {
         <div className="flex items-center gap-2">
           <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500"><User size={14} /></div>
           <div className="min-w-0">
-            <p className="truncate text-sm font-semibold text-slate-800">{lead.customerName || lead.customerPhone || lead.customerEmail || "Unknown"}</p>
+            <div className="flex items-center gap-1.5">
+              <p className="truncate text-sm font-semibold text-slate-800">{lead.customerName || lead.customerPhone || lead.customerEmail || "Unknown"}</p>
+              {duplicateCount > 1 ? (
+                <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`${duplicateCount} records share this phone`}>{duplicateCount}×</span>
+              ) : null}
+            </div>
             {lead.customerPhone && lead.customerName ? <p className="text-[11px] text-slate-400">{lead.customerPhone}</p> : null}
           </div>
         </div>
@@ -526,11 +594,11 @@ function LeadRow({ lead, onView, onFollowUp }) {
       <td className="py-2.5 pr-3 text-xs font-medium text-slate-700">{lead.latestStage || lead.latestType}</td>
       <td className="py-2.5 pr-3 text-sm font-semibold text-slate-800">{lead.cartValue ? formatMoney(lead.cartValue) : "—"}</td>
       <td className="py-2.5 pr-3 text-center text-xs font-medium text-slate-500">{lead.eventCount}</td>
-      <td className="py-2.5 pr-3 text-xs text-slate-500">{new Date(lead.lastEventAt).toLocaleString("en-IN")}</td>
+      <td className="py-2.5 pr-3 text-xs text-slate-500">{formatIST(lead.lastEventAt)}</td>
       <td className="py-2.5 pr-3">
         <Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge>
         {lead.nextFollowUpAt ? (
-          <p className={cn("mt-1 text-[11px] font-semibold", new Date(lead.nextFollowUpAt) < new Date() ? "text-rose-600" : "text-amber-700")}>
+          <p className={cn("mt-1 text-[11px] font-semibold", new Date(lead.nextFollowUpAt) < Date.now() ? "text-rose-600" : "text-amber-700")}>
             {leadFollowUpCountdown(lead.nextFollowUpAt)}
           </p>
         ) : null}
@@ -544,6 +612,32 @@ function LeadRow({ lead, onView, onFollowUp }) {
   );
 }
 
+// Sort options for the leads table
+const LEAD_SORT_OPTIONS = [
+  { value: "lastEventAt:desc", label: "Last seen (newest)" },
+  { value: "lastEventAt:asc",  label: "Last seen (oldest)" },
+  { value: "cartValue:desc",   label: "Cart value (high→low)" },
+  { value: "cartValue:asc",    label: "Cart value (low→high)" },
+  { value: "nextFollowUpAt:asc", label: "Follow-up (soonest)" },
+  { value: "customerName:asc", label: "Name (A→Z)" },
+];
+
+function sortLeads(leads, sortKey) {
+  const [field, dir] = sortKey.split(":");
+  return [...leads].sort((a, b) => {
+    let va = a[field], vb = b[field];
+    if (field === "cartValue") { va = Number(va) || 0; vb = Number(vb) || 0; }
+    else if (field === "lastEventAt" || field === "nextFollowUpAt") {
+      va = va ? new Date(va).getTime() : 0;
+      vb = vb ? new Date(vb).getTime() : 0;
+    } else {
+      va = String(va || "").toLowerCase();
+      vb = String(vb || "").toLowerCase();
+    }
+    return dir === "asc" ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
+  });
+}
+
 function WebhooksTab() {
   const [endpoints, setEndpoints] = useState([]);
   const [leads, setLeads] = useState([]);
@@ -552,6 +646,7 @@ function WebhooksTab() {
   const [filterEndpoint, setFilterEndpoint] = useState("");
   const [viewingLead, setViewingLead] = useState(null);
   const [followUpLead, setFollowUpLead] = useState(null);
+  const [sortKey, setSortKey] = useState("lastEventAt:desc");
   // No phone captured on the cart/order event (e.g. a Fastrr cart still at
   // latest_stage:"INIT" before checkout) means there's no number to actually
   // call — split those out from real, callable leads instead of mixing them
@@ -583,14 +678,32 @@ function WebhooksTab() {
     setViewingLead((prev) => (prev && (prev._id || prev.id) === (updatedLead._id || updatedLead.id) ? updatedLead : prev));
   }
 
-  const verifiedLeads = leads.filter((l) => l.customerPhone);
-  const unverifiedLeads = leads.filter((l) => !l.customerPhone);
+  // Deduplicate by phone — when multiple records share the same phone number
+  // (e.g. same person from different endpoints) show the most recent one and
+  // carry the count so the user sees how many records exist for that number.
+  const phoneCount = new Map();
+  for (const l of leads) {
+    if (l.customerPhone) phoneCount.set(l.customerPhone, (phoneCount.get(l.customerPhone) || 0) + 1);
+  }
+  // Keep only the most-recently-seen record per phone; unverified leads keep all.
+  const seenPhones = new Set();
+  const verifiedLeadsRaw = leads.filter((l) => l.customerPhone);
+  // Sort raw by lastEventAt desc so the most recent record wins the dedup pass.
+  const verifiedLeadsSorted = [...verifiedLeadsRaw].sort((a, b) => new Date(b.lastEventAt) - new Date(a.lastEventAt));
+  const dedupedVerified = verifiedLeadsSorted.filter((l) => {
+    if (seenPhones.has(l.customerPhone)) return false;
+    seenPhones.add(l.customerPhone);
+    return true;
+  });
+
+  const verifiedLeads = sortLeads(dedupedVerified, sortKey);
+  const unverifiedLeads = sortLeads(leads.filter((l) => !l.customerPhone), sortKey);
   // Soonest/overdue first — a logged follow-up is worthless as a reminder if
   // it's buried at whatever position it happened to sort to in the main list.
   const followUpLeads = leads
     .filter((l) => l.nextFollowUpAt)
     .sort((a, b) => new Date(a.nextFollowUpAt) - new Date(b.nextFollowUpAt));
-  const overdueFollowUpCount = followUpLeads.filter((l) => new Date(l.nextFollowUpAt) < new Date()).length;
+  const overdueFollowUpCount = followUpLeads.filter((l) => new Date(l.nextFollowUpAt) < Date.now()).length;
   const shownLeads = leadTab === "verified" ? verifiedLeads : leadTab === "unverified" ? unverifiedLeads : followUpLeads;
 
   // Auto-locate verified leads (the callable ones) as soon as they load —
@@ -671,6 +784,13 @@ function WebhooksTab() {
           <div className="flex items-center gap-2">
             <select
               className="h-9 rounded-md border border-[var(--line)] bg-white px-2.5 text-xs outline-none focus:border-indigo-500"
+              value={sortKey}
+              onChange={(e) => setSortKey(e.target.value)}
+            >
+              {LEAD_SORT_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <select
+              className="h-9 rounded-md border border-[var(--line)] bg-white px-2.5 text-xs outline-none focus:border-indigo-500"
               value={filterEndpoint}
               onChange={(e) => setFilterEndpoint(e.target.value)}
             >
@@ -735,7 +855,13 @@ function WebhooksTab() {
               </thead>
               <tbody>
                 {shownLeads.map((lead) => (
-                  <LeadRow key={lead._id || lead.id} lead={lead} onView={setViewingLead} onFollowUp={setFollowUpLead} />
+                  <LeadRow
+                    key={lead._id || lead.id}
+                    lead={lead}
+                    duplicateCount={lead.customerPhone ? (phoneCount.get(lead.customerPhone) || 1) : 1}
+                    onView={setViewingLead}
+                    onFollowUp={setFollowUpLead}
+                  />
                 ))}
               </tbody>
             </table>
