@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { cn, formatMoney } from "@/lib/utils";
-import { listSyncedRecords, createCustomer } from "@/lib/api";
+import { listSyncedRecords, createCustomer, listWebhookLeads } from "@/lib/api";
 import { CreateOrderModal } from "@/components/create-order-modal";
 import { CustomerFollowUpModal } from "@/components/customer-followup-modal";
 
@@ -153,6 +153,7 @@ function NewCustomerModal({ onClose, onCreated }) {
 
 export function CustomersView() {
   const [customers, setCustomers] = useState([]);
+  const [leadPhones, setLeadPhones] = useState(new Set()); // phones that have webhook leads
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [search, setSearch] = useState("");
@@ -165,8 +166,13 @@ export function CustomersView() {
     setIsLoading(true);
     setError("");
     try {
-      const res = await listSyncedRecords("customers");
-      setCustomers(res.records || []);
+      const [custRes, leadsRes] = await Promise.all([
+        listSyncedRecords("customers"),
+        listWebhookLeads({ limit: 2000 }).catch(() => ({ leads: [] })),
+      ]);
+      setCustomers(custRes.records || []);
+      const phones = new Set((leadsRes.leads || []).map((l) => l.customerPhone).filter(Boolean));
+      setLeadPhones(phones);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -270,7 +276,12 @@ export function CustomersView() {
                 {filtered.map((c) => (
                   <tr key={c._id || c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                     <td className="px-4 py-3">
-                      <p className="font-semibold text-slate-900">{c.name || [c.firstName, c.lastName].filter(Boolean).join(" ") || "Unnamed"}</p>
+                      <div className="flex items-center gap-2">
+                        <p className="font-semibold text-slate-900">{c.name || [c.firstName, c.lastName].filter(Boolean).join(" ") || "Unnamed"}</p>
+                        {c.phone && leadPhones.has(c.phone) ? (
+                          <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">Lead</span>
+                        ) : null}
+                      </div>
                       {c.tags?.length ? <p className="mt-0.5 flex flex-wrap gap-1">{c.tags.slice(0, 3).map((t) => <span key={t} className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{t}</span>)}</p> : null}
                     </td>
                     <td className="px-4 py-3 text-xs text-slate-600">

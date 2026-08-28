@@ -403,7 +403,7 @@ export async function updateShopifyRecord({ companyId, resource, recordId, paylo
  * Create a new order directly on Shopify using the provided line items, customer, and shipping address.
  * Returns the newly created Shopify order object.
  */
-export async function createShopifyOrderDirect({ companyId, customerId, lineItems, shippingAddress, note, tags, isCOD }) {
+export async function createShopifyOrderDirect({ companyId, customerId, lineItems, shippingAddress, note, tags, isCOD, shippingCost = 0, discount = 0 }) {
   const context = await getCommerceRecordForUpdate({ companyId, resource: "customers", recordId: customerId });
 
   if (!context) {
@@ -471,6 +471,14 @@ export async function createShopifyOrderDirect({ companyId, customerId, lineItem
     send_receipt: true,
     send_fulfillment_receipt: true,
     financial_status: isCOD ? "pending" : "paid",
+    // Shipping line — Shopify requires this to show shipping on the order.
+    ...(shippingCost > 0 ? {
+      shipping_lines: [{ price: String(shippingCost), code: "Shipping", title: "Shipping" }],
+    } : {}),
+    // Discount code or manual discount — Shopify applies as a fixed amount.
+    ...(discount > 0 ? {
+      discount_codes: [{ code: "DISCOUNT", amount: String(discount), type: "fixed_amount" }],
+    } : {}),
   });
 
   const body = await shopifyFetch(channel.shop, "/orders.json", accessToken, {

@@ -4,6 +4,7 @@ import { isMongoConnected } from "../config/database.js";
 import { WebhookEndpoint } from "../models/webhook-endpoint.model.js";
 import { WebhookEvent } from "../models/webhook-event.model.js";
 import { WebhookLead } from "../models/webhook-lead.model.js";
+import { SyncedCustomer } from "../models/synced-customer.model.js";
 import { extractLeadInfo } from "../modules/webhooks/webhook.service.js";
 import { lookupIpGeo, guessLanguage } from "../utils/geo-lookup.js";
 import { memory, id, clone, now } from "./memory-store.js";
@@ -289,6 +290,19 @@ export async function addLeadFollowUp({ companyId, leadId, note, outcome, nextFo
     if (Object.keys(update.$set).length === 0) delete update.$set;
 
     const lead = await WebhookLead.findOneAndUpdate({ _id: leadId, companyId: mixedIdFilter(companyId) }, update, { new: true }).lean();
+
+    // Auto-link to SyncedCustomer when converting a lead
+    if (lead && followUpStatus === "converted" && lead.customerPhone && !lead.linkedCustomerId) {
+      const customer = await SyncedCustomer.findOne({
+        companyId: mixedIdFilter(companyId),
+        phone: lead.customerPhone,
+      }).lean();
+      if (customer) {
+        await WebhookLead.updateOne({ _id: leadId }, { $set: { linkedCustomerId: customer._id } });
+        lead.linkedCustomerId = customer._id;
+      }
+    }
+
     return lead;
   }
 
@@ -298,6 +312,55 @@ export async function addLeadFollowUp({ companyId, leadId, note, outcome, nextFo
       if (followUpStatus) lead.followUpStatus = followUpStatus;
       if (nextFollowUpAt) lead.nextFollowUpAt = new Date(nextFollowUpAt);
       lead.updatedAt = now();
+
+      // Auto-link in-memory when converting
+      if (followUpStatus === "converted" && lead.customerPhone && !lead.linkedCustomerId) {
+        for (const cust of (memory.syncedCustomers?.values() || [])) {
+          if (String(cust.companyId) === String(companyId) && cust.phone === lead.customerPhone) {
+            lead.linkedCustomerId = cust._id;
+            break;
+          }
+        }
+      }
+
+      return clone(lead);
+    }
+  }
+  return null;
+}
+
+// Mark a lead as seen (opened in the drawer). Once set, seenAt is never
+// cleared — it's a one-way "has been reviewed" flag, not a toggle.
+export async function markLeadSeen({ companyId, leadId }) {
+  if (isMongoConnected()) {
+    return WebhookLead.findOneAndUpdate(
+      { _id: leadId, companyId: mixedIdFilter(companyId), seenAt: null },
+      { $set: { seenAt: new Date() } },
+      { new: true },
+    ).lean();
+  }
+  for (const lead of memory.webhookLeads.values()) {
+    if (String(lead._id) === String(leadId) && String(lead.companyId) === String(companyId) && !lead.seenAt) {
+      lead.seenAt = now();
+      return clone(lead);
+    }
+  }
+  return null; // already seen — no update needed
+}
+
+// Link a lead to a synced customer by their DB id — called when a lead is
+// converted or when a matching phone/email is found during customer sync.
+export async function linkLeadToCustomer({ companyId, leadId, customerId }) {
+  if (isMongoConnected()) {
+    return WebhookLead.findOneAndUpdate(
+      { _id: leadId, companyId: mixedIdFilter(companyId) },
+      { $set: { linkedCustomerId: customerId } },
+      { new: true },
+    ).lean();
+  }
+  for (const lead of memory.webhookLeads.values()) {
+    if (String(lead._id) === String(leadId) && String(lead.companyId) === String(companyId)) {
+      lead.linkedCustomerId = customerId;
       return clone(lead);
     }
   }

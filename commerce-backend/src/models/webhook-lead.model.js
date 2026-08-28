@@ -57,6 +57,14 @@ const webhookLeadSchema = new mongoose.Schema(
     firstEventAt: Date,
     lastEventAt: Date,
 
+    // Set when the lead is opened in the drawer — used to distinguish new/unseen
+    // leads (bright row highlight) from already-reviewed ones. Stored in DB so
+    // "seen" survives page refresh and other users on the same account see it too.
+    seenAt: { type: Date, default: null, index: true },
+
+    // Set when the lead is linked to a synced customer (same phone/email).
+    linkedCustomerId: { type: mongoose.Schema.Types.Mixed, default: null },
+
     followUpStatus: {
       type: String,
       enum: ["new", "follow_up_scheduled", "converted", "no_response", "closed"],

@@ -46,6 +46,7 @@ import {
   getWebhookLeadEvents,
   logWebhookLeadFollowUp,
   resolveLeadsGeoBulk,
+  markLeadSeen,
 } from "@/lib/api";
 
 function SectionCard({ icon: Icon, title, desc, children }) {
@@ -556,13 +557,25 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
 function LeadRow({ lead, duplicateCount, onView, onFollowUp }) {
   const hasGeo = lead.geoResolvedAt && (lead.geoCity || lead.geoRegion);
   const geoPending = !lead.geoResolvedAt && lead.ipAddress;
+  const isUnseen = !lead.seenAt;
   return (
-    <tr className="cursor-pointer border-b border-slate-100 transition-colors last:border-0 hover:bg-slate-50/60" onClick={() => onView(lead)}>
+    <tr
+      className={cn(
+        "cursor-pointer border-b transition-colors last:border-0",
+        isUnseen
+          ? "border-amber-100 bg-amber-50/60 hover:bg-amber-50"
+          : "border-slate-100 hover:bg-slate-50/60",
+      )}
+      onClick={() => onView(lead)}
+    >
       <td className="py-2.5 pr-3">
         <div className="flex items-center gap-2">
           <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-slate-100 text-slate-500"><User size={14} /></div>
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
+              {isUnseen ? (
+                <span className="shrink-0 rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">New</span>
+              ) : null}
               <p className="truncate text-sm font-semibold text-slate-800">{lead.customerName || lead.customerPhone || lead.customerEmail || "Unknown"}</p>
               {duplicateCount > 1 ? (
                 <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`${duplicateCount} records share this phone`}>{duplicateCount}×</span>
@@ -597,6 +610,11 @@ function LeadRow({ lead, duplicateCount, onView, onFollowUp }) {
       <td className="py-2.5 pr-3 text-xs text-slate-500">{formatIST(lead.lastEventAt)}</td>
       <td className="py-2.5 pr-3">
         <Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge>
+        {lead.linkedCustomerId ? (
+          <span className="mt-1 flex items-center gap-1 text-[10px] font-semibold text-indigo-600">
+            <span>↗ Customer</span>
+          </span>
+        ) : null}
         {lead.nextFollowUpAt ? (
           <p className={cn("mt-1 text-[11px] font-semibold", new Date(lead.nextFollowUpAt) < Date.now() ? "text-rose-600" : "text-amber-700")}>
             {leadFollowUpCountdown(lead.nextFollowUpAt)}
@@ -676,6 +694,17 @@ function WebhooksTab() {
   function handleLeadUpdated(updatedLead) {
     setLeads((prev) => prev.map((l) => ((l._id || l.id) === (updatedLead._id || updatedLead.id) ? updatedLead : l)));
     setViewingLead((prev) => (prev && (prev._id || prev.id) === (updatedLead._id || updatedLead.id) ? updatedLead : prev));
+  }
+
+  // Called when user opens a lead drawer — marks it seen in the DB (permanent).
+  function handleViewLead(lead) {
+    setViewingLead(lead);
+    if (!lead.seenAt) {
+      const leadId = lead._id || lead.id;
+      markLeadSeen(leadId).then((res) => {
+        if (res?.lead) handleLeadUpdated(res.lead);
+      }).catch(() => {});
+    }
   }
 
   // Deduplicate by phone — when multiple records share the same phone number
@@ -859,7 +888,7 @@ function WebhooksTab() {
                     key={lead._id || lead.id}
                     lead={lead}
                     duplicateCount={lead.customerPhone ? (phoneCount.get(lead.customerPhone) || 1) : 1}
-                    onView={setViewingLead}
+                    onView={handleViewLead}
                     onFollowUp={setFollowUpLead}
                   />
                 ))}
@@ -871,7 +900,7 @@ function WebhooksTab() {
 
       {showAdd ? <AddEndpointModal onClose={() => setShowAdd(false)} onCreated={refresh} /> : null}
       {viewingLead ? (
-        <LeadDrawer lead={viewingLead} onClose={() => setViewingLead(null)} onLogFollowUp={(lead) => setFollowUpLead(lead)} />
+        <LeadDrawer lead={viewingLead} onClose={() => setViewingLead(null)} onLogFollowUp={setFollowUpLead} />
       ) : null}
       {followUpLead ? (
         <LogFollowUpModal lead={followUpLead} onClose={() => setFollowUpLead(null)} onLogged={handleLeadUpdated} />

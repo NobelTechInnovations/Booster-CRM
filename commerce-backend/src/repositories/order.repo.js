@@ -870,7 +870,30 @@ async function buildOrderCostLookup(companyId) {
     listAssets(companyId),
   ]);
 
-  const buyingPriceBySku = new Map(skuCosts.map((c) => [c.sku, toNumber(c.buyingPrice)]));
+  // Each SKU carries the current price PLUS a sorted history of past prices.
+  // priceAtDate(sku, orderDate) walks that history to find the buying price
+  // that was in effect on the order's date — so a price change today doesn't
+  // silently rewrite profit on orders that shipped months ago.
+  const skuCostMap = new Map(skuCosts.map((c) => [c.sku, c]));
+
+  function priceAtDate(sku, orderDate) {
+    const cost = skuCostMap.get(sku);
+    if (!cost) return 0;
+    const current = toNumber(cost.buyingPrice);
+    if (!orderDate || !(cost.priceHistory?.length)) return current;
+    // priceHistory entries record the OLD price and when it was replaced.
+    // If the order is before the earliest price-change date, use the oldest
+    // historical price. Otherwise use current.
+    const sorted = [...(cost.priceHistory || [])].sort((a, b) => new Date(a.changedAt) - new Date(b.changedAt));
+    const orderTs = new Date(orderDate).getTime();
+    for (const entry of sorted) {
+      if (orderTs < new Date(entry.changedAt).getTime()) {
+        return toNumber(entry.buyingPrice);
+      }
+    }
+    return current;
+  }
+
   const assetCostById = new Map(assets.map((a) => [String(a._id || a.id), toNumber(a.unitCost)]));
   const packagingCostBySku = new Map();
   for (const mapping of assetMappings) {
@@ -881,7 +904,11 @@ async function buildOrderCostLookup(companyId) {
     packagingCostBySku.set(mapping.sku, cost);
   }
 
-  return { buyingPriceBySku, packagingCostBySku };
+  // Keep a current-price map too (used by inventory/costing pages that don't
+  // have an order date to anchor to).
+  const buyingPriceBySku = new Map(skuCosts.map((c) => [c.sku, toNumber(c.buyingPrice)]));
+
+  return { buyingPriceBySku, packagingCostBySku, priceAtDate };
 }
 
 // Cost only counts for line items with a real Shopify SKU — items without
@@ -890,12 +917,18 @@ async function buildOrderCostLookup(companyId) {
 // getMfgCostTotal already has. Uncosted items contribute ₹0 cost, same as
 // there — this can overstate profit for products you haven't priced yet,
 // never understate it with a guess.
-function computeOrderCost(order, { buyingPriceBySku, packagingCostBySku }) {
+// orderDate is used for historical buying-price lookup; if omitted the
+// current price is used.
+function computeOrderCost(order, { buyingPriceBySku, packagingCostBySku, priceAtDate }) {
+  const orderDate = order.shopifyCreatedAt || order.createdAt;
   let cost = 0;
   for (const item of order.lineItems || []) {
     if (!item.sku) continue;
     const qty = toNumber(item.quantity) || 1;
-    cost += ((buyingPriceBySku.get(item.sku) || 0) + (packagingCostBySku.get(item.sku) || 0)) * qty;
+    // Use historical price if available, fall back to current-price map.
+    const bp = priceAtDate ? priceAtDate(item.sku, orderDate) : (buyingPriceBySku.get(item.sku) || 0);
+    const pp = packagingCostBySku.get(item.sku) || 0;
+    cost += (bp + pp) * qty;
   }
   return cost;
 }

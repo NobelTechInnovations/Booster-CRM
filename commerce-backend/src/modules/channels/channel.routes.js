@@ -274,7 +274,7 @@ channelRoutes.post(
   asyncHandler(async (req, res) => {
     const { companyId } = req.auth;
     const { customerId } = req.params;
-    const { lineItems = [], shippingAddress, note, tags, isCOD = true } = req.body || {};
+    const { lineItems = [], shippingAddress, note, tags, isCOD = true, shippingCost, discount } = req.body || {};
 
     if (!lineItems.length) {
       throw new HttpError(400, "At least one line item is required");
@@ -288,6 +288,8 @@ channelRoutes.post(
       note,
       tags,
       isCOD,
+      shippingCost: Number(shippingCost) || 0,
+      discount: Number(discount) || 0,
     });
 
     // Save the new order in MongoDB so it appears in the fulfillment panel

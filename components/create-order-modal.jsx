@@ -12,6 +12,8 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
   const [cart, setCart] = useState([]);
   const [isCOD, setIsCOD] = useState(true);
   const [note, setNote] = useState("");
+  const [shippingCost, setShippingCost] = useState(0);
+  const [discount, setDiscount] = useState(0);
   const [shipping, setShipping] = useState({
     firstName: customer?.firstName || "",
     lastName: customer?.lastName || "",
@@ -81,7 +83,8 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
     setCart((current) => current.map((item) => item.key === key ? { ...item, price: parseFloat(value) || 0 } : item));
   }
 
-  const total = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const subtotal = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+  const total = Math.max(0, subtotal - (Number(discount) || 0) + (Number(shippingCost) || 0));
 
   async function placeOrder() {
     if (!cart.length) { setError("Add at least one product"); return; }
@@ -100,6 +103,8 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
         note,
         tags: isCOD ? "COD, CRM_Order" : "Prepaid, CRM_Order",
         isCOD,
+        shippingCost: Number(shippingCost) || 0,
+        discount: Number(discount) || 0,
       });
       setSuccess(result);
       onOrderCreated?.(result);
@@ -229,8 +234,49 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                       <button onClick={() => removeFromCart(item.key)} className="text-rose-400 hover:text-rose-600"><Trash2 size={12} /></button>
                     </div>
                   ))}
+                  {/* Shipping cost + discount inputs */}
+                  <div className="space-y-1.5 pt-1 border-t border-[var(--line)]">
+                    <div className="flex items-center gap-2">
+                      <label className="w-28 shrink-0 text-[11px] text-slate-500">Shipping cost</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={shippingCost}
+                        onChange={(e) => setShippingCost(e.target.value)}
+                        className="flex-1 h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-600"
+                        placeholder="₹0"
+                      />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className="w-28 shrink-0 text-[11px] text-slate-500">Discount</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={discount}
+                        onChange={(e) => setDiscount(e.target.value)}
+                        className="flex-1 h-7 rounded border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-600"
+                        placeholder="₹0"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between pt-0.5 text-[11px] text-slate-500">
+                      <span>Subtotal</span>
+                      <span>{formatMoney(subtotal)}</span>
+                    </div>
+                    {Number(discount) > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-green-700">
+                        <span>Discount</span>
+                        <span>−{formatMoney(Number(discount))}</span>
+                      </div>
+                    )}
+                    {Number(shippingCost) > 0 && (
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Shipping</span>
+                        <span>+{formatMoney(Number(shippingCost))}</span>
+                      </div>
+                    )}
+                  </div>
                   <div className="flex items-center justify-between pt-1 text-xs font-bold text-slate-900">
-                    <span>Total</span>
+                    <span>Order Total</span>
                     <span>{formatMoney(total)}</span>
                   </div>
                 </div>

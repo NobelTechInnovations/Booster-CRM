@@ -17,6 +17,7 @@ import {
   addLeadFollowUp,
   resolveLeadGeo,
   resolveLeadsGeoBulk,
+  markLeadSeen,
 } from "../../repositories/webhook.repo.js";
 import { verifyWebhookSignature, extractEventSummary, extractLeadKey } from "./webhook.service.js";
 
@@ -143,6 +144,19 @@ webhookInboxRoutes.post(
     const leadIds = Array.isArray(req.body?.leadIds) ? req.body.leadIds.slice(0, 50) : [];
     const leads = await resolveLeadsGeoBulk({ companyId: req.auth.companyId, leadIds });
     res.json({ leads });
+  }),
+);
+
+// Mark a lead as seen (opened in the drawer). Idempotent — calling again
+// after it's already been seen is a no-op. Returns the lead in both cases.
+webhookInboxRoutes.post(
+  "/leads/:leadId/mark-seen",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const lead = await markLeadSeen({ companyId: req.auth.companyId, leadId: req.params.leadId });
+    // Return the lead even if already seen (lead === null means already seen)
+    const existing = lead ?? await getWebhookLead({ companyId: req.auth.companyId, leadId: req.params.leadId });
+    res.json({ lead: existing });
   }),
 );
 

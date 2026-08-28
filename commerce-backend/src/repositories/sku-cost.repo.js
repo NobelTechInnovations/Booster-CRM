@@ -27,9 +27,27 @@ export async function upsertSkuCost({ companyId, sku, payload }) {
   const clean = cleanPayload(payload);
 
   if (isMongoConnected()) {
+    // If the buying price is actually changing, push the old value into
+    // priceHistory before overwriting it so computeOrderCost() can use the
+    // historically-correct cost on old orders.
+    const existing = await SkuCost.findOne({ companyId, sku: cleanSku }).lean();
+    const oldPrice = existing?.buyingPrice ?? null;
+    const priceChanged = existing && typeof clean.buyingPrice === "number" && oldPrice !== clean.buyingPrice && oldPrice !== 0;
+
+    const update = { $set: clean };
+    if (priceChanged) {
+      update.$push = {
+        priceHistory: {
+          buyingPrice: oldPrice,
+          changedAt:   new Date(),
+          note:        payload.priceChangeNote ? String(payload.priceChangeNote).trim() : undefined,
+        },
+      };
+    }
+
     const record = await SkuCost.findOneAndUpdate(
       { companyId, sku: cleanSku },
-      { $set: clean },
+      update,
       { new: true, upsert: true },
     ).lean();
     return { skuCost: record };
@@ -37,9 +55,12 @@ export async function upsertSkuCost({ companyId, sku, payload }) {
 
   const key = `${companyId}:${cleanSku}`;
   const existing = memory.skuCosts.get(key);
+  if (existing && typeof clean.buyingPrice === "number" && existing.buyingPrice !== clean.buyingPrice && existing.buyingPrice !== 0) {
+    existing.priceHistory = [...(existing.priceHistory || []), { buyingPrice: existing.buyingPrice, changedAt: now() }];
+  }
   const record = existing
     ? Object.assign(existing, clean, { updatedAt: now() })
-    : { _id: id(), companyId, sku: cleanSku, ...clean, createdAt: now(), updatedAt: now() };
+    : { _id: id(), companyId, sku: cleanSku, ...clean, priceHistory: [], createdAt: now(), updatedAt: now() };
   memory.skuCosts.set(key, record);
   return { skuCost: clone(record) };
 }
