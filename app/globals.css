@@ -52,6 +52,21 @@
 }
 
 /* ── Reset & base ──────────────────────────────────────────────────────── */
+/* Wrapped in @layer base: per the CSS Cascade Layers spec, UNLAYERED styles
+   always beat LAYERED styles regardless of specificity — and Tailwind's own
+   utilities (px-*, py-*, m-*, gap-* etc.) live inside `@layer utilities`.
+   Before this fix, `* { margin: 0; padding: 0 }` sat unlayered below the
+   Tailwind import, so it silently won over EVERY padding/margin utility
+   class in the app, no matter how specific — a class like `px-4` compiled
+   correctly (`padding-inline: calc(var(--spacing) * 4)`) but never actually
+   applied, always overridden back to 0. Utilities using `gap` weren't
+   reset here, which is exactly why gap-x-*/gap-y-* worked while every
+   px-*/py-*/m-* class silently did nothing. Placing these rules in
+   `@layer base` makes them participate in the same layer ordering Tailwind
+   itself declares (theme, base, components, utilities), so `utilities`
+   correctly overrides `base` again. */
+
+@layer base {
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -80,6 +95,8 @@ table { font-variant-numeric: tabular-nums; border-collapse: collapse; }
 img, video { max-width: 100%; }
 
 ::selection { background: rgba(67, 97, 238, 0.18); }
+
+} /* end @layer base */
 
 /* ── Scrollbar ─────────────────────────────────────────────────────────── */
 
