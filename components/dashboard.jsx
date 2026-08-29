@@ -272,52 +272,65 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
   );
 }
 
-// Full-width sparkline that spans the bottom of each KPI card — exactly as in
-// the brandstack reference (wide, goes edge-to-edge, no axes/grid).
-function KpiSparkline({ item }) {
-  const seed = String(item.value).replace(/\D/g, "") || "5432";
-  const pts = Array.from({ length: 14 }, (_, i) => ({
-    v: ((parseInt(seed[i % seed.length] || "5") * (i + 1) + i * 7) % 10) + 1,
-  }));
-  const isNeg = item.tone === "rose";
-  const color = isNeg ? "#e11d48" : item.tone === "blue" ? "#2563eb" : "#16a34a";
+// Sparkline using REAL salesTrend data — maps order/sales field per KPI label.
+function KpiSparkline({ data = [], color = "#22c55e" }) {
+  // Normalise to {v} shape
+  const pts = data.length >= 2 ? data : Array.from({ length: 14 }, (_, i) => ({ v: Math.abs(Math.sin(i * 0.8) * 5 + 4) }));
   return (
-    <div className="h-12 w-full">
+    <div className="h-[52px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={pts} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
-          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} />
+        <LineChart data={pts} margin={{ top: 6, bottom: 6, left: 0, right: 0 }}>
+          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-// KPI card matching brandstack layout:
-//   top: LABEL ⓘ   [>]
-//   middle: BIG VALUE
-//   sub: ↗ change text
-//   bottom: full-width sparkline
-function KpiCard({ item }) {
-  const isNeg = item.tone === "rose";
-  const changeColor = isNeg ? "text-rose-600" : "text-emerald-600";
-  const arrow = isNeg ? "↘" : "↗";
+// ONE card with internal cell separators — exactly the brandstack KPI row.
+// Each cell: LABEL / BIG VALUE / ↗ CHANGE / full-width sparkline at bottom.
+function KpiRow({ items, salesTrend = [] }) {
+  // Build per-KPI trend series from real salesTrend data
+  function trendFor(label) {
+    if (!salesTrend.length) return [];
+    const isOrderKpi = /order|cancel|deliver|fulfil/i.test(label);
+    return salesTrend.map((d) => ({ v: isOrderKpi ? (d.orders || 0) : (d.sales || 0) }));
+  }
+
   return (
-    <div className="group relative flex cursor-default flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)] transition-shadow hover:shadow-md">
-      {/* Header */}
-      <div className="flex items-start justify-between gap-2 px-4 pt-4">
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{item.label}</p>
-        <ChevronRight size={12} className="mt-0.5 shrink-0 text-slate-300 opacity-0 transition group-hover:opacity-100" />
-      </div>
-      {/* Value + change */}
-      <div className="px-4 pb-3 pt-1">
-        <p className="text-[24px] font-bold leading-none tracking-tight text-slate-900">{item.value}</p>
-        <p className={cn("mt-1.5 text-[11px] font-semibold", changeColor)}>
-          {arrow} {item.change}
-        </p>
-      </div>
-      {/* Full-width sparkline — edge-to-edge, no padding */}
-      <div className="mt-auto">
-        <KpiSparkline item={item} />
+    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
+      <div className="flex min-h-[160px] overflow-x-auto">
+        {items.map((item, i) => {
+          const isNeg = item.tone === "rose";
+          const color = isNeg ? "#e11d48" : item.tone === "blue" ? "#3b82f6" : "#22c55e";
+          const changeColor = isNeg ? "text-rose-500" : "text-emerald-500";
+          const trend = trendFor(item.label);
+          return (
+            <div
+              key={item.label}
+              className={cn(
+                "group flex min-w-[140px] flex-1 cursor-default flex-col transition-colors hover:bg-slate-50/70",
+                i > 0 && "border-l border-[var(--line)]",
+              )}
+            >
+              {/* Label row */}
+              <div className="flex items-center justify-between gap-1 px-4 pt-4">
+                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
+                <ChevronRight size={11} className="shrink-0 text-slate-200 opacity-0 transition group-hover:opacity-100" />
+              </div>
+              {/* Value */}
+              <p className="px-4 pt-1.5 text-[26px] font-bold leading-none tracking-tight text-slate-950">{item.value}</p>
+              {/* Change */}
+              <p className={cn("px-4 pb-3 pt-1.5 text-[12px] font-semibold", changeColor)}>
+                {isNeg ? "↘" : "↗"} {item.change}
+              </p>
+              {/* Full-width sparkline — no padding, edge-to-edge */}
+              <div className="mt-auto">
+                <KpiSparkline data={trend} color={color} />
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );
@@ -2361,60 +2374,190 @@ export function ModuleView({ name, setActiveView }) {
   );
 }
 
+// ── Metrics ticker ─────────────────────────────────────────────────────────
+// Thin bar above content — shows live key numbers, matches brandstack header ticker.
+function MetricsTicker({ kpis = [], channels = [] }) {
+  const connectedCount = channels.filter((c) => c.status === "connected").length;
+  return (
+    <div className="mb-4 flex items-center gap-0 overflow-x-auto whitespace-nowrap rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-[12px]">
+      <span className="mr-4 flex items-center gap-1.5 font-semibold text-indigo-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+        LIVE
+      </span>
+      {kpis.slice(0, 6).map((k, i) => {
+        const isNeg = k.tone === "rose";
+        return (
+          <span key={k.label} className="flex items-center gap-1.5">
+            {i > 0 && <span className="mx-3 text-slate-200">·</span>}
+            <span className="font-medium text-slate-400 uppercase tracking-wide text-[10px]">{k.label}</span>
+            <span className="ml-1 font-bold text-slate-800">{k.value}</span>
+            <span className={cn("font-semibold text-[11px]", isNeg ? "text-rose-500" : "text-emerald-500")}>
+              {isNeg ? "↘" : "↗"} {k.change}
+            </span>
+          </span>
+        );
+      })}
+      {connectedCount > 0 && (
+        <>
+          <span className="mx-3 text-slate-200">·</span>
+          <span className="font-medium text-slate-400 uppercase tracking-wide text-[10px]">CHANNELS</span>
+          <span className="ml-1 font-bold text-slate-800">{connectedCount}</span>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ── Morning Brief ───────────────────────────────────────────────────────────
+// Revenue summary + insight chips — mirrors the brandstack morning brief card.
+function MorningBrief({ dashboardData, companyName }) {
+  const revenue = dashboardData?.periodSales || 0;
+  const kpis = dashboardData?.kpis || [];
+  const revenueKpi = kpis.find((k) => /sales|revenue/i.test(k.label)) || kpis[0];
+  const ordersKpi = kpis.find((k) => /order/i.test(k.label));
+  const deliveredKpi = kpis.find((k) => /deliver/i.test(k.label));
+  const cancelledKpi = kpis.find((k) => /cancel/i.test(k.label));
+  const inventory = dashboardData?.inventory || [];
+  const lowStock = inventory.filter((i) => (i.available || 0) <= 0);
+
+  const hour = new Date().getHours();
+  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+
+  const headline = revenueKpi
+    ? `${revenueKpi.change?.startsWith("↘") ? "Revenue down" : "Revenue up"} — ${revenueKpi.value} ${revenueKpi.change || ""} this period`
+    : `Welcome back to ${companyName || "your dashboard"}.`;
+
+  const chips = [
+    ordersKpi && { icon: "📦", text: `${ordersKpi.value} orders ${ordersKpi.change || ""}` },
+    deliveredKpi && { icon: "✅", text: `${deliveredKpi.value} delivered` },
+    cancelledKpi && { icon: "❌", text: `${cancelledKpi.value} cancelled` },
+    lowStock.length > 0 && { icon: "⚠️", text: `${lowStock.length} SKU${lowStock.length !== 1 ? "s" : ""} out of stock` },
+  ].filter(Boolean);
+
+  return (
+    <div className="mb-4 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex items-start gap-3">
+          <span className="text-xl">{hour < 12 ? "🌤️" : hour < 17 ? "☀️" : "🌙"}</span>
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{greeting} · Morning Brief</p>
+            <p className="mt-1 text-[15px] font-semibold leading-snug text-slate-900 max-w-2xl">{headline}</p>
+            {chips.length > 0 && (
+              <div className="mt-2.5 flex flex-wrap gap-2">
+                {chips.map((c, i) => (
+                  <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-medium text-slate-700">
+                    {c.icon} {c.text}
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+        <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-[12px] font-semibold text-indigo-700">
+          <Sparkles size={13} />
+          {chips.length + 3} insights
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Opportunities ────────────────────────────────────────────────────────────
+// 4-column insight cards — mirrors brandstack "Opportunities & Insights".
+function OpportunitiesSection({ dashboardData }) {
+  const inventory = dashboardData?.inventory || [];
+  const lowStock = inventory.filter((i) => (i.available || 0) <= 0);
+  const kpis = dashboardData?.kpis || [];
+  const cancelKpi = kpis.find((k) => /cancel/i.test(k.label));
+  const deliverKpi = kpis.find((k) => /deliver/i.test(k.label));
+
+  const cards = [
+    {
+      dot: "bg-emerald-500", label: "INVENTORY",
+      text: lowStock.length > 0 ? `${lowStock.length} SKU${lowStock.length !== 1 ? "s" : ""} are out of stock — reorder to avoid missed sales.` : "All tracked SKUs have stock above zero.",
+    },
+    {
+      dot: "bg-blue-500", label: "FULFILLMENT",
+      text: deliverKpi ? `${deliverKpi.value} orders delivered this period. ${deliverKpi.change || ""}` : "Sync Shopify data to track fulfilment.",
+    },
+    {
+      dot: "bg-amber-500", label: "CANCELLATIONS",
+      text: cancelKpi ? `${cancelKpi.value} orders cancelled — ${cancelKpi.change || "review trends"}.` : "No cancellation data yet.",
+    },
+    {
+      dot: "bg-indigo-500", label: "CHANNELS",
+      text: dashboardData?.channelMix?.length ? `${dashboardData.channelMix[0]?.name || "Top channel"} leads at ${dashboardData.channelMix[0]?.value || 0}% of revenue.` : "Connect channels to see channel mix.",
+    },
+  ];
+
+  return (
+    <div className="mb-4">
+      <div className="mb-3 flex items-center justify-between">
+        <p className="section-label">Opportunities &amp; Insights</p>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        {cards.map((c) => (
+          <div key={c.label} className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
+            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+              <span className={cn("h-1.5 w-1.5 rounded-full", c.dot)} />
+              {c.label}
+            </p>
+            <p className="text-[13px] leading-snug text-slate-800">{c.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export function DashboardView() {
   const { dashboardData, connectedChannels, setConnectedChannels, channelsError, setChannelsError, isLoadingChannels, session } = useCommerceStore();
 
   const kpiItems = withKpiIcons(dashboardData?.kpis?.length ? dashboardData.kpis : zeroKpis);
-  const chartSalesTrend = dashboardData?.salesTrend?.length ? dashboardData.salesTrend : zeroSalesTrend;
-  const chartChannelMix = dashboardData?.channelMix?.length ? dashboardData.channelMix : zeroChannelMix;
+  const salesTrend = dashboardData?.salesTrend?.length ? dashboardData.salesTrend : zeroSalesTrend;
+  const channelMix = dashboardData?.channelMix?.length ? dashboardData.channelMix : zeroChannelMix;
   const recentOrders = dashboardData?.recentOrders || [];
   const inventoryItems = dashboardData?.inventory || [];
+  const hasData = !!dashboardData?.kpis?.length;
 
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-5 lg:px-6">
 
-      {/* Page header */}
-      <div className="mb-5 flex items-center justify-between">
-        <div>
-          <h1 className="text-[22px] font-bold tracking-tight text-slate-900">{session?.company?.name || "Wokbook"}</h1>
-          <p className="mt-0.5 text-[13px] text-slate-500">Multi-channel commerce dashboard</p>
+      {/* Metrics ticker */}
+      <MetricsTicker kpis={kpiItems} channels={connectedChannels || []} />
+
+      {/* Morning brief (only when data is available) */}
+      {hasData && (
+        <MorningBrief dashboardData={dashboardData} companyName={session?.company?.name} />
+      )}
+
+      {/* Opportunities & Insights */}
+      {hasData && <OpportunitiesSection dashboardData={dashboardData} />}
+
+      {/* ✨ OVERVIEW — KPI row (ONE card, cells with separators + real sparklines) */}
+      <div className="mb-6">
+        <div className="section-label mb-3">
+          <Sparkles size={12} />
+          Overview
         </div>
-        <div className="flex gap-2">
-          <Button variant="secondary" className="h-8 text-[13px]">
-            <ShoppingCart size={14} />
-            New Order
-          </Button>
-        </div>
+        <KpiRow items={kpiItems} salesTrend={salesTrend} />
       </div>
 
-      {/* KPI row — matches brandstack: horizontal cells with full-width sparklines */}
-      <div className="mb-1">
-        <div className="flex items-center gap-2 mb-3">
-          <Sparkles size={13} className="text-slate-400" />
-          <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Overview</p>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
-          {kpiItems.map((item) => (
-            <KpiCard key={item.label} item={item} />
-          ))}
-        </div>
-      </div>
-
-      {/* Charts */}
-      <div className="mt-6">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Performance</p>
+      {/* PERFORMANCE — charts */}
+      <div className="mb-6">
+        <p className="section-label">Performance</p>
         <SalesCharts
-          salesTrend={chartSalesTrend}
-          channelMix={chartChannelMix}
+          salesTrend={salesTrend}
+          channelMix={channelMix}
           period={dashboardData?.period}
           periodSales={dashboardData?.periodSales}
           periodOrderCount={dashboardData?.periodOrderCount}
         />
       </div>
 
-      {/* Orders + Channels */}
-      <div className="mt-6">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Activity</p>
+      {/* ACTIVITY — orders + channels */}
+      <div className="mb-6">
+        <p className="section-label">Activity</p>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
           <OrdersPanel orders={recentOrders} />
           <ChannelsPanel
@@ -2429,8 +2572,8 @@ export function DashboardView() {
       </div>
 
       {/* Inventory + Finance */}
-      <div className="mt-6">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Inventory & Finance</p>
+      <div className="mb-6">
+        <p className="section-label">Inventory &amp; Finance</p>
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
           <InventoryPanel inventory={inventoryItems} />
           <div className="grid gap-4">

@@ -1,15 +1,8 @@
 @import "tailwindcss";
 
-/* Remaps Tailwind's default `indigo-*` palette to navy blue. The app has
-   ~330 hardcoded `indigo-*` utility classes across ~20 component files
-   (buttons, badges, active nav states, focus rings...) — rewriting every one
-   individually is high-risk for no visual gain, since overriding the palette
-   itself at the theme level makes every existing `bg-indigo-600`,
-   `text-indigo-700`, `ring-indigo-100` etc. resolve to navy blue app-wide for
-   free. `--primary` above targets indigo-700's tone so CSS-var-based and
-   Tailwind-class-based accents both land on the same navy blue. */
+/* Remap indigo palette to the brand blue used throughout the app */
 @theme {
-  --color-indigo-50: #eef4ff;
+  --color-indigo-50:  #eef4ff;
   --color-indigo-100: #dce8ff;
   --color-indigo-200: #b9d1ff;
   --color-indigo-300: #8bb3ff;
@@ -21,93 +14,94 @@
   --color-indigo-900: #172f6b;
   --color-indigo-950: #0f1f47;
 
-  /* Flatter, smaller corner radii app-wide — every rounded-lg/xl/2xl/3xl
-     utility shrinks for free since these are Tailwind's own radius scale. */
-  --radius-lg: 0.375rem;
-  --radius-xl: 0.5rem;
-  --radius-2xl: 0.625rem;
-  --radius-3xl: 0.875rem;
+  /* Slightly smaller radii — cleaner, less "rounded" look */
+  --radius-lg:  0.5rem;
+  --radius-xl:  0.625rem;
+  --radius-2xl: 0.75rem;
+  --radius-3xl: 1rem;
 }
 
 :root {
   color-scheme: light;
-  /* Brandstack-matched theme — light background, white cards, crisp borders */
-  --background: #f1f3f7;
-  --foreground: #0d1524;
-  --muted: #637083;
-  --line: #e3e6ed;
-  --panel: #ffffff;
-  --panel-soft: #f6f8fb;
-  --navy: #172f6b;
-  --navy-soft: #1e3d8c;
-  --primary: #4a82ff;
-  --primary-strong: #3568e0;
-  --primary-soft: #eef4ff;
-  --accent: #b45309;
-  --blue: #2563eb;
-  --amber: #d97706;
-  --green: #16a34a;
-  --rose: #e11d48;
-  --shadow: 0 1px 3px rgb(15 23 42 / 0.06), 0 1px 2px rgb(15 23 42 / 0.04);
+
+  /* ── Brandstack-matched palette ── */
+  --background:     #f1f3f6;      /* very light blue-gray page bg */
+  --foreground:     #08090a;      /* near-black text */
+  --muted:          #6b7280;      /* gray-500 equivalent */
+  --line:           #e5e7eb;      /* gray-200 borders */
+  --panel:          #ffffff;      /* white cards / sidebar */
+  --panel-soft:     #f9fafb;      /* gray-50 inputs / alt bg */
+
+  --primary:        #4361ee;      /* indigo-600 brand blue */
+  --primary-strong: #3451d1;
+  --primary-soft:   #eef0fd;
+
+  --navy:           #172f6b;
+  --navy-soft:      #1e3d8c;
+
+  --accent:         #b45309;
+  --blue:           #2563eb;
+  --amber:          #d97706;
+  --green:          #16a34a;
+  --rose:           #e11d48;
+
+  /* Subtle shadow */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow:    0 1px 3px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 6px rgb(0 0 0 / 0.05), 0 2px 4px rgb(0 0 0 / 0.04);
 }
 
-* {
-  box-sizing: border-box;
-}
+/* ── Reset & base ──────────────────────────────────────────────────────── */
 
-html {
-  scroll-behavior: smooth;
-}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { scroll-behavior: smooth; }
 
 body {
   min-height: 100vh;
-  margin: 0;
-  /* Flat background, no gradient glows — a clean/simple reference UI reads as
-     plain, evenly-lit surfaces, not decorative color washes. */
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-inter), Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  font-size: 13px;
-  line-height: 1.4;
-  /* Normal tracking, not the tightened -0.01em this used to carry — reads
-     closer to a plain, legible reference UI instead of a "designed" tight
-     display style. */
-  letter-spacing: 0;
+  /* Inter with system fallbacks — matches brandstack typography */
+  font-family: var(--font-inter), Inter, "SF Pro Text", ui-sans-serif, system-ui,
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+  font-size: 14px;            /* brandstack base: 14px */
+  line-height: 1.5;
+  letter-spacing: -0.01em;   /* slight tightening, characteristic of brandstack */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
+button, input, select, textarea { font: inherit; }
+button { cursor: pointer; }
 
-button {
-  cursor: pointer;
-}
+table { font-variant-numeric: tabular-nums; border-collapse: collapse; }
 
-table {
-  font-variant-numeric: tabular-nums;
-}
+img, video { max-width: 100%; }
 
-::selection {
-  background: rgba(74, 130, 255, 0.22);
-}
+::selection { background: rgba(67, 97, 238, 0.18); }
 
-.thin-scrollbar {
-  scrollbar-width: thin;
-  scrollbar-color: #b8c3d4 transparent;
-}
+/* ── Scrollbar ─────────────────────────────────────────────────────────── */
 
-.thin-scrollbar::-webkit-scrollbar {
-  height: 8px;
-  width: 8px;
-}
+.thin-scrollbar { scrollbar-width: thin; scrollbar-color: #d1d5db transparent; }
+.thin-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+.thin-scrollbar::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 999px; }
+.thin-scrollbar::-webkit-scrollbar-track { background: transparent; }
 
-.thin-scrollbar::-webkit-scrollbar-thumb {
-  background: #b8c3d4;
-  border-radius: 999px;
+/* ── Focus rings ───────────────────────────────────────────────────────── */
+
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+/* ── Utility classes ───────────────────────────────────────────────────── */
+
+.section-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #9ca3af;
+  margin-bottom: 12px;
 }
