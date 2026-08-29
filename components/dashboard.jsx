@@ -10,10 +10,8 @@ import {
   ChevronRight,
   CircleDollarSign,
   ClipboardList,
-  Filter,
   Gauge,
   Layers3,
-  LifeBuoy,
   LogOut,
   Menu,
   Package,
@@ -283,114 +281,70 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
 
 // Sparkline using REAL salesTrend-derived data only. If there's no genuine
 // per-day series behind a metric, this renders nothing rather than a fake
-// decorative curve — never fabricate a line for data we don't have.
-function KpiSparkline({ data = [], color = "#22c55e" }) {
-  if (data.length < 2) return <div className="h-[44px] w-full" />;
+// decorative curve — never fabricate a line for data we don't have. Kept
+// deliberately muted/thin — visually secondary to the metric value above it,
+// never the first thing the eye lands on.
+function KpiSparkline({ data = [], color = "#94a3b8" }) {
+  if (data.length < 2) return <div className="h-[32px] w-full" />;
   return (
-    <div className="h-[44px] w-full">
+    <div className="h-[32px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={data} margin={{ top: 4, bottom: 2, left: 0, right: 0 }}>
-          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.75} dot={false} isAnimationActive={false} />
+        <LineChart data={data} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
+          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-// Primary KPI row — ONLY metrics with a genuine day-by-day series behind them
-// (derived straight from salesTrend: sales, orders, and computed AOV). Every
-// other metric (products/customers/channels/pending/etc.) has no daily
-// history in the backend, so it belongs in the secondary stats strip instead
-// of getting a fabricated sparkline.
+// Overview KPI grid — the 6 metrics that genuinely have data behind them.
+// Today's Sales / Monthly Revenue / Total Orders / AOV get a real sparkline
+// (derived straight from salesTrend — AOV computed per-bucket as sales÷orders,
+// still real, never fabricated); Delivered/Cancelled don't have a daily
+// bucketed history in the backend so their sparkline area stays blank rather
+// than faked. No card border, no dividers — plain grid, whitespace does the
+// separating, matching the reference's uncluttered KPI strip.
 function KpiRow({ items, salesTrend = [] }) {
   const PRIMARY = [
     { match: /today.*sale/i, color: "#22c55e", series: "sales" },
     { match: /monthly.*revenue|monthly.*sale/i, color: "#4361ee", series: "sales" },
     { match: /total.*order/i, color: "#3b82f6", series: "orders" },
+    { match: /^delivered$/i, color: null, series: null },
+    { match: /^cancelled$/i, color: null, series: null },
     { match: /avg.*order.*value|aov/i, color: "#d97706", series: "aov" },
   ];
 
   const primaryItems = PRIMARY.map(({ match, color, series }) => {
     const item = items.find((k) => match.test(k.label));
     if (!item) return null;
-    const trend = salesTrend.length
+    const trend = series && salesTrend.length
       ? salesTrend.map((d) => ({
           v: series === "orders" ? (d.orders || 0) : series === "aov" ? (d.orders ? d.sales / d.orders : 0) : (d.sales || 0),
         }))
       : [];
-    return { ...item, color, trend };
+    return { ...item, color: color || "#94a3b8", trend };
   }).filter(Boolean);
 
   if (!primaryItems.length) return null;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
-      <div className="flex min-h-[168px]">
-        {primaryItems.map((item, i) => {
-          const isNeg = item.tone === "rose";
-          const changeColor = isNeg ? "text-rose-500" : "text-emerald-600";
-          return (
-            <div
-              key={item.label}
-              className={cn(
-                "group flex flex-1 cursor-default flex-col transition-colors hover:bg-slate-50/60",
-                i > 0 && "border-l border-[var(--line)]",
-              )}
-            >
-              <div className="flex items-center justify-between gap-1 px-5 pt-5">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
-                <ChevronRight size={12} className="shrink-0 text-slate-200 opacity-0 transition group-hover:opacity-100" />
-              </div>
-              <p className="px-5 pt-2 text-[28px] font-bold leading-none tracking-tight text-slate-950">{item.value}</p>
-              <p className={cn("px-5 pb-4 pt-2 text-[12.5px] font-semibold", changeColor)}>
-                {isNeg ? "↘" : "↗"} {item.change}
-              </p>
-              <div className="mt-auto px-1 pb-1">
-                <KpiSparkline data={item.trend} color={item.color} />
-              </div>
+    <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 xl:grid-cols-6">
+      {primaryItems.map((item) => {
+        const isNeg = item.tone === "rose";
+        const changeColor = isNeg ? "text-rose-500" : "text-emerald-600";
+        return (
+          <div key={item.label} className="flex flex-col">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
+            <p className="mt-1.5 text-[26px] font-bold leading-none tracking-tight text-slate-950">{item.value}</p>
+            <p className={cn("mt-1.5 text-[12px] font-semibold", changeColor)}>
+              {isNeg ? "↘" : "↗"} {item.change}
+            </p>
+            <div className="mt-2">
+              <KpiSparkline data={item.trend} color={item.color} />
             </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// Secondary stats strip — every metric that has no daily history (products,
-// customers, channels, pending, delivered, cancelled, etc). Plain number +
-// change, no sparkline attempted — honest about what data actually exists.
-function SecondaryStatsRow({ items }) {
-  const LABELS = [/pending.*order/i, /^products$/i, /^customers$/i, /connected.*channel/i, /^delivered$/i, /^cancelled$/i, /yesterday.*sale/i, /lifetime.*revenue/i];
-  const picked = LABELS.map((re) => items.find((k) => re.test(k.label))).filter(Boolean);
-  if (!picked.length) return null;
-
-  return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
-      <div className="grid grid-cols-2 sm:grid-cols-4">
-        {picked.map((item, i) => {
-          const isNeg = item.tone === "rose";
-          const changeColor = isNeg ? "text-rose-500" : item.tone === "amber" ? "text-amber-600" : "text-emerald-600";
-          // Exactly one directive per side per breakpoint — never emit both
-          // "sm:border-l" and "sm:border-l-0" together (cascade order between
-          // same-breakpoint utilities isn't guaranteed by class-list order).
-          return (
-            <div
-              key={item.label}
-              className={cn(
-                "flex flex-col gap-1.5 px-5 py-4 border-[var(--line)]",
-                i % 2 !== 0 ? "border-l" : "border-l-0",
-                i >= 2 ? "border-t" : "border-t-0",
-                i % 4 !== 0 ? "sm:border-l" : "sm:border-l-0",
-                i >= 4 ? "sm:border-t" : "sm:border-t-0",
-              )}
-            >
-              <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
-              <p className="text-[19px] font-bold leading-none tracking-tight text-slate-900">{item.value}</p>
-              <p className={cn("text-[11.5px] font-medium", changeColor)}>{item.change}</p>
-            </div>
-          );
-        })}
-      </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -415,14 +369,50 @@ function formatPeriodMoney(value) {
   return `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderCount }) {
+// Small dot+label legend chip — reused above the revenue chart so Sales/
+// Profit/Orders are named explicitly instead of relying on the dual-axis
+// alone to communicate what's what.
+function LegendDot({ color, label }) {
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
+    <span className="flex items-center gap-1.5 text-[12px] font-medium text-slate-500">
+      <span className="h-2 w-2 rounded-full" style={{ background: color }} />
+      {label}
+    </span>
+  );
+}
+
+// A pie/donut slice spanning the full 100% (only one channel connected —
+// the common case) hits a real SVG-arc limitation: an arc whose start and
+// end angle coincide (a true 360° sweep) can't be expressed as a single arc
+// command and collapses to an invisible path, no matter what padding/start/
+// end angle tweaks are tried. The standard, reliable workaround: split that
+// one slice into two 50% halves with the same fill color — two well-formed
+// ~180° arcs render as one solid ring, and the tooltip is remapped back to
+// the original name/value so hovering either half still reads "100%".
+function useSingleSlicePieData(channelMix) {
+  const isSingleSlice = channelMix.length === 1;
+  const pieData = isSingleSlice
+    ? [
+        { name: channelMix[0].name, value: channelMix[0].value / 2, __originalName: channelMix[0].name, __originalValue: channelMix[0].value },
+        { name: channelMix[0].name, value: channelMix[0].value / 2, __originalName: channelMix[0].name, __originalValue: channelMix[0].value },
+      ]
+    : channelMix;
+  return { pieData, isSingleSlice };
+}
+
+function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderCount }) {
+  const { pieData, isSingleSlice } = useSingleSlicePieData(channelMix);
+  return (
+    <div className="grid gap-6 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
       <Card>
         <CardHeader>
           <div className="min-w-0">
-            <CardTitle>Sales, Profit &amp; Orders</CardTitle>
-            <p className="mt-1 text-[13px] text-[var(--muted)]">Daily performance across connected channels.</p>
+            <CardTitle>Sales &amp; Orders Performance</CardTitle>
+            <div className="mt-2 flex flex-wrap items-center gap-4">
+              <LegendDot color="#4361ee" label="Sales" />
+              <LegendDot color="#d97706" label="Profit" />
+              <LegendDot color="#c7d2fe" label="Orders" />
+            </div>
           </div>
           <Badge tone="indigo" className="shrink-0 whitespace-nowrap">
             {PERIOD_LABELS[period] || "Today"}: {formatPeriodMoney(periodSales)} · {periodOrderCount || 0} orders
@@ -434,18 +424,18 @@ function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderC
               <ComposedChart data={salesTrend} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="salesGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#4361ee" stopOpacity={0.18} />
+                    <stop offset="5%" stopColor="#4361ee" stopOpacity={0.14} />
                     <stop offset="95%" stopColor="#4361ee" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#e5eaf1" vertical={false} />
+                <CartesianGrid stroke="#f1f5f9" vertical={false} />
                 <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                 <YAxis yAxisId="revenue" tickFormatter={formatAxisCurrency} tickLine={false} axisLine={false} width={48} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                 <YAxis yAxisId="orders" orientation="right" tickLine={false} axisLine={false} width={28} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                 <Tooltip content={<ChartTooltip />} />
-                <Area yAxisId="revenue" type="monotone" dataKey="sales" name="Sales" stroke="#4361ee" fill="url(#salesGradient)" strokeWidth={2.5} dot={false} />
-                <Area yAxisId="revenue" type="monotone" dataKey="profit" name="Profit" stroke="#d97706" fill="transparent" strokeWidth={2} dot={false} />
-                <Bar yAxisId="orders" dataKey="orders" name="Orders" fill="#c7d2fe" radius={[3, 3, 0, 0]} maxBarSize={18} />
+                <Area yAxisId="revenue" type="monotone" dataKey="sales" name="Sales" stroke="#4361ee" fill="url(#salesGradient)" strokeWidth={2} dot={false} />
+                <Area yAxisId="revenue" type="monotone" dataKey="profit" name="Profit" stroke="#d97706" fill="transparent" strokeWidth={1.5} dot={false} />
+                <Bar yAxisId="orders" dataKey="orders" name="Orders" fill="#c7d2fe" radius={[3, 3, 0, 0]} maxBarSize={16} />
               </ComposedChart>
             </ResponsiveContainer>
           </div>
@@ -455,35 +445,37 @@ function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderC
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Channel Wise</CardTitle>
-            <p className="mt-1 text-sm text-[var(--muted)]">Revenue contribution by source.</p>
+            <CardTitle>Channel Performance</CardTitle>
+            <p className="mt-1 text-[13px] text-[var(--muted)]">Revenue contribution by source.</p>
           </div>
-          <Button variant="ghost" className="h-9 px-2" aria-label="Filter channels">
-            <Filter size={16} />
-          </Button>
         </CardHeader>
         <CardContent>
-          <div className="h-60">
+          <div className="h-52">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
-                <Pie data={channelMix} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={3}>
-                  {channelMix.map((entry, index) => (
-                    <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
+                <Pie
+                  data={pieData}
+                  dataKey="value"
+                  nameKey="name"
+                  innerRadius={58}
+                  outerRadius={88}
+                  paddingAngle={channelMix.length > 1 ? 3 : 0}
+                >
+                  {pieData.map((entry, index) => (
+                    <Cell key={index} fill={chartColors[Math.floor(index / (isSingleSlice ? 2 : 1)) % chartColors.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value) => `${value}%`} />
+                <Tooltip formatter={(value, name, props) => [`${props.payload.__originalValue ?? value}%`, props.payload.__originalName ?? name]} />
               </PieChart>
             </ResponsiveContainer>
           </div>
-          <div className="space-y-3">
+          <div className="mt-2 flex flex-wrap gap-x-4 gap-y-2">
             {channelMix.map((item, index) => (
-              <div key={item.name} className="flex items-center justify-between text-sm">
-                <span className="flex items-center gap-2">
-                  <span className="h-2.5 w-2.5 rounded-full" style={{ background: chartColors[index] }} />
-                  {item.name}
-                </span>
-                <span className="font-semibold">{item.value}%</span>
-              </div>
+              <span key={item.name} className="flex items-center gap-1.5 text-[12.5px]">
+                <span className="h-2 w-2 rounded-full" style={{ background: chartColors[index % chartColors.length] }} />
+                <span className="text-slate-600">{item.name}</span>
+                <span className="font-semibold text-slate-800">{item.value}%</span>
+              </span>
             ))}
           </div>
         </CardContent>
@@ -2436,21 +2428,28 @@ export function ModuleView({ name, setActiveView }) {
   );
 }
 
-// ── Metrics ticker ─────────────────────────────────────────────────────────
-// Grouped marquee bar: LIVE · REVENUE group · ORDERS group · channels pill.
-function MetricsTicker({ kpis = [], channels = [] }) {
+// ── Business metric strip ───────────────────────────────────────────────────
+// Compact command-bar row directly under the page header — no card, no box,
+// just a thin bottom rule separating it from the content below (whitespace
+// does the section separation, not a bordered container).
+function BusinessMetricStrip({ kpis = [], channels = [] }) {
   const connectedCount = channels.filter((c) => c.status === "connected").length;
   const find = (re) => kpis.find((k) => re.test(k.label));
 
-  const revenueGroup = [find(/monthly.*revenue/i), find(/avg.*order.*value|aov/i)].filter(Boolean);
-  const ordersGroup = [find(/total.*order/i), find(/^delivered$/i), find(/^cancelled$/i)].filter(Boolean);
+  const metrics = [
+    find(/monthly.*revenue/i),
+    find(/total.*order/i),
+    find(/^delivered$/i),
+    find(/^cancelled$/i),
+    find(/avg.*order.*value|aov/i),
+  ].filter(Boolean);
 
   function Metric({ k }) {
     const isNeg = k.tone === "rose";
     return (
       <span className="flex items-center gap-2 whitespace-nowrap">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{k.label}</span>
-        <span className="text-[13.5px] font-bold text-slate-900">{k.value}</span>
+        <span className="text-[14px] font-bold text-slate-900">{k.value}</span>
         <span className={cn("text-[11.5px] font-semibold", isNeg ? "text-rose-500" : "text-emerald-600")}>
           {isNeg ? "↘" : "↗"} {k.change}
         </span>
@@ -2458,37 +2457,22 @@ function MetricsTicker({ kpis = [], channels = [] }) {
     );
   }
 
-  function Group({ label, metrics }) {
-    if (!metrics.length) return null;
-    return (
-      <span className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
-        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-400">{label}</span>
-        {metrics.map((k, i) => (
-          <span key={k.label} className="flex items-center gap-x-4">
-            {i > 0 && <span className="text-slate-200">·</span>}
-            <Metric k={k} />
-          </span>
-        ))}
-      </span>
-    );
-  }
-
-  // flex-wrap (no overflow-x-auto) — narrower screens wrap onto a second
-  // line instead of showing a horizontal scrollbar.
   return (
-    <div className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-3.5">
-      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-700">
-        <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.2)]" />
+    <div className="mb-9 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--line)] pb-4">
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-600">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         Live
       </span>
-      <span className="hidden h-5 w-px shrink-0 bg-slate-200 sm:block" />
-      <Group label="Revenue" metrics={revenueGroup} />
-      <span className="hidden h-5 w-px shrink-0 bg-slate-200 sm:block" />
-      <Group label="Orders" metrics={ordersGroup} />
+      {metrics.map((k) => (
+        <span key={k.label} className="flex items-center gap-2">
+          <span className="text-slate-200">·</span>
+          <Metric k={k} />
+        </span>
+      ))}
       {connectedCount > 0 && (
-        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-          {connectedCount} channel{connectedCount !== 1 ? "s" : ""} live
+        <span className="flex shrink-0 items-center gap-2 text-[11.5px] font-medium text-slate-400">
+          <span className="text-slate-200">·</span>
+          {connectedCount} channel{connectedCount !== 1 ? "s" : ""} connected
         </span>
       )}
     </div>
@@ -2532,33 +2516,28 @@ function MorningBrief({ dashboardData, companyName }) {
   ].filter(Boolean);
 
   return (
-    <div className="mb-8 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
-      <div className="flex items-center gap-0">
-        {/* Colored left accent */}
-        <div className="flex w-1.5 self-stretch bg-gradient-to-b from-indigo-500 to-indigo-300 rounded-l-xl" />
-        <div className="flex flex-1 items-start justify-between gap-4 px-5 py-4">
-          <div className="flex items-start gap-3">
-            <span className="mt-0.5 text-xl leading-none">{greetingEmoji}</span>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{greetingTime} · Morning Brief</p>
-              <p className="mt-1.5 text-[15px] font-semibold leading-snug text-slate-900">{headline}</p>
-              {chips.length > 0 && (
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {chips.map((c, i) => (
-                    <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[12px] font-medium text-slate-700">
-                      {c.icon} {c.text}
-                    </span>
-                  ))}
-                </div>
-              )}
+    <div className="mb-10 flex items-start justify-between gap-4">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 text-xl leading-none">{greetingEmoji}</span>
+        <div>
+          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{greetingTime} · Morning Brief</p>
+          <p className="mt-1.5 text-[17px] font-semibold leading-snug text-slate-900">{headline}</p>
+          {chips.length > 0 && (
+            <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
+              {chips.map((c, i) => (
+                <span key={i} className="inline-flex items-center gap-1.5 text-[13px] font-medium text-slate-500">
+                  <span aria-hidden>{c.icon}</span> {c.text}
+                </span>
+              ))}
             </div>
-          </div>
-          <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-[12px] font-semibold text-indigo-700">
-            <Sparkles size={12} />
-            {chips.length} insights
-          </div>
+          )}
         </div>
       </div>
+      <button className="flex shrink-0 items-center gap-1.5 text-[12.5px] font-semibold text-indigo-600 hover:text-indigo-700">
+        <Sparkles size={13} />
+        {chips.length} insights
+        <ChevronRight size={13} />
+      </button>
     </div>
   );
 }
@@ -2576,19 +2555,19 @@ function OpportunitiesSection({ dashboardData }) {
   const cancelChange = cancelKpi?.change?.trim();
   const cards = [
     {
-      dot: "bg-emerald-500", label: "INVENTORY",
+      accent: "border-emerald-400", label: "INVENTORY",
       text: lowStock.length > 0 ? `${lowStock.length} SKU${lowStock.length !== 1 ? "s" : ""} out of stock — reorder soon.` : "All tracked SKUs have stock above zero.",
     },
     {
-      dot: "bg-blue-500", label: "FULFILLMENT",
+      accent: "border-blue-400", label: "FULFILLMENT",
       text: deliverKpi ? `${deliverKpi.value} orders delivered${deliverChange ? ` (${deliverChange})` : ""}.` : "Sync Shopify data to track fulfillment.",
     },
     {
-      dot: "bg-amber-500", label: "CANCELLATIONS",
+      accent: "border-amber-400", label: "CANCELLATIONS",
       text: cancelKpi ? `${cancelKpi.value} orders cancelled${cancelChange ? ` — ${cancelChange}` : ""}.` : "No cancellations recorded yet.",
     },
     {
-      dot: "bg-indigo-500", label: "CHANNELS",
+      accent: "border-indigo-400", label: "CHANNELS",
       text: dashboardData?.channelMix?.length > 0 && dashboardData.channelMix[0]?.name !== "No synced sales"
         ? `${dashboardData.channelMix[0].name} leads at ${dashboardData.channelMix[0].value || 0}% of revenue.`
         : "Connect a channel to see revenue split.",
@@ -2596,18 +2575,40 @@ function OpportunitiesSection({ dashboardData }) {
   ];
 
   return (
-    <div className="mb-8">
-      <div className="mb-4 flex items-center justify-between">
-        <p className="section-label mb-0">Opportunities &amp; Insights</p>
-      </div>
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+    <div className="mb-10">
+      <p className="section-label">Opportunities &amp; Insights</p>
+      <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-5">
-            <p className="mb-2.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-widest text-slate-500">
-              <span className={cn("h-1.5 w-1.5 rounded-full", c.dot)} />
-              {c.label}
-            </p>
-            <p className="text-[13.5px] leading-relaxed text-slate-800">{c.text}</p>
+          <div key={c.label} className={cn("border-l-2 py-0.5 pl-3.5", c.accent)}>
+            <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-slate-400">{c.label}</p>
+            <p className="text-[13.5px] leading-snug text-slate-700">{c.text}</p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Additional business insights ────────────────────────────────────────────
+// Level-5 (secondary) info: catalog/customer/channel counts that don't have
+// a daily trend behind them, so they never got a sparkline in Overview.
+// Deliberately lightweight — small text, no card border, no boxes — so it
+// reads as reference detail sitting quietly at the bottom of the page
+// rather than competing with the KPIs and charts above it.
+function AdditionalInsights({ items }) {
+  const LABELS = [/^products$/i, /^customers$/i, /connected.*channel/i, /pending.*order/i, /yesterday.*sale/i, /lifetime.*revenue/i];
+  const picked = LABELS.map((re) => items.find((k) => re.test(k.label))).filter(Boolean);
+  if (!picked.length) return null;
+
+  return (
+    <div>
+      <p className="section-label">Additional Business Insights</p>
+      <div className="flex flex-wrap gap-x-8 gap-y-3">
+        {picked.map((item) => (
+          <div key={item.label} className="flex items-baseline gap-2">
+            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</span>
+            <span className="text-[14px] font-bold text-slate-800">{item.value}</span>
+            <span className="text-[11.5px] text-slate-400">{item.change}</span>
           </div>
         ))}
       </div>
@@ -2626,28 +2627,27 @@ export function DashboardView() {
   const hasData = !!dashboardData?.kpis?.length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-7 lg:px-8">
 
-      {/* Metrics ticker */}
-      <MetricsTicker kpis={kpiItems} channels={connectedChannels || []} />
+      {/* Business metric strip — plain command-bar row, no card */}
+      <BusinessMetricStrip kpis={kpiItems} channels={connectedChannels || []} />
 
-      {/* Morning brief (only when data is available) */}
+      {/* Morning brief — intelligent executive summary, no card */}
       {hasData && (
         <MorningBrief dashboardData={dashboardData} companyName={session?.company?.name} />
       )}
 
-      {/* Opportunities & Insights */}
+      {/* Opportunities & Insights — colored-accent cards, no boxed borders */}
       {hasData && <OpportunitiesSection dashboardData={dashboardData} />}
 
-      {/* ✨ OVERVIEW — KPI row (real sparklines only where real daily data exists) */}
-      <div className="mb-8 space-y-4">
+      {/* Overview — 6 real KPIs, plain grid, no card */}
+      <div className="mb-10">
         <p className="section-label">Overview</p>
         <KpiRow items={kpiItems} salesTrend={salesTrend} />
-        <SecondaryStatsRow items={kpiItems} />
       </div>
 
-      {/* PERFORMANCE — charts */}
-      <div className="mb-8">
+      {/* Performance — main analytics area */}
+      <div className="mb-10">
         <p className="section-label">Performance</p>
         <SalesCharts
           salesTrend={salesTrend}
@@ -2658,10 +2658,10 @@ export function DashboardView() {
         />
       </div>
 
-      {/* ACTIVITY — orders + channels */}
-      <div className="mb-8">
+      {/* Activity — orders + channels */}
+      <div className="mb-10">
         <p className="section-label">Activity</p>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
           <OrdersPanel orders={recentOrders} />
           <ChannelsPanel
             connectedChannels={connectedChannels}
@@ -2675,17 +2675,20 @@ export function DashboardView() {
       </div>
 
       {/* Inventory + Finance */}
-      <div>
+      <div className="mb-10">
         <p className="section-label">Inventory &amp; Finance</p>
-        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
           <InventoryPanel inventory={inventoryItems} />
-          <div className="grid gap-5">
+          <div className="grid gap-6">
             <LowStockAssetsPanel />
             <FinancePanel />
             <AutomationPanel />
           </div>
         </div>
       </div>
+
+      {/* Additional business insights — quiet, secondary reference info */}
+      <AdditionalInsights items={kpiItems} />
     </div>
   );
 }
