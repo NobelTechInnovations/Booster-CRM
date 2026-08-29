@@ -7,6 +7,7 @@ import {
   Boxes,
   Building2,
   ChevronDown,
+  ChevronRight,
   CircleDollarSign,
   ClipboardList,
   Filter,
@@ -271,23 +272,19 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
   );
 }
 
-// Tiny sparkline — purely decorative trend indicator on each KPI card.
-// Seeds 8 data points from a deterministic hash of the item's current value
-// so the shape stays stable across re-renders but varies between cards.
-function MiniSparkline({ item }) {
-  const seed = String(item.value).replace(/\D/g, "") || "1234";
-  const pts = Array.from({ length: 8 }, (_, i) => ({
-    v: ((parseInt(seed[i % seed.length] || "5") + i * 3 + parseInt(seed[(i + 2) % seed.length] || "4")) % 9) + 1,
+// Full-width sparkline that spans the bottom of each KPI card — exactly as in
+// the brandstack reference (wide, goes edge-to-edge, no axes/grid).
+function KpiSparkline({ item }) {
+  const seed = String(item.value).replace(/\D/g, "") || "5432";
+  const pts = Array.from({ length: 14 }, (_, i) => ({
+    v: ((parseInt(seed[i % seed.length] || "5") * (i + 1) + i * 7) % 10) + 1,
   }));
-  const color =
-    item.tone === "green" ? "#16a34a"
-    : item.tone === "rose" ? "#e11d48"
-    : item.tone === "blue" ? "#2563eb"
-    : "#4a82ff";
+  const isNeg = item.tone === "rose";
+  const color = isNeg ? "#e11d48" : item.tone === "blue" ? "#2563eb" : "#16a34a";
   return (
-    <div className="h-10 w-20 shrink-0">
+    <div className="h-12 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={pts}>
+        <LineChart data={pts} margin={{ top: 2, bottom: 2, left: 0, right: 0 }}>
           <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} />
         </LineChart>
       </ResponsiveContainer>
@@ -295,21 +292,32 @@ function MiniSparkline({ item }) {
   );
 }
 
+// KPI card matching brandstack layout:
+//   top: LABEL ⓘ   [>]
+//   middle: BIG VALUE
+//   sub: ↗ change text
+//   bottom: full-width sparkline
 function KpiCard({ item }) {
   const isNeg = item.tone === "rose";
-  const trendColor = isNeg ? "text-rose-600" : item.tone === "green" ? "text-emerald-600" : "text-blue-600";
-  const trendArrow = isNeg ? "↘" : "↗";
+  const changeColor = isNeg ? "text-rose-600" : "text-emerald-600";
+  const arrow = isNeg ? "↘" : "↗";
   return (
-    <div className="flex min-w-0 cursor-default flex-col gap-1 rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4 transition hover:shadow-md">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{item.label}</p>
-      <div className="mt-1 flex items-end justify-between gap-2">
-        <div>
-          <p className="text-[22px] font-bold leading-none tracking-tight text-slate-900">{item.value}</p>
-          <p className={cn("mt-1.5 text-[11px] font-medium", trendColor)}>
-            {trendArrow} {item.change}
-          </p>
-        </div>
-        <MiniSparkline item={item} />
+    <div className="group relative flex cursor-default flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)] transition-shadow hover:shadow-md">
+      {/* Header */}
+      <div className="flex items-start justify-between gap-2 px-4 pt-4">
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{item.label}</p>
+        <ChevronRight size={12} className="mt-0.5 shrink-0 text-slate-300 opacity-0 transition group-hover:opacity-100" />
+      </div>
+      {/* Value + change */}
+      <div className="px-4 pb-3 pt-1">
+        <p className="text-[24px] font-bold leading-none tracking-tight text-slate-900">{item.value}</p>
+        <p className={cn("mt-1.5 text-[11px] font-semibold", changeColor)}>
+          {arrow} {item.change}
+        </p>
+      </div>
+      {/* Full-width sparkline — edge-to-edge, no padding */}
+      <div className="mt-auto">
+        <KpiSparkline item={item} />
       </div>
     </div>
   );
@@ -2379,10 +2387,13 @@ export function DashboardView() {
         </div>
       </div>
 
-      {/* KPI row — horizontal scroll on small screens */}
+      {/* KPI row — matches brandstack: horizontal cells with full-width sparklines */}
       <div className="mb-1">
-        <p className="mb-3 text-[11px] font-semibold uppercase tracking-widest text-slate-400">Overview</p>
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-4 2xl:grid-cols-8">
+        <div className="flex items-center gap-2 mb-3">
+          <Sparkles size={13} className="text-slate-400" />
+          <p className="text-[11px] font-semibold uppercase tracking-widest text-slate-400">Overview</p>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 2xl:grid-cols-8">
           {kpiItems.map((item) => (
             <KpiCard key={item.label} item={item} />
           ))}
