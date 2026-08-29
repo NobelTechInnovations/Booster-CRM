@@ -1,5 +1,6 @@
 import { BaseShippingProvider } from "./base.provider.js";
 import { HttpError } from "../../../utils/http-error.js";
+import { fetchWithTimeout } from "../../../utils/fetch-with-timeout.js";
 import {
   getShippingChannel,
   upsertShippingChannel,
@@ -34,7 +35,10 @@ async function delhiveryFetch(path, { method = "GET", token, body, form } = {}) 
     requestBody = JSON.stringify(body);
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, { method, headers, body: requestBody });
+  // Bounded defensively — an upstream server that accepts the connection
+  // but never responds otherwise hangs this call (and the caller's whole
+  // request) forever; confirmed live on Shipway, same bare-fetch pattern.
+  const response = await fetchWithTimeout(`${BASE_URL}${path}`, { method, headers, body: requestBody });
   const text = await response.text();
   let responseBody;
   try {

@@ -1,5 +1,6 @@
 import { BaseShippingProvider } from "./base.provider.js";
 import { HttpError } from "../../../utils/http-error.js";
+import { fetchWithTimeout } from "../../../utils/fetch-with-timeout.js";
 import {
   getShippingChannel,
   upsertShippingChannel,
@@ -10,6 +11,18 @@ import { createShipmentRecord, updateShipmentsByAwb } from "../../../repositorie
 
 const BASE_URL = "https://app.shipway.com/api";
 
+// Confirmed live: Shipway's own API accepts the connection and then simply
+// never responds for some authenticated calls on this account (tested
+// directly — getwarehouses, getshipwaycarrierrates with real credentials,
+// every Basic/X-Api-Key/X-Secret-Key header combination — all hang past
+// 20s with zero bytes back, while the SAME calls without auth headers
+// return in ~2s). That's a problem on Shipway's side (their auth
+// validation path is hanging for this account), not something a code fix
+// here can repair — but a hung *upstream* server should never be allowed
+// to hang *our* server indefinitely. fetchWithTimeout bounds every call so
+// a repeat of this always surfaces as a clear, catchable timeout error
+// within 20s instead of freezing the "Ship Order" modal forever on
+// "Fetching courier rates...".
 async function shipwayFetch(path, { method = "GET", username, password, apiKey, secretKey, body } = {}) {
   const headers = { "Content-Type": "application/json" };
   const user = username || apiKey;
@@ -27,15 +40,16 @@ async function shipwayFetch(path, { method = "GET", username, password, apiKey, 
   let responseBody;
 
   try {
-    response = await fetch(`${BASE_URL}${path}`, {
+    response = await fetchWithTimeout(`${BASE_URL}${path}`, {
       method,
       headers,
       body: body && method !== "GET" ? JSON.stringify(body) : undefined,
     });
     responseBody = await response.json().catch(() => ({}));
   } catch (err) {
+    if (err instanceof HttpError) throw err; // timeout — don't mask it with a fallback that will also hang
     // Fallback URL attempt
-    response = await fetch(`https://shipway.in/api${path}`, {
+    response = await fetchWithTimeout(`https://shipway.in/api${path}`, {
       method,
       headers,
       body: body && method !== "GET" ? JSON.stringify(body) : undefined,

@@ -1,5 +1,6 @@
 import { BaseShippingProvider } from "./base.provider.js";
 import { HttpError } from "../../../utils/http-error.js";
+import { fetchWithTimeout } from "../../../utils/fetch-with-timeout.js";
 import {
   getShippingChannel,
   upsertShippingChannel,
@@ -20,8 +21,14 @@ function normalizeUsername(value) {
   return `+91${cleaned.replace(/\D/g, "")}`;
 }
 
+// Bounded with fetchWithTimeout defensively — same class of bug confirmed
+// on Shipway (an upstream server that accepts the connection but never
+// responds hangs the whole request forever with plain fetch()). Velocity
+// currently fails fast with a real 401 rather than hanging, but there's no
+// guarantee that stays true, and an unbounded fetch here is one bad day on
+// their end away from freezing this integration the same way.
 async function velocityFetch(path, { method = "POST", token, body } = {}) {
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const response = await fetchWithTimeout(`${BASE_URL}${path}`, {
     method,
     headers: {
       "Content-Type": "application/json",
