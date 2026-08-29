@@ -40,6 +40,7 @@ import {
   BarChart,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Line,
   LineChart,
   Pie,
@@ -121,9 +122,17 @@ const zeroKpis = [
 const zeroSalesTrend = ["Wed", "Thu", "Fri", "Sat", "Sun", "Mon", "Tue"].map((day) => ({ day, sales: 0, profit: 0, orders: 0 }));
 const zeroChannelMix = [{ name: "No synced sales", value: 100 }];
 
-// Full value with decimals — no k/L abbreviation, per explicit request.
+// Full value with decimals for tooltips.
 function formatCurrency(value) {
   return `₹${Number(value || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+// Abbreviated axis labels — ₹1.2L, ₹45K, etc.
+function formatAxisCurrency(value) {
+  const n = Number(value || 0);
+  if (n >= 100000) return `₹${(n / 100000).toFixed(1)}L`;
+  if (n >= 1000) return `₹${(n / 1000).toFixed(0)}K`;
+  return `₹${n}`;
 }
 
 function withKpiIcons(items) {
@@ -370,21 +379,22 @@ function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderC
         <CardContent>
           <div className="h-80">
             <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={salesTrend} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
+              <ComposedChart data={salesTrend} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="salesGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#3730a3" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3730a3" stopOpacity={0} />
+                    <stop offset="5%" stopColor="#4361ee" stopOpacity={0.18} />
+                    <stop offset="95%" stopColor="#4361ee" stopOpacity={0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke="#e5eaf1" vertical={false} />
-                <XAxis dataKey="day" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatCurrency} tickLine={false} axisLine={false} width={52} />
+                <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                <YAxis yAxisId="revenue" tickFormatter={formatAxisCurrency} tickLine={false} axisLine={false} width={48} tick={{ fontSize: 12, fill: "#94a3b8" }} />
+                <YAxis yAxisId="orders" orientation="right" tickLine={false} axisLine={false} width={28} tick={{ fontSize: 12, fill: "#94a3b8" }} />
                 <Tooltip content={<ChartTooltip />} />
-                <Area type="monotone" dataKey="sales" name="Sales" stroke="#3730a3" fill="url(#salesGradient)" strokeWidth={3} />
-                <Area type="monotone" dataKey="profit" name="Profit" stroke="#b45309" fill="transparent" strokeWidth={3} />
-                <Bar dataKey="orders" name="Orders" fill="#2563eb" radius={[4, 4, 0, 0]} maxBarSize={22} />
-              </AreaChart>
+                <Area yAxisId="revenue" type="monotone" dataKey="sales" name="Sales" stroke="#4361ee" fill="url(#salesGradient)" strokeWidth={2.5} dot={false} />
+                <Area yAxisId="revenue" type="monotone" dataKey="profit" name="Profit" stroke="#d97706" fill="transparent" strokeWidth={2} dot={false} />
+                <Bar yAxisId="orders" dataKey="orders" name="Orders" fill="#c7d2fe" radius={[3, 3, 0, 0]} maxBarSize={18} />
+              </ComposedChart>
             </ResponsiveContainer>
           </div>
         </CardContent>
@@ -2375,33 +2385,56 @@ export function ModuleView({ name, setActiveView }) {
 }
 
 // ── Metrics ticker ─────────────────────────────────────────────────────────
-// Thin bar above content — shows live key numbers, matches brandstack header ticker.
+// Slim marquee bar: LIVE dot · 4 curated metrics · channels count.
 function MetricsTicker({ kpis = [], channels = [] }) {
   const connectedCount = channels.filter((c) => c.status === "connected").length;
+
+  // Pick the 4 most useful metrics by label — monthly revenue, total orders, delivered, avg order value
+  const PICKS = [
+    { match: /monthly|month/i, label: "Monthly Revenue" },
+    { match: /total.*order|^orders$/i, label: "Orders" },
+    { match: /deliver/i, label: "Delivered" },
+    { match: /avg.*order|aov/i, label: "AOV" },
+  ];
+  const picked = PICKS.map(({ match, label }) => {
+    const k = kpis.find((kpi) => match.test(kpi.label));
+    return k ? { ...k, ticker: label } : null;
+  }).filter(Boolean);
+  // Fallback: first 4 if nothing matched
+  const shown = picked.length >= 2 ? picked : kpis.slice(0, 4).map((k) => ({ ...k, ticker: k.label }));
+
   return (
-    <div className="mb-4 flex items-center gap-0 overflow-x-auto whitespace-nowrap rounded-xl border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-[12px]">
-      <span className="mr-4 flex items-center gap-1.5 font-semibold text-indigo-700">
-        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-        LIVE
+    <div className="mb-5 flex items-center gap-6 overflow-x-auto whitespace-nowrap rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-2.5">
+      {/* Live indicator */}
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-700">
+        <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.2)]" />
+        Live
       </span>
-      {kpis.slice(0, 6).map((k, i) => {
-        const isNeg = k.tone === "rose";
-        return (
-          <span key={k.label} className="flex items-center gap-1.5">
-            {i > 0 && <span className="mx-3 text-slate-200">·</span>}
-            <span className="font-medium text-slate-400 uppercase tracking-wide text-[10px]">{k.label}</span>
-            <span className="ml-1 font-bold text-slate-800">{k.value}</span>
-            <span className={cn("font-semibold text-[11px]", isNeg ? "text-rose-500" : "text-emerald-500")}>
-              {isNeg ? "↘" : "↗"} {k.change}
+      {/* Divider */}
+      <span className="h-4 w-px shrink-0 bg-slate-200" />
+      {/* Metrics */}
+      <div className="flex items-center gap-6">
+        {shown.map((k) => {
+          const isNeg = k.tone === "rose";
+          return (
+            <span key={k.label} className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{k.ticker}</span>
+              <span className="text-[13px] font-bold text-slate-900">{k.value}</span>
+              <span className={cn("text-[11px] font-semibold", isNeg ? "text-rose-500" : "text-emerald-600")}>
+                {isNeg ? "↘" : "↗"} {k.change}
+              </span>
             </span>
-          </span>
-        );
-      })}
+          );
+        })}
+      </div>
+      {/* Connected channels pill */}
       {connectedCount > 0 && (
         <>
-          <span className="mx-3 text-slate-200">·</span>
-          <span className="font-medium text-slate-400 uppercase tracking-wide text-[10px]">CHANNELS</span>
-          <span className="ml-1 font-bold text-slate-800">{connectedCount}</span>
+          <span className="h-4 w-px shrink-0 bg-slate-200" />
+          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            {connectedCount} channel{connectedCount !== 1 ? "s" : ""} live
+          </span>
         </>
       )}
     </div>
@@ -2411,51 +2444,65 @@ function MetricsTicker({ kpis = [], channels = [] }) {
 // ── Morning Brief ───────────────────────────────────────────────────────────
 // Revenue summary + insight chips — mirrors the brandstack morning brief card.
 function MorningBrief({ dashboardData, companyName }) {
-  const revenue = dashboardData?.periodSales || 0;
   const kpis = dashboardData?.kpis || [];
-  const revenueKpi = kpis.find((k) => /sales|revenue/i.test(k.label)) || kpis[0];
-  const ordersKpi = kpis.find((k) => /order/i.test(k.label));
+  // Find the best "revenue" KPI — prefer monthly, then lifetime, then first sales
+  const monthlyKpi = kpis.find((k) => /monthly|month/i.test(k.label));
+  const lifetimeKpi = kpis.find((k) => /lifetime/i.test(k.label));
+  const ordersKpi = kpis.find((k) => /total.*order|^orders$/i.test(k.label));
   const deliveredKpi = kpis.find((k) => /deliver/i.test(k.label));
   const cancelledKpi = kpis.find((k) => /cancel/i.test(k.label));
+  const pendingKpi = kpis.find((k) => /pending/i.test(k.label));
   const inventory = dashboardData?.inventory || [];
   const lowStock = inventory.filter((i) => (i.available || 0) <= 0);
 
   const hour = new Date().getHours();
-  const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
+  const greetingTime = hour < 12 ? "Good Morning" : hour < 17 ? "Good Afternoon" : "Good Evening";
+  const greetingEmoji = hour < 12 ? "🌤️" : hour < 17 ? "☀️" : "🌙";
 
-  const headline = revenueKpi
-    ? `${revenueKpi.change?.startsWith("↘") ? "Revenue down" : "Revenue up"} — ${revenueKpi.value} ${revenueKpi.change || ""} this period`
-    : `Welcome back to ${companyName || "your dashboard"}.`;
+  // Build a natural headline from monthly revenue + order count
+  let headline = `Here's your overview for ${companyName || "your store"}.`;
+  if (monthlyKpi && ordersKpi) {
+    headline = `${monthlyKpi.value} in monthly revenue across ${ordersKpi.value} orders.`;
+  } else if (monthlyKpi) {
+    headline = `${monthlyKpi.value} in revenue this month.`;
+  } else if (lifetimeKpi && ordersKpi) {
+    headline = `${lifetimeKpi.value} lifetime revenue — ${ordersKpi.value} orders synced.`;
+  }
 
   const chips = [
-    ordersKpi && { icon: "📦", text: `${ordersKpi.value} orders ${ordersKpi.change || ""}` },
+    ordersKpi && { icon: "📦", text: `${ordersKpi.value} total orders` },
     deliveredKpi && { icon: "✅", text: `${deliveredKpi.value} delivered` },
     cancelledKpi && { icon: "❌", text: `${cancelledKpi.value} cancelled` },
+    pendingKpi && { icon: "⏳", text: `${pendingKpi.value} pending` },
     lowStock.length > 0 && { icon: "⚠️", text: `${lowStock.length} SKU${lowStock.length !== 1 ? "s" : ""} out of stock` },
   ].filter(Boolean);
 
   return (
-    <div className="mb-4 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-4">
-      <div className="flex items-start justify-between gap-4">
-        <div className="flex items-start gap-3">
-          <span className="text-xl">{hour < 12 ? "🌤️" : hour < 17 ? "☀️" : "🌙"}</span>
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-widest text-slate-400">{greeting} · Morning Brief</p>
-            <p className="mt-1 text-[15px] font-semibold leading-snug text-slate-900 max-w-2xl">{headline}</p>
-            {chips.length > 0 && (
-              <div className="mt-2.5 flex flex-wrap gap-2">
-                {chips.map((c, i) => (
-                  <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-[12px] font-medium text-slate-700">
-                    {c.icon} {c.text}
-                  </span>
-                ))}
-              </div>
-            )}
+    <div className="mb-5 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
+      <div className="flex items-center gap-0">
+        {/* Colored left accent */}
+        <div className="flex w-1.5 self-stretch bg-gradient-to-b from-indigo-500 to-indigo-300 rounded-l-xl" />
+        <div className="flex flex-1 items-start justify-between gap-4 px-5 py-4">
+          <div className="flex items-start gap-3">
+            <span className="mt-0.5 text-xl leading-none">{greetingEmoji}</span>
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{greetingTime} · Morning Brief</p>
+              <p className="mt-1.5 text-[15px] font-semibold leading-snug text-slate-900">{headline}</p>
+              {chips.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {chips.map((c, i) => (
+                    <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1 text-[12px] font-medium text-slate-700">
+                      {c.icon} {c.text}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-[12px] font-semibold text-indigo-700">
-          <Sparkles size={13} />
-          {chips.length + 3} insights
+          <div className="flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-50 px-3 py-1.5 text-[12px] font-semibold text-indigo-700">
+            <Sparkles size={12} />
+            {chips.length} insights
+          </div>
         </div>
       </div>
     </div>
@@ -2471,22 +2518,26 @@ function OpportunitiesSection({ dashboardData }) {
   const cancelKpi = kpis.find((k) => /cancel/i.test(k.label));
   const deliverKpi = kpis.find((k) => /deliver/i.test(k.label));
 
+  const deliverChange = deliverKpi?.change?.trim();
+  const cancelChange = cancelKpi?.change?.trim();
   const cards = [
     {
       dot: "bg-emerald-500", label: "INVENTORY",
-      text: lowStock.length > 0 ? `${lowStock.length} SKU${lowStock.length !== 1 ? "s" : ""} are out of stock — reorder to avoid missed sales.` : "All tracked SKUs have stock above zero.",
+      text: lowStock.length > 0 ? `${lowStock.length} SKU${lowStock.length !== 1 ? "s" : ""} out of stock — reorder soon.` : "All tracked SKUs have stock above zero.",
     },
     {
       dot: "bg-blue-500", label: "FULFILLMENT",
-      text: deliverKpi ? `${deliverKpi.value} orders delivered this period. ${deliverKpi.change || ""}` : "Sync Shopify data to track fulfilment.",
+      text: deliverKpi ? `${deliverKpi.value} orders delivered${deliverChange ? ` (${deliverChange})` : ""}.` : "Sync Shopify data to track fulfillment.",
     },
     {
       dot: "bg-amber-500", label: "CANCELLATIONS",
-      text: cancelKpi ? `${cancelKpi.value} orders cancelled — ${cancelKpi.change || "review trends"}.` : "No cancellation data yet.",
+      text: cancelKpi ? `${cancelKpi.value} orders cancelled${cancelChange ? ` — ${cancelChange}` : ""}.` : "No cancellations recorded yet.",
     },
     {
       dot: "bg-indigo-500", label: "CHANNELS",
-      text: dashboardData?.channelMix?.length ? `${dashboardData.channelMix[0]?.name || "Top channel"} leads at ${dashboardData.channelMix[0]?.value || 0}% of revenue.` : "Connect channels to see channel mix.",
+      text: dashboardData?.channelMix?.length > 0 && dashboardData.channelMix[0]?.name !== "No synced sales"
+        ? `${dashboardData.channelMix[0].name} leads at ${dashboardData.channelMix[0].value || 0}% of revenue.`
+        : "Connect a channel to see revenue split.",
     },
   ];
 
@@ -2536,10 +2587,7 @@ export function DashboardView() {
 
       {/* ✨ OVERVIEW — KPI row (ONE card, cells with separators + real sparklines) */}
       <div className="mb-6">
-        <div className="section-label mb-3">
-          <Sparkles size={12} />
-          Overview
-        </div>
+        <p className="section-label">Overview</p>
         <KpiRow items={kpiItems} salesTrend={salesTrend} />
       </div>
 
