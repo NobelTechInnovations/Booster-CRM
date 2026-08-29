@@ -16,7 +16,7 @@ export function CardHeader({ className, ...props }) {
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-4 border-b border-[var(--line)] px-5 py-4",
+        "flex items-start justify-between gap-4 border-b border-[var(--line)] px-6 py-5",
         className,
       )}
       {...props}
@@ -27,12 +27,12 @@ export function CardHeader({ className, ...props }) {
 export function CardTitle({ className, ...props }) {
   return (
     <h2
-      className={cn("text-[14px] font-semibold tracking-tight text-slate-900", className)}
+      className={cn("text-[15px] font-bold tracking-tight text-slate-900", className)}
       {...props}
     />
   );
 }
 
 export function CardContent({ className, ...props }) {
-  return <div className={cn("p-5", className)} {...props} />;
+  return <div className={cn("p-6", className)} {...props} />;
 }

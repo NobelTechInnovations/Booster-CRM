@@ -281,62 +281,112 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
   );
 }
 
-// Sparkline using REAL salesTrend data — maps order/sales field per KPI label.
+// Sparkline using REAL salesTrend-derived data only. If there's no genuine
+// per-day series behind a metric, this renders nothing rather than a fake
+// decorative curve — never fabricate a line for data we don't have.
 function KpiSparkline({ data = [], color = "#22c55e" }) {
-  // Normalise to {v} shape
-  const pts = data.length >= 2 ? data : Array.from({ length: 14 }, (_, i) => ({ v: Math.abs(Math.sin(i * 0.8) * 5 + 4) }));
+  if (data.length < 2) return <div className="h-[44px] w-full" />;
   return (
-    <div className="h-[52px] w-full">
+    <div className="h-[44px] w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <LineChart data={pts} margin={{ top: 6, bottom: 6, left: 0, right: 0 }}>
-          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.5} dot={false} isAnimationActive={false} />
+        <LineChart data={data} margin={{ top: 4, bottom: 2, left: 0, right: 0 }}>
+          <Line type="monotone" dataKey="v" stroke={color} strokeWidth={1.75} dot={false} isAnimationActive={false} />
         </LineChart>
       </ResponsiveContainer>
     </div>
   );
 }
 
-// ONE card with internal cell separators — exactly the brandstack KPI row.
-// Each cell: LABEL / BIG VALUE / ↗ CHANGE / full-width sparkline at bottom.
+// Primary KPI row — ONLY metrics with a genuine day-by-day series behind them
+// (derived straight from salesTrend: sales, orders, and computed AOV). Every
+// other metric (products/customers/channels/pending/etc.) has no daily
+// history in the backend, so it belongs in the secondary stats strip instead
+// of getting a fabricated sparkline.
 function KpiRow({ items, salesTrend = [] }) {
-  // Build per-KPI trend series from real salesTrend data
-  function trendFor(label) {
-    if (!salesTrend.length) return [];
-    const isOrderKpi = /order|cancel|deliver|fulfil/i.test(label);
-    return salesTrend.map((d) => ({ v: isOrderKpi ? (d.orders || 0) : (d.sales || 0) }));
-  }
+  const PRIMARY = [
+    { match: /today.*sale/i, color: "#22c55e", series: "sales" },
+    { match: /monthly.*revenue|monthly.*sale/i, color: "#4361ee", series: "sales" },
+    { match: /total.*order/i, color: "#3b82f6", series: "orders" },
+    { match: /avg.*order.*value|aov/i, color: "#d97706", series: "aov" },
+  ];
+
+  const primaryItems = PRIMARY.map(({ match, color, series }) => {
+    const item = items.find((k) => match.test(k.label));
+    if (!item) return null;
+    const trend = salesTrend.length
+      ? salesTrend.map((d) => ({
+          v: series === "orders" ? (d.orders || 0) : series === "aov" ? (d.orders ? d.sales / d.orders : 0) : (d.sales || 0),
+        }))
+      : [];
+    return { ...item, color, trend };
+  }).filter(Boolean);
+
+  if (!primaryItems.length) return null;
 
   return (
     <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
-      <div className="flex min-h-[160px] overflow-x-auto">
-        {items.map((item, i) => {
+      <div className="flex min-h-[168px]">
+        {primaryItems.map((item, i) => {
           const isNeg = item.tone === "rose";
-          const color = isNeg ? "#e11d48" : item.tone === "blue" ? "#3b82f6" : "#22c55e";
-          const changeColor = isNeg ? "text-rose-500" : "text-emerald-500";
-          const trend = trendFor(item.label);
+          const changeColor = isNeg ? "text-rose-500" : "text-emerald-600";
           return (
             <div
               key={item.label}
               className={cn(
-                "group flex min-w-[140px] flex-1 cursor-default flex-col transition-colors hover:bg-slate-50/70",
+                "group flex flex-1 cursor-default flex-col transition-colors hover:bg-slate-50/60",
                 i > 0 && "border-l border-[var(--line)]",
               )}
             >
-              {/* Label row */}
-              <div className="flex items-center justify-between gap-1 px-4 pt-4">
-                <p className="text-[10px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
-                <ChevronRight size={11} className="shrink-0 text-slate-200 opacity-0 transition group-hover:opacity-100" />
+              <div className="flex items-center justify-between gap-1 px-5 pt-5">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
+                <ChevronRight size={12} className="shrink-0 text-slate-200 opacity-0 transition group-hover:opacity-100" />
               </div>
-              {/* Value */}
-              <p className="px-4 pt-1.5 text-[26px] font-bold leading-none tracking-tight text-slate-950">{item.value}</p>
-              {/* Change */}
-              <p className={cn("px-4 pb-3 pt-1.5 text-[12px] font-semibold", changeColor)}>
+              <p className="px-5 pt-2 text-[28px] font-bold leading-none tracking-tight text-slate-950">{item.value}</p>
+              <p className={cn("px-5 pb-4 pt-2 text-[12.5px] font-semibold", changeColor)}>
                 {isNeg ? "↘" : "↗"} {item.change}
               </p>
-              {/* Full-width sparkline — no padding, edge-to-edge */}
-              <div className="mt-auto">
-                <KpiSparkline data={trend} color={color} />
+              <div className="mt-auto px-1 pb-1">
+                <KpiSparkline data={item.trend} color={item.color} />
               </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Secondary stats strip — every metric that has no daily history (products,
+// customers, channels, pending, delivered, cancelled, etc). Plain number +
+// change, no sparkline attempted — honest about what data actually exists.
+function SecondaryStatsRow({ items }) {
+  const LABELS = [/pending.*order/i, /^products$/i, /^customers$/i, /connected.*channel/i, /^delivered$/i, /^cancelled$/i, /yesterday.*sale/i, /lifetime.*revenue/i];
+  const picked = LABELS.map((re) => items.find((k) => re.test(k.label))).filter(Boolean);
+  if (!picked.length) return null;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
+      <div className="grid grid-cols-2 sm:grid-cols-4">
+        {picked.map((item, i) => {
+          const isNeg = item.tone === "rose";
+          const changeColor = isNeg ? "text-rose-500" : item.tone === "amber" ? "text-amber-600" : "text-emerald-600";
+          // Exactly one directive per side per breakpoint — never emit both
+          // "sm:border-l" and "sm:border-l-0" together (cascade order between
+          // same-breakpoint utilities isn't guaranteed by class-list order).
+          return (
+            <div
+              key={item.label}
+              className={cn(
+                "flex flex-col gap-1.5 px-5 py-4 border-[var(--line)]",
+                i % 2 !== 0 ? "border-l" : "border-l-0",
+                i >= 2 ? "border-t" : "border-t-0",
+                i % 4 !== 0 ? "sm:border-l" : "sm:border-l-0",
+                i >= 4 ? "sm:border-t" : "sm:border-t-0",
+              )}
+            >
+              <p className="text-[10.5px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
+              <p className="text-[19px] font-bold leading-none tracking-tight text-slate-900">{item.value}</p>
+              <p className={cn("text-[11.5px] font-medium", changeColor)}>{item.change}</p>
             </div>
           );
         })}
@@ -367,7 +417,7 @@ function formatPeriodMoney(value) {
 
 function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderCount }) {
   return (
-    <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
       <Card>
         <CardHeader>
           <div>
@@ -2385,53 +2435,56 @@ export function ModuleView({ name, setActiveView }) {
 }
 
 // ── Metrics ticker ─────────────────────────────────────────────────────────
-// Slim marquee bar: LIVE dot · 4 curated metrics · channels count.
+// Grouped marquee bar: LIVE · REVENUE group · ORDERS group · channels pill.
 function MetricsTicker({ kpis = [], channels = [] }) {
   const connectedCount = channels.filter((c) => c.status === "connected").length;
+  const find = (re) => kpis.find((k) => re.test(k.label));
 
-  // Pick the 4 most useful metrics by label — monthly revenue, total orders, delivered, avg order value
-  const PICKS = [
-    { match: /monthly|month/i, label: "Monthly Revenue" },
-    { match: /total.*order|^orders$/i, label: "Orders" },
-    { match: /deliver/i, label: "Delivered" },
-    { match: /avg.*order|aov/i, label: "AOV" },
-  ];
-  const picked = PICKS.map(({ match, label }) => {
-    const k = kpis.find((kpi) => match.test(kpi.label));
-    return k ? { ...k, ticker: label } : null;
-  }).filter(Boolean);
-  // Fallback: first 4 if nothing matched
-  const shown = picked.length >= 2 ? picked : kpis.slice(0, 4).map((k) => ({ ...k, ticker: k.label }));
+  const revenueGroup = [find(/monthly.*revenue/i), find(/avg.*order.*value|aov/i)].filter(Boolean);
+  const ordersGroup = [find(/total.*order/i), find(/^delivered$/i), find(/^cancelled$/i)].filter(Boolean);
+
+  function Metric({ k }) {
+    const isNeg = k.tone === "rose";
+    return (
+      <span className="flex items-center gap-2 whitespace-nowrap">
+        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{k.label}</span>
+        <span className="text-[13.5px] font-bold text-slate-900">{k.value}</span>
+        <span className={cn("text-[11.5px] font-semibold", isNeg ? "text-rose-500" : "text-emerald-600")}>
+          {isNeg ? "↘" : "↗"} {k.change}
+        </span>
+      </span>
+    );
+  }
+
+  function Group({ label, metrics }) {
+    if (!metrics.length) return null;
+    return (
+      <span className="flex shrink-0 items-center gap-5">
+        <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-400">{label}</span>
+        {metrics.map((k, i) => (
+          <span key={k.label} className="flex items-center gap-5">
+            {i > 0 && <span className="text-slate-200">·</span>}
+            <Metric k={k} />
+          </span>
+        ))}
+      </span>
+    );
+  }
 
   return (
-    <div className="mb-5 flex items-center gap-6 overflow-x-auto whitespace-nowrap rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-2.5">
-      {/* Live indicator */}
+    <div className="mb-8 flex items-center gap-5 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-3">
       <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-700">
         <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.2)]" />
         Live
       </span>
-      {/* Divider */}
-      <span className="h-4 w-px shrink-0 bg-slate-200" />
-      {/* Metrics */}
-      <div className="flex items-center gap-6">
-        {shown.map((k) => {
-          const isNeg = k.tone === "rose";
-          return (
-            <span key={k.label} className="flex items-center gap-2">
-              <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">{k.ticker}</span>
-              <span className="text-[13px] font-bold text-slate-900">{k.value}</span>
-              <span className={cn("text-[11px] font-semibold", isNeg ? "text-rose-500" : "text-emerald-600")}>
-                {isNeg ? "↘" : "↗"} {k.change}
-              </span>
-            </span>
-          );
-        })}
-      </div>
-      {/* Connected channels pill */}
+      <span className="h-5 w-px shrink-0 bg-slate-200" />
+      <Group label="Revenue" metrics={revenueGroup} />
+      <span className="h-5 w-px shrink-0 bg-slate-200" />
+      <Group label="Orders" metrics={ordersGroup} />
       {connectedCount > 0 && (
         <>
-          <span className="h-4 w-px shrink-0 bg-slate-200" />
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+          <span className="h-5 w-px shrink-0 bg-slate-200" />
+          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             {connectedCount} channel{connectedCount !== 1 ? "s" : ""} live
           </span>
@@ -2478,7 +2531,7 @@ function MorningBrief({ dashboardData, companyName }) {
   ].filter(Boolean);
 
   return (
-    <div className="mb-5 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
+    <div className="mb-8 overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel)]">
       <div className="flex items-center gap-0">
         {/* Colored left accent */}
         <div className="flex w-1.5 self-stretch bg-gradient-to-b from-indigo-500 to-indigo-300 rounded-l-xl" />
@@ -2542,18 +2595,18 @@ function OpportunitiesSection({ dashboardData }) {
   ];
 
   return (
-    <div className="mb-4">
-      <div className="mb-3 flex items-center justify-between">
-        <p className="section-label">Opportunities &amp; Insights</p>
+    <div className="mb-8">
+      <div className="mb-4 flex items-center justify-between">
+        <p className="section-label mb-0">Opportunities &amp; Insights</p>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => (
-          <div key={c.label} className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-4">
-            <p className="mb-2 flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest text-slate-500">
+          <div key={c.label} className="rounded-xl border border-[var(--line)] bg-[var(--panel)] p-5">
+            <p className="mb-2.5 flex items-center gap-1.5 text-[10.5px] font-bold uppercase tracking-widest text-slate-500">
               <span className={cn("h-1.5 w-1.5 rounded-full", c.dot)} />
               {c.label}
             </p>
-            <p className="text-[13px] leading-snug text-slate-800">{c.text}</p>
+            <p className="text-[13.5px] leading-relaxed text-slate-800">{c.text}</p>
           </div>
         ))}
       </div>
@@ -2572,7 +2625,7 @@ export function DashboardView() {
   const hasData = !!dashboardData?.kpis?.length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-5 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
 
       {/* Metrics ticker */}
       <MetricsTicker kpis={kpiItems} channels={connectedChannels || []} />
@@ -2585,14 +2638,15 @@ export function DashboardView() {
       {/* Opportunities & Insights */}
       {hasData && <OpportunitiesSection dashboardData={dashboardData} />}
 
-      {/* ✨ OVERVIEW — KPI row (ONE card, cells with separators + real sparklines) */}
-      <div className="mb-6">
+      {/* ✨ OVERVIEW — KPI row (real sparklines only where real daily data exists) */}
+      <div className="mb-8 space-y-4">
         <p className="section-label">Overview</p>
         <KpiRow items={kpiItems} salesTrend={salesTrend} />
+        <SecondaryStatsRow items={kpiItems} />
       </div>
 
       {/* PERFORMANCE — charts */}
-      <div className="mb-6">
+      <div className="mb-8">
         <p className="section-label">Performance</p>
         <SalesCharts
           salesTrend={salesTrend}
@@ -2604,9 +2658,9 @@ export function DashboardView() {
       </div>
 
       {/* ACTIVITY — orders + channels */}
-      <div className="mb-6">
+      <div className="mb-8">
         <p className="section-label">Activity</p>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
           <OrdersPanel orders={recentOrders} />
           <ChannelsPanel
             connectedChannels={connectedChannels}
@@ -2620,11 +2674,11 @@ export function DashboardView() {
       </div>
 
       {/* Inventory + Finance */}
-      <div className="mb-6">
+      <div>
         <p className="section-label">Inventory &amp; Finance</p>
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
           <InventoryPanel inventory={inventoryItems} />
-          <div className="grid gap-4">
+          <div className="grid gap-5">
             <LowStockAssetsPanel />
             <FinancePanel />
             <AutomationPanel />
