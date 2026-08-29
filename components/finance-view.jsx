@@ -2154,7 +2154,7 @@ export function FinanceView({ defaultTab = "overview" }) {
   }, [range.from, range.to, groupBy]);
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Finance</Badge>

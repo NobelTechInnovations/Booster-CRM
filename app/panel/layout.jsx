@@ -124,8 +124,10 @@ function SubNavBar({ pathname }) {
 }
 
 // ─── Brand Switcher ───────────────────────────────────────────────────────────
+// Shared between the sidebar (full-width row) and the topbar (compact pill) —
+// same data/switch/create logic, `variant` only changes the trigger's shell.
 
-function BrandSwitcher({ session }) {
+function BrandSwitcher({ session, variant = "sidebar" }) {
   const { company } = useCommerceStore();
   const name = session?.company?.name || company || "Workspace";
   const [open, setOpen] = useState(false);
@@ -158,23 +160,33 @@ function BrandSwitcher({ session }) {
     catch (err) { setAddErr(err.message); setAdding(false); }
   }
 
+  const isCompact = variant === "topbar";
+
   return (
-    <div className="relative px-3 pb-2 pt-1">
+    <div className={cn("relative", isCompact ? "" : "px-3 pb-2 pt-1")}>
       <button
         onClick={() => { setOpen((v) => { const n = !v; if (n) load(); else setShowAdd(false); return n; }); }}
-        className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left transition hover:bg-slate-100"
+        className={cn(
+          "flex items-center gap-2 text-left transition",
+          isCompact
+            ? "h-8 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-2.5 hover:bg-slate-100"
+            : "w-full rounded-lg px-2.5 py-2 hover:bg-slate-100",
+        )}
       >
         <div className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px] font-bold text-white">
           {name[0]?.toUpperCase() || "W"}
         </div>
-        <span className="min-w-0 flex-1 truncate text-[13px] font-semibold text-slate-800">{name}</span>
+        <span className={cn("min-w-0 truncate text-[13px] font-semibold text-slate-800", isCompact ? "max-w-[140px]" : "flex-1")}>{name}</span>
         <ChevronDown size={13} className={cn("shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
       </button>
 
       {open && (
         <>
           <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div className="absolute left-3 right-3 top-full z-40 mt-1 rounded-xl border border-[var(--line)] bg-white p-2 shadow-xl">
+          <div className={cn(
+            "absolute top-full z-40 mt-1.5 rounded-xl border border-[var(--line)] bg-white p-2 shadow-xl",
+            isCompact ? "left-0 w-64" : "left-3 right-3",
+          )}>
             <p className="px-2 pb-1 pt-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-400">Your Brands</p>
             {loading ? (
               <p className="px-2 py-2 text-sm text-slate-400">Loading…</p>
@@ -310,12 +322,19 @@ function Sidebar({ open, setOpen, session, onLogout }) {
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
-function Topbar({ setOpen, onSyncAll, canSync, period, setPeriod }) {
+function Topbar({ setOpen, onSyncAll, canSync, period, setPeriod, session }) {
   return (
     <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--panel)] px-4 lg:px-6">
       <button className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
         <Menu size={20} />
       </button>
+
+      {/* Brand switcher — visible on desktop where the sidebar's own switcher
+          may be scrolled out of view; hidden on mobile to save space next to
+          the menu button (sidebar's full switcher covers that case there). */}
+      <div className="hidden lg:block">
+        <BrandSwitcher session={session} variant="topbar" />
+      </div>
 
       <div className="ml-auto flex items-center gap-2">
         <span className="hidden items-center gap-1.5 text-[12px] font-medium text-slate-500 sm:flex">
@@ -448,7 +467,7 @@ export default function PanelLayout({ children }) {
       <Sidebar open={open} setOpen={setOpen} session={session} onLogout={logout} />
 
       <main className="flex min-h-screen min-w-0 flex-1 flex-col">
-        <Topbar setOpen={setOpen} onSyncAll={syncAllChannels} canSync={canSync} period={period} setPeriod={setPeriod} />
+        <Topbar setOpen={setOpen} onSyncAll={syncAllChannels} canSync={canSync} period={period} setPeriod={setPeriod} session={session} />
         <SubNavBar pathname={pathname} />
         <FollowUpReminderBanner onOpenCustomer={(c) => setFollowUpCustomer(c)} />
         <div className="flex-1">{children}</div>

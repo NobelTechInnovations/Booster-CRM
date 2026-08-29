@@ -110,7 +110,7 @@ export function CompanyView({ onCompanyUpdate }) {
   ];
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1400px] px-4 py-6 lg:px-8">
       {/* Header */}
       <section className="mb-6">
         <div className="flex flex-wrap items-start justify-between gap-4">

@@ -420,11 +420,13 @@ function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderC
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1.7fr)_minmax(320px,0.8fr)]">
       <Card>
         <CardHeader>
-          <div>
-            <CardTitle>Sales, Profit, Orders</CardTitle>
-            <p className="mt-1 text-sm text-[var(--muted)]">Daily operating pulse across connected channels. Profit = revenue − known SKU buying price − known packaging cost — set both in Inventory & Costing / Assets for an accurate line.</p>
+          <div className="min-w-0">
+            <CardTitle>Sales, Profit &amp; Orders</CardTitle>
+            <p className="mt-1 text-[13px] text-[var(--muted)]">Daily performance across connected channels.</p>
           </div>
-          <Badge tone="indigo">{PERIOD_LABELS[period] || "Today"}: {formatPeriodMoney(periodSales)} · {periodOrderCount || 0} orders</Badge>
+          <Badge tone="indigo" className="shrink-0 whitespace-nowrap">
+            {PERIOD_LABELS[period] || "Today"}: {formatPeriodMoney(periodSales)} · {periodOrderCount || 0} orders
+          </Badge>
         </CardHeader>
         <CardContent>
           <div className="h-80">
@@ -978,7 +980,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
   }
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Channel Integrations</Badge>
@@ -2018,7 +2020,7 @@ function RecordsModuleView({ name }) {
         : records.filter((record) => !record.email).length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{name}</Badge>
@@ -2223,7 +2225,7 @@ function ProductMappingView() {
   const mappedCount = mappings.filter((mapping) => mapping.mappings?.some((entry) => entry.provider === "shopify") && mapping.mappings?.some((entry) => entry.provider === "amazon")).length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="amber">Product Mapping</Badge>
@@ -2367,7 +2369,7 @@ export function ModuleView({ name, setActiveView }) {
   if (!page) return null;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{page.eyebrow}</Badge>
@@ -2459,10 +2461,10 @@ function MetricsTicker({ kpis = [], channels = [] }) {
   function Group({ label, metrics }) {
     if (!metrics.length) return null;
     return (
-      <span className="flex shrink-0 items-center gap-5">
+      <span className="flex flex-wrap items-center gap-x-4 gap-y-1.5">
         <span className="text-[10px] font-bold uppercase tracking-[0.12em] text-indigo-400">{label}</span>
         {metrics.map((k, i) => (
-          <span key={k.label} className="flex items-center gap-5">
+          <span key={k.label} className="flex items-center gap-x-4">
             {i > 0 && <span className="text-slate-200">·</span>}
             <Metric k={k} />
           </span>
@@ -2471,24 +2473,23 @@ function MetricsTicker({ kpis = [], channels = [] }) {
     );
   }
 
+  // flex-wrap (no overflow-x-auto) — narrower screens wrap onto a second
+  // line instead of showing a horizontal scrollbar.
   return (
-    <div className="mb-8 flex items-center gap-5 overflow-x-auto rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-3">
+    <div className="mb-8 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-xl border border-[var(--line)] bg-[var(--panel)] px-5 py-3.5">
       <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-700">
         <span className="h-2 w-2 rounded-full bg-emerald-400 shadow-[0_0_0_3px_rgba(52,211,153,0.2)]" />
         Live
       </span>
-      <span className="h-5 w-px shrink-0 bg-slate-200" />
+      <span className="hidden h-5 w-px shrink-0 bg-slate-200 sm:block" />
       <Group label="Revenue" metrics={revenueGroup} />
-      <span className="h-5 w-px shrink-0 bg-slate-200" />
+      <span className="hidden h-5 w-px shrink-0 bg-slate-200 sm:block" />
       <Group label="Orders" metrics={ordersGroup} />
       {connectedCount > 0 && (
-        <>
-          <span className="h-5 w-px shrink-0 bg-slate-200" />
-          <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
-            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-            {connectedCount} channel{connectedCount !== 1 ? "s" : ""} live
-          </span>
-        </>
+        <span className="flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          {connectedCount} channel{connectedCount !== 1 ? "s" : ""} live
+        </span>
       )}
     </div>
   );

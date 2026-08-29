@@ -997,7 +997,7 @@ export function SettingsView() {
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-6">
+    <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-8">
       <section className="mb-6">
         <Badge tone="indigo">Settings</Badge>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Settings</h1>

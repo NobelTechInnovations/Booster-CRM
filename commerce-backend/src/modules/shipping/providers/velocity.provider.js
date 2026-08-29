@@ -54,18 +54,31 @@ export class VelocityProvider extends BaseShippingProvider {
 
     if (!body.token) throw new HttpError(401, "Velocity authentication failed", body);
 
-    return {
-      token:     body.token,
-      expiresAt: body.expires_at ? new Date(body.expires_at) : new Date(Date.now() + 23 * 60 * 60 * 1000),
-    };
+    // Guard against a malformed expires_at: `new Date(garbage)` is an
+    // "Invalid Date" object, which is truthy — a naive `? :` here would
+    // silently accept it and the token would then read as "not expired"
+    // forever (see the isExpired fix below), reusing a dead token on every
+    // call and permanently 401ing. Fall back to the 23h default whenever
+    // Velocity's value doesn't parse to a real date.
+    const parsedExpiry = body.expires_at ? new Date(body.expires_at) : null;
+    const expiresAt = parsedExpiry && !Number.isNaN(parsedExpiry.getTime())
+      ? parsedExpiry
+      : new Date(Date.now() + 23 * 60 * 60 * 1000);
+
+    return { token: body.token, expiresAt };
   }
 
   async ensureToken() {
     const channel = await getShippingChannel({ companyId: this.companyId, provider: this.provider });
     if (!channel) throw new HttpError(400, "Connect Velocity Shipping first");
 
-    const expiresAt = channel.credentials?.tokenExpiresAt ? new Date(channel.credentials.tokenExpiresAt) : null;
-    const isExpired = !channel.credentials?.token || !expiresAt || expiresAt.getTime() - Date.now() < 5 * 60 * 1000;
+    const storedExpiry = channel.credentials?.tokenExpiresAt ? new Date(channel.credentials.tokenExpiresAt) : null;
+    const hasValidExpiry = storedExpiry && !Number.isNaN(storedExpiry.getTime());
+    // An invalid/unparseable stored date must count as expired, not valid —
+    // otherwise a bad expires_at from a past request wedges the token as
+    // "fine forever" and every request 401s until someone manually
+    // reconnects the channel.
+    const isExpired = !channel.credentials?.token || !hasValidExpiry || storedExpiry.getTime() - Date.now() < 5 * 60 * 1000;
 
     if (!isExpired) return { channel, token: channel.credentials.token };
 
@@ -80,6 +93,34 @@ export class VelocityProvider extends BaseShippingProvider {
 
     await updateShippingChannelToken({ channelId: channel._id, companyId: this.companyId, token, tokenExpiresAt: nextExpiry });
     return { channel, token };
+  }
+
+  /**
+   * Runs `fn({ channel, token })` with the current cached token, and if
+   * Velocity itself rejects it with 401 (e.g. it invalidated the token
+   * server-side before our stored expiry thought it would, or the expiry we
+   * stored was simply wrong) — forces one fresh token and retries exactly
+   * once. Without this, a single bad cached token wedges every Velocity
+   * action (rate check, ship, cancel, track) behind a permanent 401 until someone
+   * manually reconnects the channel, even though a working set of
+   * credentials is sitting right there in the DB.
+   */
+  async _withToken(fn) {
+    const first = await this.ensureToken();
+    try {
+      return await fn(first);
+    } catch (err) {
+      if (err.statusCode !== 401) throw err;
+      const { channel } = first;
+      if (!channel.credentials?.username || !channel.credentials?.password) throw err;
+
+      const { token: freshToken, expiresAt } = await this._requestToken({
+        username: channel.credentials.username,
+        password: channel.credentials.password,
+      });
+      await updateShippingChannelToken({ channelId: channel._id, companyId: this.companyId, token: freshToken, tokenExpiresAt: expiresAt });
+      return fn({ channel, token: freshToken });
+    }
   }
 
   // ─── Connect ─────────────────────────────────────────────────────────────
@@ -124,12 +165,12 @@ export class VelocityProvider extends BaseShippingProvider {
    * found". Removed: an empty list here is the honest result.
    */
   async syncWarehouses() {
-    const { channel, token } = await this.ensureToken();
+    const { channel } = await this.ensureToken();
 
     let remoteWarehouses = [];
 
     try {
-      const body = await velocityFetch("/custom/api/v1/warehouse", { method: "GET", token });
+      const body = await this._withToken(({ token }) => velocityFetch("/custom/api/v1/warehouse", { method: "GET", token }));
       remoteWarehouses = body.payload?.warehouses || body.warehouses || body.payload || [];
       if (!Array.isArray(remoteWarehouses)) remoteWarehouses = [];
     } catch (err) {
@@ -155,9 +196,9 @@ export class VelocityProvider extends BaseShippingProvider {
   }
 
   async createWarehouse(payload) {
-    const { channel, token } = await this.ensureToken();
+    const { channel } = await this.ensureToken();
 
-    const body = await velocityFetch("/custom/api/v1/warehouse", { token, body: payload });
+    const body = await this._withToken(({ token }) => velocityFetch("/custom/api/v1/warehouse", { token, body: payload }));
     const warehouseId = body.payload?.warehouse_id;
 
     if (!warehouseId) throw new HttpError(502, "Velocity did not return a warehouse ID", body);
@@ -219,7 +260,6 @@ export class VelocityProvider extends BaseShippingProvider {
   // against a real connected account — e.g. "Delhivery Standard 250G" came
   // back with charges.total_forward_charges: 70, a real number, not a guess.
   async checkServiceability(params) {
-    const { token } = await this.ensureToken();
     const isCod = params.paymentMode === "cod" || params.payment_type === "COD" || params.isCOD;
     const weightKg = Math.max(0.1, Number(params.weight) || 0.5);
 
@@ -235,7 +275,7 @@ export class VelocityProvider extends BaseShippingProvider {
       ...(isCod ? { cod_amount: Number(params.codAmount) || 0, shipment_value: Number(params.codAmount) || Number(params.shipmentValue) || 1 } : {}),
     };
 
-    const body = await velocityFetch("/custom/api/v1/rates", { token, body: payload });
+    const body = await this._withToken(({ token }) => velocityFetch("/custom/api/v1/rates", { token, body: payload }));
     const couriers = body?.result?.serviceable_couriers || [];
 
     return {
@@ -340,21 +380,60 @@ export class VelocityProvider extends BaseShippingProvider {
   // ─── Forward Order ────────────────────────────────────────────────────────
 
   async createForwardOrder(payload, { syncedOrderId, shopifyOrderId, shopifyOrderName } = {}) {
-    const { channel, token } = await this.ensureToken();
+    const result = await this._withToken(async ({ channel, token }) => {
+      // Recover from a partial earlier attempt on OUR side: if a shipment
+      // record already exists for this order with a Velocity shipment_id but
+      // no AWB yet (order got created there but courier assignment didn't
+      // complete — network blip, a picked carrier going out of service, etc),
+      // finish it via the documented two-step "assign courier to an existing
+      // shipment" endpoint instead of re-submitting "create order", which
+      // Velocity correctly rejects as a duplicate.
+      const existing = await getShipmentByOrder({ companyId: this.companyId, provider: this.provider, syncedOrderId, shopifyOrderId });
+      if (existing?.shipmentId && !existing.awbCode) {
+        const existingBody = await velocityFetch("/custom/api/v1/forward-order-shipment", {
+          token,
+          body: { shipment_id: existing.shipmentId, ...(payload.carrier_id ? { carrier_id: payload.carrier_id } : {}) },
+        });
+        return { kind: "existing", channel, existing, body: existingBody };
+      }
 
-    // Recover from a partial earlier attempt on OUR side: if a shipment
-    // record already exists for this order with a Velocity shipment_id but
-    // no AWB yet (order got created there but courier assignment didn't
-    // complete — network blip, a picked carrier going out of service, etc),
-    // finish it via the documented two-step "assign courier to an existing
-    // shipment" endpoint instead of re-submitting "create order", which
-    // Velocity correctly rejects as a duplicate.
-    const existing = await getShipmentByOrder({ companyId: this.companyId, provider: this.provider, syncedOrderId, shopifyOrderId });
-    if (existing?.shipmentId && !existing.awbCode) {
-      const body = await velocityFetch("/custom/api/v1/forward-order-shipment", {
-        token,
-        body: { shipment_id: existing.shipmentId, ...(payload.carrier_id ? { carrier_id: payload.carrier_id } : {}) },
-      });
+      let orderBody;
+      let effectivePayload = payload;
+      try {
+        orderBody = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: payload });
+      } catch (err) {
+        const veloMessage = err.details?.meta?.message || err.details?.message || "";
+        if (!/order already exists/i.test(veloMessage)) throw err;
+
+        // Velocity refuses to re-create an order_id it already holds — and
+        // confirmed by testing, that reservation is PERMANENT: cancelling the
+        // order on Velocity's own dashboard does not free the order_id back
+        // up, so a retry with the same ID keeps failing forever. Since their
+        // API has no "look up an existing order" endpoint at all (checked —
+        // not in their docs), there's no way to attach a courier to whatever
+        // is sitting under that ID anyway; matching it only mattered if we
+        // could act on the match, which we can't. So: retry once with a
+        // de-duplicated order_id instead of dead-ending here. This does mean
+        // Velocity ends up with two order records if the original really did
+        // come from a separate Shopify auto-import — but a shippable
+        // duplicate beats a shipment that can never go out.
+        const retryPayload = { ...payload, order_id: `${payload.order_id}-R${Date.now().toString(36).slice(-5)}` };
+        try {
+          orderBody = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: retryPayload });
+          effectivePayload = retryPayload;
+        } catch (retryErr) {
+          throw new HttpError(
+            409,
+            `Velocity already has an order with ID "${payload.order_id}" and won't free it even after cancellation — a retry with a new ID also failed (${retryErr.message}). This usually means a separate Shopify app is connected directly on your Velocity dashboard, still auto-importing this order. Check Settings → Channels there and disconnect it so every shipment routes through this panel instead.`,
+            retryErr.details,
+          );
+        }
+      }
+      return { kind: "created", channel, body: orderBody, payload: effectivePayload };
+    });
+
+    if (result.kind === "existing") {
+      const { existing, body } = result;
       const shipment = body.payload || {};
       return updateShipmentById({
         shipmentId: existing._id,
@@ -371,37 +450,9 @@ export class VelocityProvider extends BaseShippingProvider {
       });
     }
 
-    let body;
-    try {
-      body = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: payload });
-    } catch (err) {
-      const veloMessage = err.details?.meta?.message || err.details?.message || "";
-      if (!/order already exists/i.test(veloMessage)) throw err;
-
-      // Velocity refuses to re-create an order_id it already holds — and
-      // confirmed by testing, that reservation is PERMANENT: cancelling the
-      // order on Velocity's own dashboard does not free the order_id back
-      // up, so a retry with the same ID keeps failing forever. Since their
-      // API has no "look up an existing order" endpoint at all (checked —
-      // not in their docs), there's no way to attach a courier to whatever
-      // is sitting under that ID anyway; matching it only mattered if we
-      // could act on the match, which we can't. So: retry once with a
-      // de-duplicated order_id instead of dead-ending here. This does mean
-      // Velocity ends up with two order records if the original really did
-      // come from a separate Shopify auto-import — but a shippable
-      // duplicate beats a shipment that can never go out.
-      const retryPayload = { ...payload, order_id: `${payload.order_id}-R${Date.now().toString(36).slice(-5)}` };
-      try {
-        body = await velocityFetch("/custom/api/v1/forward-order-orchestration", { token, body: retryPayload });
-        payload = retryPayload;
-      } catch (retryErr) {
-        throw new HttpError(
-          409,
-          `Velocity already has an order with ID "${payload.order_id}" and won't free it even after cancellation — a retry with a new ID also failed (${retryErr.message}). This usually means a separate Shopify app is connected directly on your Velocity dashboard, still auto-importing this order. Check Settings → Channels there and disconnect it so every shipment routes through this panel instead.`,
-          retryErr.details,
-        );
-      }
-    }
+    const { channel } = result;
+    const finalPayload = result.payload;
+    const body = result.body;
     const shipment = body.payload || {};
 
     return createShipmentRecord({
@@ -418,13 +469,13 @@ export class VelocityProvider extends BaseShippingProvider {
       courierId:        shipment.courier_company_id,
       courierName:      shipment.courier_name,
       status:           shipment.awb_generated ? "awb_generated" : "order_created",
-      paymentMethod:    payload.payment_method,
-      codAmount:        payload.cod_collectible || 0,
-      customerName:     [payload.billing_customer_name, payload.billing_last_name].filter(Boolean).join(" "),
-      destination:      [payload.billing_city, payload.billing_state].filter(Boolean).join(", "),
-      warehouseId:      payload.warehouse_id,
+      paymentMethod:    finalPayload.payment_method,
+      codAmount:        finalPayload.cod_collectible || 0,
+      customerName:     [finalPayload.billing_customer_name, finalPayload.billing_last_name].filter(Boolean).join(" "),
+      destination:      [finalPayload.billing_city, finalPayload.billing_state].filter(Boolean).join(", "),
+      warehouseId:      finalPayload.warehouse_id,
       labelUrl:         shipment.label_url,
-      request:          payload,
+      request:          finalPayload,
       response:         body,
     });
   }
@@ -432,9 +483,10 @@ export class VelocityProvider extends BaseShippingProvider {
   // ─── Return Order ─────────────────────────────────────────────────────────
 
   async createReturnOrder(payload, { syncedOrderId, shopifyOrderId, shopifyOrderName } = {}) {
-    const { channel, token } = await this.ensureToken();
-
-    const body     = await velocityFetch("/custom/api/v1/reverse-order-orchestration", { token, body: payload });
+    const { channel, body } = await this._withToken(async ({ channel, token }) => ({
+      channel,
+      body: await velocityFetch("/custom/api/v1/reverse-order-orchestration", { token, body: payload }),
+    }));
     const shipment = body.payload || {};
 
     return createShipmentRecord({
@@ -464,8 +516,7 @@ export class VelocityProvider extends BaseShippingProvider {
   // ─── Cancel ───────────────────────────────────────────────────────────────
 
   async cancelOrder(awbs) {
-    const { token } = await this.ensureToken();
-    const body = await velocityFetch("/custom/api/v1/cancel-order", { token, body: { awbs } });
+    const body = await this._withToken(({ token }) => velocityFetch("/custom/api/v1/cancel-order", { token, body: { awbs } }));
     await updateShipmentsByAwb({ companyId: this.companyId, awbCodes: awbs, update: { status: "cancel_requested" } });
     return body;
   }
@@ -473,8 +524,7 @@ export class VelocityProvider extends BaseShippingProvider {
   // ─── Track ────────────────────────────────────────────────────────────────
 
   async trackOrders(awbs) {
-    const { token } = await this.ensureToken();
-    const body = await velocityFetch("/custom/api/v1/order-tracking", { token, body: { awbs } });
+    const body = await this._withToken(({ token }) => velocityFetch("/custom/api/v1/order-tracking", { token, body: { awbs } }));
 
     await Promise.all(
       awbs.map(async (awb) => {
@@ -494,7 +544,6 @@ export class VelocityProvider extends BaseShippingProvider {
   // ─── Reports ──────────────────────────────────────────────────────────────
 
   async getReports(payload) {
-    const { token } = await this.ensureToken();
-    return velocityFetch("/custom/api/v1/reports", { token, body: payload });
+    return this._withToken(({ token }) => velocityFetch("/custom/api/v1/reports", { token, body: payload }));
   }
 }

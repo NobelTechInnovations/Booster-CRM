@@ -203,7 +203,7 @@ export function InventoryView() {
   const missingCostCount = rows.filter((r) => !r.hasCost).length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
       <section className="mb-6">
         <Badge tone="indigo">Stock Control</Badge>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Inventory & Costing</h1>

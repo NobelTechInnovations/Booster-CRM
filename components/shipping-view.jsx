@@ -295,7 +295,7 @@ export function ShippingView() {
   }
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-6">
+    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
       {/* Header */}
       <section className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
