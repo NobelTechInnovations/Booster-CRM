@@ -85,7 +85,7 @@ function CreateRuleModal({ onClose, onCreated }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-lg rounded-2xl border border-[var(--line)] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-4">
           <h2 className="text-lg font-bold text-slate-900">New Automation Rule</h2>
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
@@ -204,7 +204,7 @@ export function AutomationView() {
   const totalRuns = rules.reduce((sum, r) => sum + (r.runCount || 0), 0);
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="indigo">Automation</Badge>

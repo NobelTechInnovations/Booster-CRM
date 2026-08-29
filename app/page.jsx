@@ -94,7 +94,7 @@ export default function Home() {
     <main className="min-h-screen bg-[var(--background)]">
       {/* ── Nav ── */}
       <header className="sticky top-0 z-30 border-b border-[var(--line)] bg-white">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 lg:px-6">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 lg:px-4">
           <Link href="/" className="flex items-center gap-3">
             <div className="grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary)] text-white">
               <Layers3 size={20} />
@@ -127,7 +127,7 @@ export default function Home() {
 
       {/* ── Hero ── */}
       <section className="relative overflow-hidden">
-        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-20 lg:grid-cols-[1fr_440px] lg:items-center lg:py-28 lg:px-6">
+        <div className="mx-auto grid max-w-7xl gap-12 px-4 py-20 lg:grid-cols-[1fr_440px] lg:items-center lg:py-28 lg:px-4">
           <div>
             <Badge tone="indigo" className="inline-flex items-center gap-1.5">
               <Sparkles size={11} />
@@ -153,13 +153,13 @@ export default function Home() {
 
             <div className="mt-8 flex flex-wrap gap-3">
               <Link href="/signup">
-                <Button className="h-11 px-5 text-sm">
+                <Button className="h-11 px-4 text-sm">
                   Create Company Workspace
                   <Building2 size={17} />
                 </Button>
               </Link>
               <Link href="/login">
-                <Button variant="secondary" className="h-11 px-5 text-sm">
+                <Button variant="secondary" className="h-11 px-4 text-sm">
                   Login to Panel
                   <ChevronRight size={17} />
                 </Button>
@@ -241,7 +241,7 @@ export default function Home() {
 
       {/* ── Stats ── */}
       <section id="stats" className="border-y border-[var(--line)] bg-[var(--panel-soft)]">
-        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-4 px-4 py-10 lg:grid-cols-4 lg:px-6">
+        <div className="mx-auto grid max-w-7xl grid-cols-2 gap-4 px-4 py-10 lg:grid-cols-4 lg:px-4">
           {stats.map((stat) => (
             <div key={stat.label} className="flex flex-col items-center rounded-2xl border border-[var(--line)] bg-white py-8 text-center">
               <stat.icon size={20} className="mb-3 text-[var(--primary)]" />
@@ -253,7 +253,7 @@ export default function Home() {
       </section>
 
       {/* ── Features ── */}
-      <section id="features" className="mx-auto max-w-7xl px-4 py-20 lg:px-6">
+      <section id="features" className="mx-auto max-w-7xl px-4 py-20 lg:px-4">
         <div className="text-center">
           <Badge tone="indigo" className="inline-flex items-center gap-1.5">
             <Zap size={11} />
@@ -288,7 +288,7 @@ export default function Home() {
 
       {/* ── How it works ── */}
       <section id="how-it-works" className="border-y border-[var(--line)] bg-[var(--panel-soft)] py-20">
-        <div className="mx-auto max-w-7xl px-4 lg:px-6">
+        <div className="mx-auto max-w-7xl px-4 lg:px-4">
           <div className="text-center">
             <Badge tone="indigo" className="inline-flex items-center gap-1.5">
               <Zap size={11} />
@@ -315,7 +315,7 @@ export default function Home() {
       </section>
 
       {/* ── CTA ── */}
-      <section className="mx-auto max-w-7xl px-4 py-16 lg:px-6">
+      <section className="mx-auto max-w-7xl px-4 py-16 lg:px-4">
         <div className="rounded-3xl border border-[var(--line)] bg-white p-10 text-center shadow-sm md:p-16">
           <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--primary-soft)] text-[var(--primary)]">
             <ShieldCheck size={26} />
@@ -326,13 +326,13 @@ export default function Home() {
           </p>
           <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
             <Link href="/signup">
-              <Button className="h-12 px-6 text-sm">
+              <Button className="h-12 px-4 text-sm">
                 Create Company
                 <Building2 size={18} />
               </Button>
             </Link>
             <Link href="/login">
-              <Button variant="secondary" className="h-12 px-6 text-sm">
+              <Button variant="secondary" className="h-12 px-4 text-sm">
                 Login to Panel
                 <ArrowRight size={18} />
               </Button>
@@ -343,7 +343,7 @@ export default function Home() {
 
       {/* ── Footer ── */}
       <footer className="border-t border-[var(--line)] bg-white">
-        <div className="mx-auto max-w-7xl px-4 py-12 lg:px-6">
+        <div className="mx-auto max-w-7xl px-4 py-12 lg:px-4">
           <div className="grid gap-10 sm:grid-cols-2 lg:grid-cols-[1.4fr_1fr_1fr]">
             <div>
               <Link href="/" className="flex items-center gap-2">

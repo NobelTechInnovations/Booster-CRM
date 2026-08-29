@@ -303,13 +303,13 @@ function EndpointCard({ endpoint, onRefresh }) {
 // All possible follow-up outcomes — getFollowUpOutcomes() filters these down
 // by the lead's current state so the dropdown only shows relevant choices.
 const ALL_FOLLOW_UP_OUTCOMES = [
-  { value: "called",          label: "Called",           forStatuses: ["new", "follow_up_scheduled", "no_response"] },
-  { value: "no_answer",       label: "No answer",        forStatuses: ["new", "follow_up_scheduled", "no_response"] },
-  { value: "interested",      label: "Interested",       forStatuses: ["new", "follow_up_scheduled", "no_response"] },
-  { value: "converted",       label: "Converted ✓",      forStatuses: ["new", "follow_up_scheduled", "interested"] },
-  { value: "follow_up_later", label: "Follow up later",  forStatuses: ["new", "follow_up_scheduled", "interested", "no_response"] },
-  { value: "not_interested",  label: "Not interested",   forStatuses: ["new", "follow_up_scheduled", "no_response"] },
-  { value: "other",           label: "Other",            forStatuses: null /* always shown */ },
+  { value: "called", label: "Called", forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "no_answer", label: "No answer", forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "interested", label: "Interested", forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "converted", label: "Converted ✓", forStatuses: ["new", "follow_up_scheduled", "interested"] },
+  { value: "follow_up_later", label: "Follow up later", forStatuses: ["new", "follow_up_scheduled", "interested", "no_response"] },
+  { value: "not_interested", label: "Not interested", forStatuses: ["new", "follow_up_scheduled", "no_response"] },
+  { value: "other", label: "Other", forStatuses: null /* always shown */ },
 ];
 
 function getFollowUpOutcomes(currentStatus) {
@@ -464,7 +464,7 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
   return (
     <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="flex h-full w-full max-w-lg flex-col bg-white shadow-2xl">
-        <div className="flex items-start justify-between border-b border-[var(--line)] px-5 py-4">
+        <div className="flex items-start justify-between border-b border-[var(--line)] px-4 py-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{lead.provider}</p>
             <h2 className="text-lg font-extrabold text-slate-900">{lead.customerName || lead.customerPhone || lead.customerEmail || "Lead"}</h2>
@@ -486,14 +486,14 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
           <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
 
-        <div className="border-b border-[var(--line)] px-5 py-3">
+        <div className="border-b border-[var(--line)] px-4 py-3">
           <Button className="w-full h-9" onClick={() => onLogFollowUp(lead)}>
             <PhoneCall size={14} />
             Log follow-up
           </Button>
         </div>
 
-        <div className="flex-1 overflow-y-auto px-5 py-4">
+        <div className="flex-1 overflow-y-auto px-4 py-4">
           {lead.followUps?.length ? (
             <div className="mb-5">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Follow-up history</p>
@@ -633,9 +633,9 @@ function LeadRow({ lead, duplicateCount, onView, onFollowUp }) {
 // Sort options for the leads table
 const LEAD_SORT_OPTIONS = [
   { value: "lastEventAt:desc", label: "Last seen (newest)" },
-  { value: "lastEventAt:asc",  label: "Last seen (oldest)" },
-  { value: "cartValue:desc",   label: "Cart value (high→low)" },
-  { value: "cartValue:asc",    label: "Cart value (low→high)" },
+  { value: "lastEventAt:asc", label: "Last seen (oldest)" },
+  { value: "cartValue:desc", label: "Cart value (high→low)" },
+  { value: "cartValue:asc", label: "Cart value (low→high)" },
   { value: "nextFollowUpAt:asc", label: "Follow-up (soonest)" },
   { value: "customerName:asc", label: "Name (A→Z)" },
 ];
@@ -703,7 +703,7 @@ function WebhooksTab() {
       const leadId = lead._id || lead.id;
       markLeadSeen(leadId).then((res) => {
         if (res?.lead) handleLeadUpdated(res.lead);
-      }).catch(() => {});
+      }).catch(() => { });
     }
   }
 
@@ -858,14 +858,14 @@ function WebhooksTab() {
             {leadTab === "verified"
               ? "Has a phone number captured from the webhook event — callable."
               : leadTab === "unverified"
-              ? "No phone number on the event yet (e.g. a cart still at an early checkout stage) — nothing to call until one comes in."
-              : "Every lead with a follow-up call scheduled, soonest (or most overdue) first."}
+                ? "No phone number on the event yet (e.g. a cart still at an early checkout stage) — nothing to call until one comes in."
+                : "Every lead with a follow-up call scheduled, soonest (or most overdue) first."}
           </p>
           {!shownLeads.length ? (
-            <p className="py-6 text-center text-sm text-[var(--muted)]">
+            <p className="py-4 text-center text-sm text-[var(--muted)]">
               {!leads.length ? "No leads yet — they'll appear here as webhook events come in."
                 : leadTab === "followups" ? "No follow-ups scheduled — log one from a lead's timeline."
-                : `No ${leadTab} leads.`}
+                  : `No ${leadTab} leads.`}
             </p>
           ) : (
             <table className="w-full min-w-[1080px] border-collapse text-sm">
@@ -997,7 +997,7 @@ export function SettingsView() {
   }
 
   return (
-    <div className="mx-auto max-w-[1200px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1200px] px-4 py-4 lg:px-8">
       <section className="mb-6">
         <Badge tone="indigo">Settings</Badge>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Settings</h1>

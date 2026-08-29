@@ -53,34 +53,44 @@ import { cn } from "@/lib/utils";
 // ─── Navigation ───────────────────────────────────────────────────────────────
 
 const NAV_GROUPS = [
-  { label: "Dashboard",  icon: Gauge,            href: "/panel",           single: true },
-  { label: "Orders",     icon: ShoppingCart,     href: "/panel/orders",    children: [
-    { label: "Orders",       icon: ShoppingCart,  href: "/panel/orders" },
-    { label: "Fulfillment",  icon: PackageCheck,  href: "/panel/fulfillment" },
-    { label: "Customers",    icon: UserRound,     href: "/panel/customers" },
-  ]},
-  { label: "Products",   icon: Package,          href: "/panel/products",  children: [
-    { label: "Products",         icon: Package,   href: "/panel/products" },
-    { label: "Product Mapping",  icon: Workflow,  href: "/panel/product-mapping" },
-    { label: "Inventory",        icon: Boxes,     href: "/panel/inventory" },
-    { label: "Assets & Stock",   icon: Package2,  href: "/panel/assets" },
-  ]},
-  { label: "Finance",    icon: CircleDollarSign, href: "/panel/finance",   children: [
-    { label: "Overview",    icon: CircleDollarSign, href: "/panel/finance" },
-    { label: "Ads & ROAS",  icon: Activity,         href: "/panel/ads" },
-    { label: "Analytics",   icon: BarChart2,         href: "/panel/finance?tab=sales" },
-  ]},
-  { label: "Channels",   icon: PlugZap,          href: "/panel/channels",  children: [
-    { label: "Sales Channels",    icon: PlugZap, href: "/panel/channels" },
-    { label: "Shipping Partners", icon: Truck,   href: "/panel/shipping" },
-  ]},
-  { label: "Admin",      icon: Building2,        href: "/panel/company",   children: [
-    { label: "Company",    icon: Building2,    href: "/panel/company" },
-    { label: "Users",      icon: Users,        href: "/panel/users" },
-    { label: "Automation", icon: Workflow,      href: "/panel/automation" },
-    { label: "Reports",    icon: ClipboardList, href: "/panel/reports" },
-  ]},
-  { label: "Settings",   icon: Settings,         href: "/panel/settings",  single: true },
+  { label: "Dashboard", icon: Gauge, href: "/panel", single: true },
+  {
+    label: "Orders", icon: ShoppingCart, href: "/panel/orders", children: [
+      { label: "Orders", icon: ShoppingCart, href: "/panel/orders" },
+      { label: "Fulfillment", icon: PackageCheck, href: "/panel/fulfillment" },
+      { label: "Customers", icon: UserRound, href: "/panel/customers" },
+    ]
+  },
+  {
+    label: "Products", icon: Package, href: "/panel/products", children: [
+      { label: "Products", icon: Package, href: "/panel/products" },
+      { label: "Product Mapping", icon: Workflow, href: "/panel/product-mapping" },
+      { label: "Inventory", icon: Boxes, href: "/panel/inventory" },
+      { label: "Assets & Stock", icon: Package2, href: "/panel/assets" },
+    ]
+  },
+  {
+    label: "Finance", icon: CircleDollarSign, href: "/panel/finance", children: [
+      { label: "Overview", icon: CircleDollarSign, href: "/panel/finance" },
+      { label: "Ads & ROAS", icon: Activity, href: "/panel/ads" },
+      { label: "Analytics", icon: BarChart2, href: "/panel/finance?tab=sales" },
+    ]
+  },
+  {
+    label: "Channels", icon: PlugZap, href: "/panel/channels", children: [
+      { label: "Sales Channels", icon: PlugZap, href: "/panel/channels" },
+      { label: "Shipping Partners", icon: Truck, href: "/panel/shipping" },
+    ]
+  },
+  {
+    label: "Admin", icon: Building2, href: "/panel/company", children: [
+      { label: "Company", icon: Building2, href: "/panel/company" },
+      { label: "Users", icon: Users, href: "/panel/users" },
+      { label: "Automation", icon: Workflow, href: "/panel/automation" },
+      { label: "Reports", icon: ClipboardList, href: "/panel/reports" },
+    ]
+  },
+  { label: "Settings", icon: Settings, href: "/panel/settings", single: true },
 ];
 
 function isGroupActive(group, pathname) {
@@ -98,7 +108,7 @@ function SubNavBar({ pathname }) {
   if (!group) return null;
   return (
     <div className="border-b border-[var(--line)] bg-[var(--panel)]">
-      <nav className="flex items-center gap-0 px-6 overflow-x-auto">
+      <nav className="flex items-center gap-0 px-4 overflow-x-auto">
         {group.children.map((child) => {
           const base = child.href.split("?")[0];
           const active = pathname === base || (base !== "/panel" && pathname?.startsWith(base));
@@ -324,7 +334,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
 
 function Topbar({ setOpen, onSyncAll, canSync, period, setPeriod, session }) {
   return (
-    <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--panel)] px-4 lg:px-6">
+    <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--panel)] px-4 lg:px-4">
       <button className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
         <Menu size={20} />
       </button>
@@ -477,7 +487,7 @@ export default function PanelLayout({ children }) {
         <CustomerFollowUpModal
           customer={followUpCustomer}
           onClose={() => setFollowUpCustomer(null)}
-          onUpdate={() => {}}
+          onUpdate={() => { }}
           onCreateOrder={() => { setCreateOrderCustomer(followUpCustomer); setFollowUpCustomer(null); }}
         />
       )}

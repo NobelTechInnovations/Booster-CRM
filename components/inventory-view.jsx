@@ -203,7 +203,7 @@ export function InventoryView() {
   const missingCostCount = rows.filter((r) => !r.hasCost).length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6">
         <Badge tone="indigo">Stock Control</Badge>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Inventory & Costing</h1>
@@ -225,40 +225,40 @@ export function InventoryView() {
           <KpiRowSkeleton count={4} />
         </section>
       ) : (
-      <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-[var(--muted)]">Total SKUs</p>
-            <Boxes size={16} className="text-indigo-600" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{rows.length.toLocaleString("en-IN")}</p>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-[var(--muted)]">Units in Stock</p>
-            <Package size={16} className="text-blue-600" />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{totalStock.toLocaleString("en-IN")}</p>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-[var(--muted)]">Avg. Margin</p>
-            {avgMarginPercent >= 0 ? <TrendingUp size={16} className="text-emerald-600" /> : <TrendingDown size={16} className="text-rose-600" />}
-          </div>
-          <p className={`mt-2 text-2xl font-bold ${avgMarginPercent >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
-            {costedRows.length ? `${avgMarginPercent.toFixed(1)}%` : "—"}
-          </p>
-          <p className="mt-1 text-xs text-[var(--muted)]">{costedRows.length} SKUs costed</p>
-        </Card>
-        <Card className="p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-medium text-[var(--muted)]">Low Stock</p>
-            <AlertTriangle size={16} className={lowStockCount ? "text-amber-600" : "text-slate-300"} />
-          </div>
-          <p className="mt-2 text-2xl font-bold">{lowStockCount}</p>
-          <p className="mt-1 text-xs text-[var(--muted)]">≤ 5 units remaining</p>
-        </Card>
-      </section>
+        <section className="mb-6 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-[var(--muted)]">Total SKUs</p>
+              <Boxes size={16} className="text-indigo-600" />
+            </div>
+            <p className="mt-2 text-2xl font-bold">{rows.length.toLocaleString("en-IN")}</p>
+          </Card>
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-[var(--muted)]">Units in Stock</p>
+              <Package size={16} className="text-blue-600" />
+            </div>
+            <p className="mt-2 text-2xl font-bold">{totalStock.toLocaleString("en-IN")}</p>
+          </Card>
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-[var(--muted)]">Avg. Margin</p>
+              {avgMarginPercent >= 0 ? <TrendingUp size={16} className="text-emerald-600" /> : <TrendingDown size={16} className="text-rose-600" />}
+            </div>
+            <p className={`mt-2 text-2xl font-bold ${avgMarginPercent >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+              {costedRows.length ? `${avgMarginPercent.toFixed(1)}%` : "—"}
+            </p>
+            <p className="mt-1 text-xs text-[var(--muted)]">{costedRows.length} SKUs costed</p>
+          </Card>
+          <Card className="p-4">
+            <div className="flex items-center justify-between">
+              <p className="text-sm font-medium text-[var(--muted)]">Low Stock</p>
+              <AlertTriangle size={16} className={lowStockCount ? "text-amber-600" : "text-slate-300"} />
+            </div>
+            <p className="mt-2 text-2xl font-bold">{lowStockCount}</p>
+            <p className="mt-1 text-xs text-[var(--muted)]">≤ 5 units remaining</p>
+          </Card>
+        </section>
       )}
 
       {missingCostCount > 0 ? (

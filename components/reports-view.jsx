@@ -156,7 +156,7 @@ export function ReportsView() {
   }
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="indigo">Business Reports</Badge>
@@ -219,11 +219,10 @@ export function ReportsView() {
               <button
                 key={r.key}
                 onClick={() => setActiveType(r.key)}
-                className={`flex shrink-0 items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-sm font-semibold transition xl:shrink ${
-                  active
-                    ? "border-indigo-600 bg-indigo-50 text-indigo-900"
-                    : "border-[var(--line)] bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/40"
-                }`}
+                className={`flex shrink-0 items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-sm font-semibold transition xl:shrink ${active
+                  ? "border-indigo-600 bg-indigo-50 text-indigo-900"
+                  : "border-[var(--line)] bg-white text-slate-600 hover:border-indigo-200 hover:bg-indigo-50/40"
+                  }`}
               >
                 <Icon size={15} className={active ? "text-indigo-600" : "text-slate-400"} />
                 <span className="whitespace-nowrap xl:whitespace-normal">{r.label}</span>
@@ -247,7 +246,7 @@ export function ReportsView() {
               </div>
             ) : (
               <>
-                <div className="border-b border-[var(--line)] bg-slate-50 px-5 py-3">
+                <div className="border-b border-[var(--line)] bg-slate-50 px-4 py-3">
                   <p className="font-bold text-slate-900">{report.title}</p>
                   <p className="mt-0.5 text-xs text-[var(--muted)]">{report.description} · {report.rows.length} rows</p>
                 </div>
@@ -291,9 +290,8 @@ export function ReportsView() {
                             return (
                               <td
                                 key={c.key}
-                                className={`py-2.5 px-4 first:pl-5 first:font-semibold last:pr-5 ${ci === 0 ? "text-slate-900" : "text-slate-600"} ${
-                                  isNumeric ? "text-right tabular-nums" : "text-left"
-                                }`}
+                                className={`py-2.5 px-4 first:pl-5 first:font-semibold last:pr-5 ${ci === 0 ? "text-slate-900" : "text-slate-600"} ${isNumeric ? "text-right tabular-nums" : "text-left"
+                                  }`}
                               >
                                 {typeof row[c.key] === "number" ? row[c.key].toLocaleString("en-IN") : row[c.key]}
                               </td>

@@ -110,7 +110,7 @@ export function CompanyView({ onCompanyUpdate }) {
   ];
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1400px] px-4 py-4 lg:px-8">
       {/* Header */}
       <section className="mb-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
@@ -160,11 +160,10 @@ export function CompanyView({ onCompanyUpdate }) {
           <button
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
-            className={`flex items-center gap-2 rounded-lg px-5 py-2 text-sm font-semibold transition ${
-              activeTab === tab.key
-                ? "bg-white text-indigo-700 shadow-sm ring-1 ring-[var(--line)]"
-                : "text-slate-500 hover:text-slate-900"
-            }`}
+            className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === tab.key
+              ? "bg-white text-indigo-700 shadow-sm ring-1 ring-[var(--line)]"
+              : "text-slate-500 hover:text-slate-900"
+              }`}
           >
             <tab.icon size={15} />
             {tab.label}
@@ -242,7 +241,7 @@ export function CompanyView({ onCompanyUpdate }) {
           </div>
 
           <div className="mt-6">
-            <Button disabled={saving === "company"} className="h-11 px-6">
+            <Button disabled={saving === "company"} className="h-11 px-4">
               <Save size={16} />
               {saving === "company" ? "Saving..." : "Save Company Details"}
             </Button>
@@ -282,20 +281,18 @@ export function CompanyView({ onCompanyUpdate }) {
           <div className="space-y-5">
             <div className="rounded-xl border border-[var(--line)] bg-white p-5 shadow-sm">
               <div className="mb-4 flex items-center gap-3">
-                <div className={`grid h-11 w-11 place-items-center rounded-xl ${
-                  kycStatus === "verified" ? "bg-emerald-100 text-emerald-600" :
+                <div className={`grid h-11 w-11 place-items-center rounded-xl ${kycStatus === "verified" ? "bg-emerald-100 text-emerald-600" :
                   kycStatus === "submitted" ? "bg-amber-100 text-amber-600" :
-                  "bg-slate-100 text-slate-400"
-                }`}>
+                    "bg-slate-100 text-slate-400"
+                  }`}>
                   <ShieldCheck size={22} />
                 </div>
                 <div>
                   <p className="text-sm font-bold text-slate-900">KYC Status</p>
-                  <p className={`text-sm font-semibold capitalize ${
-                    kycStatus === "verified" ? "text-emerald-700" :
+                  <p className={`text-sm font-semibold capitalize ${kycStatus === "verified" ? "text-emerald-700" :
                     kycStatus === "submitted" ? "text-amber-700" :
-                    "text-slate-400"
-                  }`}>
+                      "text-slate-400"
+                    }`}>
                     {kycStatus.replace("_", " ")}
                   </p>
                 </div>

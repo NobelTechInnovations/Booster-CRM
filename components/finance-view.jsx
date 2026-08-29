@@ -569,7 +569,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
                         <td className="py-3 pr-4">
                           {o.shippingCostSource === "auto" ? <Badge tone="blue">Auto</Badge>
                             : o.shippingCostSource === "manual" ? <Badge tone="indigo">Manual</Badge>
-                            : <Badge tone="slate">Unset</Badge>}
+                              : <Badge tone="slate">Unset</Badge>}
                         </td>
                         <td className="py-3 pr-0 text-right">
                           {isEditing ? (
@@ -1038,11 +1038,11 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFil
   const filteredExpenses =
     categoryFilter === "all" ? expenses
       : categoryFilter === "not-marketing" ? expenses.filter((e) => e.category !== "marketing")
-      // Matches the Overview tab's "Other Expenses" card definition exactly —
-      // everything except marketing and shipping, since those two have their
-      // own dedicated cards there.
-      : categoryFilter === "other" ? expenses.filter((e) => e.category !== "marketing" && e.category !== "shipping")
-      : expenses.filter((e) => e.category === categoryFilter);
+        // Matches the Overview tab's "Other Expenses" card definition exactly —
+        // everything except marketing and shipping, since those two have their
+        // own dedicated cards there.
+        : categoryFilter === "other" ? expenses.filter((e) => e.category !== "marketing" && e.category !== "shipping")
+          : expenses.filter((e) => e.category === categoryFilter);
 
   const total = filteredExpenses.reduce((sum, expense) => sum + Number(expense.amount || 0), 0);
 
@@ -2154,7 +2154,7 @@ export function FinanceView({ defaultTab = "overview" }) {
   }, [range.from, range.to, groupBy]);
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Finance</Badge>

@@ -143,7 +143,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-xl shadow-2xl border border-[var(--line)] w-full max-w-3xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)]">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--line)]">
           <div className="flex items-center gap-3">
             <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white">
               <ShoppingCart size={16} />
@@ -337,7 +337,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] px-5 py-3 bg-[var(--panel-soft)]">
+        <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] px-4 py-3 bg-[var(--panel-soft)]">
           <div className="flex-1">
             {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
           </div>

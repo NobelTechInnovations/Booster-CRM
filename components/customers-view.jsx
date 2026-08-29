@@ -81,7 +81,7 @@ function NewCustomerModal({ onClose, onCreated }) {
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/50 p-4 pt-8 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-lg rounded-2xl border border-[var(--line)] bg-white shadow-2xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-6 py-4">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-4">
           <div>
             <h2 className="text-lg font-extrabold text-slate-900">New customer</h2>
             <p className="text-xs text-slate-500">Created directly in Shopify — same as adding one there.</p>
@@ -89,7 +89,7 @@ function NewCustomerModal({ onClose, onCreated }) {
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
 
-        <form onSubmit={handleSubmit} className="max-h-[70vh] space-y-4 overflow-y-auto px-6 py-5">
+        <form onSubmit={handleSubmit} className="max-h-[70vh] space-y-4 overflow-y-auto px-4 py-4">
           <div className="grid grid-cols-2 gap-3">
             <Field label="First name">
               <input className={inputClass} value={form.firstName} onChange={(e) => setField("firstName", e.target.value)} />
@@ -209,7 +209,7 @@ export function CustomersView() {
   }, [customers, search, sortBy]);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1400px] px-4 py-4 lg:px-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Badge tone="indigo">CRM</Badge>

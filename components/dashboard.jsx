@@ -234,7 +234,7 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
 
   return (
     <header className="sticky top-0 z-20 border-b border-[var(--line)] bg-white/90 backdrop-blur">
-      <div className="flex h-16 items-center gap-3 px-4 lg:px-6">
+      <div className="flex h-16 items-center gap-3 px-4 lg:px-4">
         <button className="rounded-md p-2 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open navigation">
           <Menu size={20} />
         </button>
@@ -319,8 +319,8 @@ function KpiRow({ items, salesTrend = [] }) {
     if (!item) return null;
     const trend = series && salesTrend.length
       ? salesTrend.map((d) => ({
-          v: series === "orders" ? (d.orders || 0) : series === "aov" ? (d.orders ? d.sales / d.orders : 0) : (d.sales || 0),
-        }))
+        v: series === "orders" ? (d.orders || 0) : series === "aov" ? (d.orders ? d.sales / d.orders : 0) : (d.sales || 0),
+      }))
       : [];
     return { ...item, color: color || "#94a3b8", trend };
   }).filter(Boolean);
@@ -393,9 +393,9 @@ function useSingleSlicePieData(channelMix) {
   const isSingleSlice = channelMix.length === 1;
   const pieData = isSingleSlice
     ? [
-        { name: channelMix[0].name, value: channelMix[0].value / 2, __originalName: channelMix[0].name, __originalValue: channelMix[0].value },
-        { name: channelMix[0].name, value: channelMix[0].value / 2, __originalName: channelMix[0].name, __originalValue: channelMix[0].value },
-      ]
+      { name: channelMix[0].name, value: channelMix[0].value / 2, __originalName: channelMix[0].name, __originalValue: channelMix[0].value },
+      { name: channelMix[0].name, value: channelMix[0].value / 2, __originalName: channelMix[0].name, __originalValue: channelMix[0].value },
+    ]
     : channelMix;
   return { pieData, isSingleSlice };
 }
@@ -895,7 +895,7 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
       </div>
 
       {/* Description */}
-      <p className="px-5 pb-4 text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
+      <p className="px-4 pb-4 text-sm leading-6 text-[var(--muted)]">{channel.description}</p>
 
       {/* Connected metrics strip */}
       {isConnected && (
@@ -918,7 +918,7 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
       )}
 
       {/* Action area */}
-      <div className="mt-auto px-5 pb-5">
+      <div className="mt-auto px-4 pb-5">
         {isConnected ? (
           <div className="space-y-2">
             <Button className="w-full h-10 font-semibold" onClick={() => onSyncChannel?.(connectedChannel._id || connectedChannel.id)}>
@@ -972,7 +972,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
   }
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Channel Integrations</Badge>
@@ -2012,7 +2012,7 @@ function RecordsModuleView({ name }) {
         : records.filter((record) => !record.email).length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{name}</Badge>
@@ -2217,7 +2217,7 @@ function ProductMappingView() {
   const mappedCount = mappings.filter((mapping) => mapping.mappings?.some((entry) => entry.provider === "shopify") && mapping.mappings?.some((entry) => entry.provider === "amazon")).length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="amber">Product Mapping</Badge>
@@ -2361,7 +2361,7 @@ export function ModuleView({ name, setActiveView }) {
   if (!page) return null;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{page.eyebrow}</Badge>
@@ -2627,7 +2627,7 @@ export function DashboardView() {
   const hasData = !!dashboardData?.kpis?.length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-7 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
 
       {/* Business metric strip — plain command-bar row, no card */}
       <BusinessMetricStrip kpis={kpiItems} channels={connectedChannels || []} />
@@ -2669,7 +2669,7 @@ export function DashboardView() {
             channelsError={channelsError}
             setChannelsError={setChannelsError}
             isLoadingChannels={isLoadingChannels}
-            onRefreshData={() => {}}
+            onRefreshData={() => { }}
           />
         </div>
       </div>

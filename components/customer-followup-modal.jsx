@@ -22,20 +22,20 @@ import { addCustomerFollowUp } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const OUTCOMES = [
-  { key: "called",           label: "Called",            icon: Phone,        color: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
-  { key: "no_answer",        label: "No Answer",         icon: XCircle,      color: "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100" },
-  { key: "interested",       label: "Interested",        icon: AlertCircle,  color: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
-  { key: "converted",        label: "Order Placed ✓",   icon: CheckCircle2, color: "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" },
-  { key: "follow_up_later",  label: "Follow Up Later",   icon: Clock,        color: "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100" },
-  { key: "not_interested",   label: "Not Interested",    icon: XCircle,      color: "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" },
+  { key: "called", label: "Called", icon: Phone, color: "bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100" },
+  { key: "no_answer", label: "No Answer", icon: XCircle, color: "bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100" },
+  { key: "interested", label: "Interested", icon: AlertCircle, color: "bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100" },
+  { key: "converted", label: "Order Placed ✓", icon: CheckCircle2, color: "bg-green-50 text-green-700 border-green-200 hover:bg-green-100" },
+  { key: "follow_up_later", label: "Follow Up Later", icon: Clock, color: "bg-violet-50 text-violet-700 border-violet-200 hover:bg-violet-100" },
+  { key: "not_interested", label: "Not Interested", icon: XCircle, color: "bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100" },
 ];
 
 const FOLLOW_UP_STATUSES = [
-  { key: "new",                 label: "New" },
+  { key: "new", label: "New" },
   { key: "follow_up_scheduled", label: "Follow Up Scheduled" },
-  { key: "converted",          label: "Converted" },
-  { key: "no_response",        label: "No Response" },
-  { key: "closed",             label: "Closed" },
+  { key: "converted", label: "Converted" },
+  { key: "no_response", label: "No Response" },
+  { key: "closed", label: "Closed" },
 ];
 
 function fmt(date) {
@@ -52,23 +52,23 @@ function outcomeLabel(key) {
 
 function outcomeColor(key) {
   const map = {
-    called:          "text-blue-600",
-    no_answer:       "text-slate-500",
-    interested:      "text-amber-600",
-    converted:       "text-green-600",
+    called: "text-blue-600",
+    no_answer: "text-slate-500",
+    interested: "text-amber-600",
+    converted: "text-green-600",
     follow_up_later: "text-violet-600",
-    not_interested:  "text-rose-600",
+    not_interested: "text-rose-600",
   };
   return map[key] || "text-slate-500";
 }
 
 function statusBadge(status) {
   const map = {
-    new:                 "bg-slate-100 text-slate-600",
+    new: "bg-slate-100 text-slate-600",
     follow_up_scheduled: "bg-violet-100 text-violet-700",
-    converted:           "bg-green-100 text-green-700",
-    no_response:         "bg-amber-100 text-amber-700",
-    closed:              "bg-rose-100 text-rose-700",
+    converted: "bg-green-100 text-green-700",
+    no_response: "bg-amber-100 text-amber-700",
+    closed: "bg-rose-100 text-rose-700",
   };
   return map[status] || "bg-slate-100 text-slate-500";
 }
@@ -158,7 +158,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/40 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="bg-white rounded-xl shadow-2xl border border-[var(--line)] w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)] bg-[var(--primary-soft)]">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--line)] bg-[var(--primary-soft)]">
           <div className="flex items-center gap-3">
             <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white text-sm font-bold shrink-0">
               {(customer?.name || "?")[0]?.toUpperCase()}
@@ -190,7 +190,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
         </div>
 
         {/* Tabs */}
-        <div className="flex border-b border-[var(--line)] px-5 gap-1">
+        <div className="flex border-b border-[var(--line)] px-4 gap-1">
           {[["log", "Log Call"], ["edit", "Edit Details"], ["history", `History (${followUps.length})`]].map(([key, label]) => (
             <button
               key={key}
@@ -383,7 +383,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
 
         {/* Footer */}
         {tab !== "history" && (
-          <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] px-5 py-3 bg-[var(--panel-soft)]">
+          <div className="flex items-center justify-between gap-3 border-t border-[var(--line)] px-4 py-3 bg-[var(--panel-soft)]">
             <div className="flex-1">
               {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
               {success && <p className="text-xs text-green-600 font-medium">{success}</p>}

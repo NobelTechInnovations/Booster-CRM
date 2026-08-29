@@ -67,11 +67,11 @@ function AssetFormModal({ initial, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
           <h2 className="text-base font-bold text-slate-900">{initial ? "Edit asset" : "Add asset"}</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3 px-5 py-4">
+        <form onSubmit={handleSubmit} className="space-y-3 px-4 py-4">
           <label className="block text-sm font-semibold text-slate-700">
             Name *
             <input required value={form.name} onChange={(e) => setField("name", e.target.value)}
@@ -163,11 +163,11 @@ function AdjustStockModal({ asset, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-sm rounded-lg border border-[var(--line)] bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
           <h2 className="text-base font-bold text-slate-900">Adjust stock — {asset.name}</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3 px-5 py-4">
+        <form onSubmit={handleSubmit} className="space-y-3 px-4 py-4">
           <p className="text-sm text-slate-500">Current stock: <span className="font-bold text-slate-800">{asset.currentStock} {asset.unit}</span></p>
           <label className="block text-sm font-semibold text-slate-700">
             Quantity (+ to add, − to remove)
@@ -230,7 +230,7 @@ function MappingFormModal({ product, assets, existing, onClose, onSaved }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-lg rounded-lg border border-[var(--line)] bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
           <div>
             <h2 className="text-base font-bold text-slate-900">What does this consume?</h2>
             <p className="text-xs text-slate-500">
@@ -240,7 +240,7 @@ function MappingFormModal({ product, assets, existing, onClose, onSaved }) {
           </div>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="space-y-3 px-5 py-4">
+        <form onSubmit={handleSubmit} className="space-y-3 px-4 py-4">
           {rows.map((row, i) => (
             <div key={i} className="flex items-center gap-2">
               <select
@@ -595,7 +595,7 @@ export function AssetsView() {
   const lowStockCount = assets.filter((a) => Number(a.currentStock) <= Number(a.lowStockThreshold)).length;
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-5">
         <Badge tone="indigo">Packaging</Badge>
         <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Assets & Packaging</h1>

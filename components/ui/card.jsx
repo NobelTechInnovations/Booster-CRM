@@ -20,7 +20,7 @@ export function CardHeader({ className, ...props }) {
   return (
     <div
       className={cn(
-        "flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5",
+        "flex items-start justify-between gap-4 border-b border-slate-100 px-4 py-4",
         className,
       )}
       {...props}

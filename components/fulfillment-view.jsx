@@ -77,11 +77,11 @@ function LinkWarehouseModal({ provider, onClose, onLinked }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
           <h2 className="text-base font-bold text-slate-900">Link an existing {provider} warehouse</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
-        <form onSubmit={handleSubmit} className="max-h-[75vh] space-y-3 overflow-y-auto px-5 py-4">
+        <form onSubmit={handleSubmit} className="max-h-[75vh] space-y-3 overflow-y-auto px-4 py-4">
           <p className="rounded-md bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
             {provider} has no API to list warehouses, so paste the Warehouse ID exactly as shown on your {provider} dashboard
             (e.g. <code className="font-mono">WHCOPY</code>) — we won't create a new one there.
@@ -181,13 +181,13 @@ function BulkShipModal({ orderCount, shippingChannels, warehouses, initialProvid
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && !isShipping && onClose()}>
       <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
-        <div className="flex items-center justify-between border-b border-[var(--line)] px-5 py-3.5">
+        <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
           <h2 className="text-base font-bold text-slate-900">Bulk ship {orderCount} order{orderCount === 1 ? "" : "s"}</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
 
         {result ? (
-          <div className="max-h-[70vh] space-y-3 overflow-y-auto px-5 py-4">
+          <div className="max-h-[70vh] space-y-3 overflow-y-auto px-4 py-4">
             <p className="rounded-md bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-800">{result.message}</p>
             {result.succeeded?.length ? (
               <div>
@@ -217,7 +217,7 @@ function BulkShipModal({ orderCount, shippingChannels, warehouses, initialProvid
             <Button className="w-full" onClick={onClose}>Done</Button>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-3 px-5 py-4">
+          <form onSubmit={handleSubmit} className="space-y-3 px-4 py-4">
             <p className="rounded-md bg-indigo-50 px-3 py-2 text-xs leading-5 text-indigo-800">
               Courier is auto-assigned per order by {provider || "the provider"}'s own rules — same as leaving courier unpicked when shipping one order.
             </p>
@@ -400,7 +400,7 @@ function CourierSelectModal({
     >
       <div className="bg-white rounded-xl shadow-2xl border border-[var(--line)] w-full max-w-xl max-h-[90vh] flex flex-col overflow-hidden">
         {/* Header */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--line)] bg-[var(--primary-soft)]">
+        <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--line)] bg-[var(--primary-soft)]">
           <div className="flex items-center gap-3">
             <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white shrink-0">
               <Truck size={18} />
@@ -513,11 +513,10 @@ function CourierSelectModal({
                     <div
                       key={idx}
                       onClick={() => setSelectedCourier(option)}
-                      className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition ${
-                        isChecked
-                          ? "border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600"
-                          : "border-[var(--line)] bg-white hover:bg-slate-50"
-                      }`}
+                      className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition ${isChecked
+                        ? "border-indigo-600 bg-indigo-50/50 ring-1 ring-indigo-600"
+                        : "border-[var(--line)] bg-white hover:bg-slate-50"
+                        }`}
                     >
                       <div className="flex items-center gap-3">
                         <div className={`grid h-5 w-5 place-items-center rounded-full border ${isChecked ? "border-indigo-700 bg-indigo-700 text-white" : "border-slate-300"}`}>
@@ -549,7 +548,7 @@ function CourierSelectModal({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-3 bg-[var(--panel-soft)]">
+        <div className="flex items-center justify-between border-t border-[var(--line)] px-4 py-3 bg-[var(--panel-soft)]">
           <button onClick={onClose} className="h-8 px-3 rounded-lg border border-[var(--line)] text-xs text-slate-600 hover:bg-slate-100 transition">
             Cancel
           </button>
@@ -793,13 +792,13 @@ export function FulfillmentView() {
   }
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-6 lg:px-8">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       {/* Header */}
       <section className="mb-6">
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Badge tone="indigo">Fulfillment</Badge>
-            <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">
+            <h1 className="mt-2 text-xl font-bold tracking-tight text-slate-950 md:text-[28px]">
               Automated Fulfillment
             </h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">
@@ -817,11 +816,10 @@ export function FulfillmentView() {
       <div className="mb-5 flex items-center gap-1 rounded-xl border border-[var(--line)] bg-slate-50 p-1 w-fit">
         <button
           onClick={() => setActiveTab("toship")}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "toship"
-              ? "bg-indigo-700 text-white shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === "toship"
+            ? "bg-indigo-700 text-white shadow-sm"
+            : "text-slate-600 hover:text-slate-900"
+            }`}
         >
           <PackageCheck size={15} />
           To Ship
@@ -831,11 +829,10 @@ export function FulfillmentView() {
         </button>
         <button
           onClick={() => setActiveTab("fulfilled")}
-          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${
-            activeTab === "fulfilled"
-              ? "bg-emerald-700 text-white shadow-sm"
-              : "text-slate-600 hover:text-slate-900"
-          }`}
+          className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === "fulfilled"
+            ? "bg-emerald-700 text-white shadow-sm"
+            : "text-slate-600 hover:text-slate-900"
+            }`}
         >
           <CheckCircle size={15} />
           Fulfilled
@@ -847,11 +844,10 @@ export function FulfillmentView() {
 
       {message.text ? (
         <div
-          className={`mb-6 flex items-center gap-2 rounded-lg border p-4 text-sm font-medium ${
-            message.type === "error"
-              ? "border-rose-200 bg-rose-50 text-rose-800"
-              : "border-emerald-200 bg-emerald-50 text-emerald-800"
-          }`}
+          className={`mb-6 flex items-center gap-2 rounded-lg border p-4 text-sm font-medium ${message.type === "error"
+            ? "border-rose-200 bg-rose-50 text-rose-800"
+            : "border-emerald-200 bg-emerald-50 text-emerald-800"
+            }`}
         >
           {message.type === "error" ? <AlertCircle size={18} /> : <CheckCircle size={18} />}
           <span>{message.text}</span>
@@ -1027,281 +1023,278 @@ export function FulfillmentView() {
 
       {/* ── To Ship Tab ── */}
       {activeTab === "toship" && <>
-      {/* Control Panel: Provider & Warehouse Selector */}
-      <Card className="mb-6 border-slate-200 bg-slate-50/50">
-        <CardContent className="p-4">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-4">
-              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                <Truck size={16} className="text-indigo-700" />
-                Default Channel:
-                <select
-                  className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-sm outline-none focus:border-indigo-700"
-                  value={selectedProvider}
-                  onChange={(e) => setSelectedProvider(e.target.value)}
-                  disabled={!connectedProviders.length}
-                >
-                  {connectedProviders.length === 0 ? (
-                    <option value="">No shipping channels connected</option>
-                  ) : (
-                    connectedProviders.map((c) => (
-                      <option key={c._id || c.id} value={c.provider}>
-                        {c.name || c.provider}
-                      </option>
-                    ))
-                  )}
-                </select>
-              </label>
-
-              <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
-                <Building2 size={16} className="text-indigo-700" />
-                Pickup Warehouse:
-                <select
-                  className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-sm outline-none focus:border-indigo-700"
-                  value={selectedWarehouse}
-                  onChange={(e) => setSelectedWarehouse(e.target.value)}
-                  disabled={!providerWarehouses.length}
-                >
-                  {providerWarehouses.length === 0 ? (
-                    <option value="">No {selectedProvider || "warehouses"} synced</option>
-                  ) : (
-                    providerWarehouses.map((w) => (
-                      <option key={w._id || w.externalWarehouseId} value={w.externalWarehouseId}>
-                        {w.name} ({w.address?.city || w.externalWarehouseId})
-                      </option>
-                    ))
-                  )}
-                </select>
-                {selectedProvider ? (
-                  <button
-                    type="button"
-                    onClick={() => setShowLinkWarehouse(true)}
-                    className="text-xs font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-900"
-                    title="Register a warehouse you already created on the provider's own dashboard"
-                  >
-                    + Link
-                  </button>
-                ) : null}
-              </label>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-              <button
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
-                  filterMode === "all" ? "bg-slate-950 text-white" : "text-slate-600 hover:text-slate-900"
-                }`}
-                onClick={() => setFilterMode("all")}
-              >
-                All Orders ({orders.length})
-              </button>
-              <button
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
-                  filterMode === "cod" ? "bg-amber-600 text-white" : "text-slate-600 hover:text-slate-900"
-                }`}
-                onClick={() => setFilterMode("cod")}
-              >
-                COD ({orders.filter((o) => o.isCOD).length})
-              </button>
-              <button
-                className={`rounded-md px-3 py-1 text-xs font-semibold transition ${
-                  filterMode === "prepaid" ? "bg-emerald-600 text-white" : "text-slate-600 hover:text-slate-900"
-                }`}
-                onClick={() => setFilterMode("prepaid")}
-              >
-                Prepaid ({orders.filter((o) => !o.isCOD).length})
-              </button>
-            </div>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Orders Grid & Active Shipments */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Orders Pending Shipment (2 cols) */}
-        <div className="lg:col-span-2">
-          <Card>
-            <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
-              <div>
-                <CardTitle className="text-xl">Orders Ready to Ship</CardTitle>
-                <p className="text-sm text-[var(--muted)]">Synced directly from Shopify orders</p>
-              </div>
-              <Badge tone="blue">{filteredOrders.length} Unfulfilled</Badge>
-            </CardHeader>
-            {filteredOrders.length > 0 ? (
-              <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-2">
-                <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
-                  <input
-                    type="checkbox"
-                    checked={filteredOrders.length > 0 && filteredOrders.every((o) => selectedToShipIds.has(o.externalId || o._id || o.id))}
-                    onChange={(e) => {
-                      if (e.target.checked) {
-                        setSelectedToShipIds(new Set(filteredOrders.map((o) => o.externalId || o._id || o.id)));
-                      } else {
-                        setSelectedToShipIds(new Set());
-                      }
-                    }}
-                  />
-                  Select all ({filteredOrders.length})
-                </label>
-                {selectedToShipIds.size > 0 ? (
-                  <Button
-                    size="sm"
-                    className="h-8 bg-indigo-700 px-3 text-xs hover:bg-indigo-800"
+        {/* Control Panel: Provider & Warehouse Selector */}
+        <Card className="mb-6 border-slate-200 bg-slate-50/50">
+          <CardContent className="p-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-4">
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <Truck size={16} className="text-indigo-700" />
+                  Default Channel:
+                  <select
+                    className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-sm outline-none focus:border-indigo-700"
+                    value={selectedProvider}
+                    onChange={(e) => setSelectedProvider(e.target.value)}
                     disabled={!connectedProviders.length}
-                    onClick={() => setShowBulkShip(true)}
                   >
-                    <Send size={13} className="mr-1" />
-                    Bulk Ship ({selectedToShipIds.size})
-                  </Button>
-                ) : null}
+                    {connectedProviders.length === 0 ? (
+                      <option value="">No shipping channels connected</option>
+                    ) : (
+                      connectedProviders.map((c) => (
+                        <option key={c._id || c.id} value={c.provider}>
+                          {c.name || c.provider}
+                        </option>
+                      ))
+                    )}
+                  </select>
+                </label>
+
+                <label className="flex items-center gap-2 text-sm font-semibold text-slate-700">
+                  <Building2 size={16} className="text-indigo-700" />
+                  Pickup Warehouse:
+                  <select
+                    className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-sm outline-none focus:border-indigo-700"
+                    value={selectedWarehouse}
+                    onChange={(e) => setSelectedWarehouse(e.target.value)}
+                    disabled={!providerWarehouses.length}
+                  >
+                    {providerWarehouses.length === 0 ? (
+                      <option value="">No {selectedProvider || "warehouses"} synced</option>
+                    ) : (
+                      providerWarehouses.map((w) => (
+                        <option key={w._id || w.externalWarehouseId} value={w.externalWarehouseId}>
+                          {w.name} ({w.address?.city || w.externalWarehouseId})
+                        </option>
+                      ))
+                    )}
+                  </select>
+                  {selectedProvider ? (
+                    <button
+                      type="button"
+                      onClick={() => setShowLinkWarehouse(true)}
+                      className="text-xs font-semibold text-indigo-700 underline decoration-dotted underline-offset-2 hover:text-indigo-900"
+                      title="Register a warehouse you already created on the provider's own dashboard"
+                    >
+                      + Link
+                    </button>
+                  ) : null}
+                </label>
               </div>
-            ) : null}
-            <CardContent className={isLoading ? "p-4" : "p-0"}>
-              {isLoading ? (
-                <ListRowsSkeleton rows={5} />
-              ) : filteredOrders.length === 0 ? (
-                <div className="p-12 text-center">
-                  <Box size={40} className="mx-auto mb-3 text-slate-300" />
-                  <p className="text-base font-semibold text-slate-800">No unfulfilled orders found</p>
-                  <p className="mt-1 text-sm text-[var(--muted)]">
-                    New orders placed on your Shopify store will automatically appear here via real-time webhooks.
-                  </p>
+
+              {/* Filter Tabs */}
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+                <button
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition ${filterMode === "all" ? "bg-slate-950 text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  onClick={() => setFilterMode("all")}
+                >
+                  All Orders ({orders.length})
+                </button>
+                <button
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition ${filterMode === "cod" ? "bg-amber-600 text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  onClick={() => setFilterMode("cod")}
+                >
+                  COD ({orders.filter((o) => o.isCOD).length})
+                </button>
+                <button
+                  className={`rounded-md px-3 py-1 text-xs font-semibold transition ${filterMode === "prepaid" ? "bg-emerald-600 text-white" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  onClick={() => setFilterMode("prepaid")}
+                >
+                  Prepaid ({orders.filter((o) => !o.isCOD).length})
+                </button>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Orders Grid & Active Shipments */}
+        <div className="grid gap-6 lg:grid-cols-3">
+          {/* Orders Pending Shipment (2 cols) */}
+          <div className="lg:col-span-2">
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between border-b pb-4">
+                <div>
+                  <CardTitle className="text-xl">Orders Ready to Ship</CardTitle>
+                  <p className="text-sm text-[var(--muted)]">Synced directly from Shopify orders</p>
                 </div>
-              ) : (
-                <div className="divide-y divide-slate-100">
-                  {filteredOrders.map((order) => {
-                    const addr = order.shippingAddress || {};
-                    const orderId = order.externalId || order._id || order.id;
-                    const orderKey = `${order.channelId || order.provider || "order"}::${orderId}`;
-                    const isCancelling = cancellingId === orderId;
+                <Badge tone="blue">{filteredOrders.length} Unfulfilled</Badge>
+              </CardHeader>
+              {filteredOrders.length > 0 ? (
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-slate-50/60 px-4 py-2">
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-600">
+                    <input
+                      type="checkbox"
+                      checked={filteredOrders.length > 0 && filteredOrders.every((o) => selectedToShipIds.has(o.externalId || o._id || o.id))}
+                      onChange={(e) => {
+                        if (e.target.checked) {
+                          setSelectedToShipIds(new Set(filteredOrders.map((o) => o.externalId || o._id || o.id)));
+                        } else {
+                          setSelectedToShipIds(new Set());
+                        }
+                      }}
+                    />
+                    Select all ({filteredOrders.length})
+                  </label>
+                  {selectedToShipIds.size > 0 ? (
+                    <Button
+                      size="sm"
+                      className="h-8 bg-indigo-700 px-3 text-xs hover:bg-indigo-800"
+                      disabled={!connectedProviders.length}
+                      onClick={() => setShowBulkShip(true)}
+                    >
+                      <Send size={13} className="mr-1" />
+                      Bulk Ship ({selectedToShipIds.size})
+                    </Button>
+                  ) : null}
+                </div>
+              ) : null}
+              <CardContent className={isLoading ? "p-4" : "p-0"}>
+                {isLoading ? (
+                  <ListRowsSkeleton rows={5} />
+                ) : filteredOrders.length === 0 ? (
+                  <div className="p-12 text-center">
+                    <Box size={40} className="mx-auto mb-3 text-slate-300" />
+                    <p className="text-base font-semibold text-slate-800">No unfulfilled orders found</p>
+                    <p className="mt-1 text-sm text-[var(--muted)]">
+                      New orders placed on your Shopify store will automatically appear here via real-time webhooks.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-slate-100">
+                    {filteredOrders.map((order) => {
+                      const addr = order.shippingAddress || {};
+                      const orderId = order.externalId || order._id || order.id;
+                      const orderKey = `${order.channelId || order.provider || "order"}::${orderId}`;
+                      const isCancelling = cancellingId === orderId;
 
-                    return (
-                      <div key={orderKey} className={cn("flex items-start gap-3 p-4 transition hover:bg-slate-50/80", selectedToShipIds.has(orderId) && "bg-indigo-50/50")}>
-                        <input
-                          type="checkbox"
-                          className="mt-1.5 shrink-0"
-                          checked={selectedToShipIds.has(orderId)}
-                          onChange={() => toggleToShipSelected(orderId)}
-                        />
-                        <div className="flex flex-1 flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <span className="text-base font-bold text-slate-900">{order.name}</span>
-                              <Badge tone={order.isCOD ? "amber" : "green"}>
-                                {order.isCOD ? `COD (${formatMoney(order.codAmount || order.totalPrice)})` : "Prepaid"}
-                              </Badge>
-                              <span className="text-xs text-[var(--muted)]">
-                                {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
-                              </span>
-                            </div>
-
-                            <p className="mt-1 text-sm font-medium text-slate-800">
-                              {order.customerName || "Customer"} • {order.phone || order.email || "No contact"}
-                            </p>
-
-                            <p className="mt-1 text-xs text-[var(--muted)] flex items-center gap-1">
-                              <MapPin size={12} className="text-slate-400" />
-                              {[addr.address1, addr.city, addr.province, addr.zip].filter(Boolean).join(", ")}
-                            </p>
-
-                            {/* Line items snippet */}
-                            <div className="mt-2 flex flex-wrap gap-1">
-                              {(order.lineItems || []).map((item, idx) => (
-                                <span
-                                  key={idx}
-                                  className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700 font-medium"
-                                >
-                                  {item.title} × {item.quantity}
+                      return (
+                        <div key={orderKey} className={cn("flex items-start gap-3 p-4 transition hover:bg-slate-50/80", selectedToShipIds.has(orderId) && "bg-indigo-50/50")}>
+                          <input
+                            type="checkbox"
+                            className="mt-1.5 shrink-0"
+                            checked={selectedToShipIds.has(orderId)}
+                            onChange={() => toggleToShipSelected(orderId)}
+                          />
+                          <div className="flex flex-1 flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-base font-bold text-slate-900">{order.name}</span>
+                                <Badge tone={order.isCOD ? "amber" : "green"}>
+                                  {order.isCOD ? `COD (${formatMoney(order.codAmount || order.totalPrice)})` : "Prepaid"}
+                                </Badge>
+                                <span className="text-xs text-[var(--muted)]">
+                                  {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
                                 </span>
-                              ))}
+                              </div>
+
+                              <p className="mt-1 text-sm font-medium text-slate-800">
+                                {order.customerName || "Customer"} • {order.phone || order.email || "No contact"}
+                              </p>
+
+                              <p className="mt-1 text-xs text-[var(--muted)] flex items-center gap-1">
+                                <MapPin size={12} className="text-slate-400" />
+                                {[addr.address1, addr.city, addr.province, addr.zip].filter(Boolean).join(", ")}
+                              </p>
+
+                              {/* Line items snippet */}
+                              <div className="mt-2 flex flex-wrap gap-1">
+                                {(order.lineItems || []).map((item, idx) => (
+                                  <span
+                                    key={idx}
+                                    className="inline-flex items-center rounded bg-slate-100 px-2 py-0.5 text-xs text-slate-700 font-medium"
+                                  >
+                                    {item.title} × {item.quantity}
+                                  </span>
+                                ))}
+                              </div>
                             </div>
-                          </div>
 
-                          {/* Order Actions */}
-                          <div className="flex flex-col items-end gap-2">
-                            <span className="text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</span>
-                            <div className="flex items-center gap-1.5">
-                              <Button
-                                disabled={isCancelling}
-                                onClick={() => handleCancelOrder(order)}
-                                size="sm"
-                                variant="outline"
-                                className="border-rose-200 text-rose-700 hover:bg-rose-50 text-xs h-8 px-2.5"
-                              >
-                                <Ban size={13} className="mr-1" />
-                                Cancel
-                              </Button>
+                            {/* Order Actions */}
+                            <div className="flex flex-col items-end gap-2">
+                              <span className="text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</span>
+                              <div className="flex items-center gap-1.5">
+                                <Button
+                                  disabled={isCancelling}
+                                  onClick={() => handleCancelOrder(order)}
+                                  size="sm"
+                                  variant="outline"
+                                  className="border-rose-200 text-rose-700 hover:bg-rose-50 text-xs h-8 px-2.5"
+                                >
+                                  <Ban size={13} className="mr-1" />
+                                  Cancel
+                                </Button>
 
-                              <Button
-                                disabled={!connectedProviders.length}
-                                onClick={() => setShippingOrder(order)}
-                                size="sm"
-                                className="bg-indigo-700 hover:bg-indigo-800 text-white text-xs h-8 px-3"
-                              >
-                                <Send size={13} className="mr-1" />
-                                Ship Order...
-                              </Button>
+                                <Button
+                                  disabled={!connectedProviders.length}
+                                  onClick={() => setShippingOrder(order)}
+                                  size="sm"
+                                  className="bg-indigo-700 hover:bg-indigo-800 text-white text-xs h-8 px-3"
+                                >
+                                  <Send size={13} className="mr-1" />
+                                  Ship Order...
+                                </Button>
+                              </div>
                             </div>
                           </div>
                         </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Active & Recent Shipments (1 col) */}
+          <div>
+            <Card>
+              <CardHeader className="border-b pb-4">
+                <CardTitle className="text-xl flex items-center justify-between">
+                  <span>Recent Shipments</span>
+                  <Truck size={18} className="text-indigo-700" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {shipments.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-[var(--muted)]">No shipments created yet</div>
+                ) : (
+                  <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
+                    {shipments.slice(0, 15).map((shipment) => (
+                      <div key={shipment._id || shipment.id} className="p-4 text-xs">
+                        <div className="flex items-center justify-between font-semibold text-slate-900">
+                          <span>{shipment.shopifyOrderName || shipment.orderId || "Shipment"}</span>
+                          <Badge tone={shipment.status === "awb_generated" ? "teal" : "blue"}>
+                            {shipment.status}
+                          </Badge>
+                        </div>
+
+                        <div className="mt-2 space-y-1 text-slate-600">
+                          <p><span className="font-semibold text-slate-700">AWB:</span> {shipment.awbCode || "Pending"}</p>
+                          <p><span className="font-semibold text-slate-700">Provider:</span> {shipment.provider}</p>
+                          <p><span className="font-semibold text-slate-700">Customer:</span> {shipment.customerName}</p>
+                          <p><span className="font-semibold text-slate-700">Destination:</span> {shipment.destination}</p>
+                        </div>
+
+                        {shipment.labelUrl ? (
+                          <a
+                            href={shipment.labelUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="mt-3 inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline"
+                          >
+                            <ExternalLink size={12} /> Print Label
+                          </a>
+                        ) : null}
                       </div>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
         </div>
-
-        {/* Active & Recent Shipments (1 col) */}
-        <div>
-          <Card>
-            <CardHeader className="border-b pb-4">
-              <CardTitle className="text-xl flex items-center justify-between">
-                <span>Recent Shipments</span>
-                <Truck size={18} className="text-indigo-700" />
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-0">
-              {shipments.length === 0 ? (
-                <div className="p-6 text-center text-sm text-[var(--muted)]">No shipments created yet</div>
-              ) : (
-                <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
-                  {shipments.slice(0, 15).map((shipment) => (
-                    <div key={shipment._id || shipment.id} className="p-4 text-xs">
-                      <div className="flex items-center justify-between font-semibold text-slate-900">
-                        <span>{shipment.shopifyOrderName || shipment.orderId || "Shipment"}</span>
-                        <Badge tone={shipment.status === "awb_generated" ? "teal" : "blue"}>
-                          {shipment.status}
-                        </Badge>
-                      </div>
-
-                      <div className="mt-2 space-y-1 text-slate-600">
-                        <p><span className="font-semibold text-slate-700">AWB:</span> {shipment.awbCode || "Pending"}</p>
-                        <p><span className="font-semibold text-slate-700">Provider:</span> {shipment.provider}</p>
-                        <p><span className="font-semibold text-slate-700">Customer:</span> {shipment.customerName}</p>
-                        <p><span className="font-semibold text-slate-700">Destination:</span> {shipment.destination}</p>
-                      </div>
-
-                      {shipment.labelUrl ? (
-                        <a
-                          href={shipment.labelUrl}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="mt-3 inline-flex items-center gap-1 font-semibold text-indigo-700 hover:underline"
-                        >
-                          <ExternalLink size={12} /> Print Label
-                        </a>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
-      </div>
 
       </> /* end activeTab === "toship" */}
 
