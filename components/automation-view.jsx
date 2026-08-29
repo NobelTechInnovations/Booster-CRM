@@ -86,7 +86,7 @@ function CreateRuleModal({ onClose, onCreated }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4 backdrop-blur-sm" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-lg rounded-2xl border border-[var(--line)] bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-4">
-          <h2 className="text-lg font-bold text-slate-900">New Automation Rule</h2>
+          <h2 className="text-lg  text-slate-900">New Automation Rule</h2>
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 p-5">
@@ -208,7 +208,7 @@ export function AutomationView() {
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="indigo">Automation</Badge>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Automation Rules</h1>
+          <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Automation Rules</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
             Trigger actions automatically on order events — WhatsApp confirmations, tags, team alerts, and webhooks.
           </p>
@@ -222,15 +222,15 @@ export function AutomationView() {
       <section className="mb-6 grid gap-4 sm:grid-cols-3">
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Active Rules</p>
-          <p className="mt-2 text-2xl font-bold">{activeCount} / {rules.length}</p>
+          <p className="mt-2 text-2xl ">{activeCount} / {rules.length}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Total Runs</p>
-          <p className="mt-2 text-2xl font-bold">{totalRuns.toLocaleString("en-IN")}</p>
+          <p className="mt-2 text-2xl ">{totalRuns.toLocaleString("en-IN")}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Available Triggers</p>
-          <p className="mt-2 text-2xl font-bold">{TRIGGERS.length}</p>
+          <p className="mt-2 text-2xl ">{TRIGGERS.length}</p>
         </Card>
       </section>
 

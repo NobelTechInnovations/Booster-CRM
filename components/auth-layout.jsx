@@ -27,7 +27,7 @@ export function AuthLayout({ eyebrow, title, text, children }) {
             <Layers3 size={20} />
           </div>
           <div>
-            <p className="text-sm font-bold text-white">Wokbook</p>
+            <p className="text-sm  text-white">Wokbook</p>
             <p className="text-[11px] font-medium text-indigo-200/60">Commerce Operations Platform</p>
           </div>
         </Link>
@@ -35,7 +35,7 @@ export function AuthLayout({ eyebrow, title, text, children }) {
         {/* Main copy */}
         <div className="relative">
           <p className="text-xs font-semibold uppercase tracking-widest text-indigo-300/80">{eyebrow}</p>
-          <h1 className="mt-3 max-w-md text-[2.2rem] font-extrabold leading-[1.15] tracking-tight text-white">
+          <h1 className="mt-3 max-w-md text-[2.2rem] font-bold leading-[1.15] tracking-tight text-white">
             {title}
           </h1>
           <p className="mt-4 max-w-sm text-sm leading-6 text-indigo-200/70">{text}</p>
@@ -71,7 +71,7 @@ export function AuthLayout({ eyebrow, title, text, children }) {
             <div className="grid h-9 w-9 place-items-center rounded-xl bg-[var(--primary)] text-white">
               <Layers3 size={18} />
             </div>
-            <span className="text-sm font-bold text-slate-900">Wokbook</span>
+            <span className="text-sm  text-slate-900">Wokbook</span>
           </Link>
           {children}
         </div>

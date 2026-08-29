@@ -206,7 +206,7 @@ export function InventoryView() {
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6">
         <Badge tone="indigo">Stock Control</Badge>
-        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Inventory & Costing</h1>
+        <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Inventory & Costing</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
           Live stock synced from Shopify, plus per-variant buying price and MRP to track real margin. Packaging cost (jars, stickers) is set
           per-asset in Assets and pulled in here automatically via the product mapping — margin below is selling price minus buying price
@@ -231,21 +231,21 @@ export function InventoryView() {
               <p className="text-sm font-medium text-[var(--muted)]">Total SKUs</p>
               <Boxes size={16} className="text-indigo-600" />
             </div>
-            <p className="mt-2 text-2xl font-bold">{rows.length.toLocaleString("en-IN")}</p>
+            <p className="mt-2 text-2xl ">{rows.length.toLocaleString("en-IN")}</p>
           </Card>
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-[var(--muted)]">Units in Stock</p>
               <Package size={16} className="text-blue-600" />
             </div>
-            <p className="mt-2 text-2xl font-bold">{totalStock.toLocaleString("en-IN")}</p>
+            <p className="mt-2 text-2xl ">{totalStock.toLocaleString("en-IN")}</p>
           </Card>
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <p className="text-sm font-medium text-[var(--muted)]">Avg. Margin</p>
               {avgMarginPercent >= 0 ? <TrendingUp size={16} className="text-emerald-600" /> : <TrendingDown size={16} className="text-rose-600" />}
             </div>
-            <p className={`mt-2 text-2xl font-bold ${avgMarginPercent >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
+            <p className={`mt-2 text-2xl  ${avgMarginPercent >= 0 ? "text-emerald-700" : "text-rose-700"}`}>
               {costedRows.length ? `${avgMarginPercent.toFixed(1)}%` : "—"}
             </p>
             <p className="mt-1 text-xs text-[var(--muted)]">{costedRows.length} SKUs costed</p>
@@ -255,7 +255,7 @@ export function InventoryView() {
               <p className="text-sm font-medium text-[var(--muted)]">Low Stock</p>
               <AlertTriangle size={16} className={lowStockCount ? "text-amber-600" : "text-slate-300"} />
             </div>
-            <p className="mt-2 text-2xl font-bold">{lowStockCount}</p>
+            <p className="mt-2 text-2xl ">{lowStockCount}</p>
             <p className="mt-1 text-xs text-[var(--muted)]">≤ 5 units remaining</p>
           </Card>
         </section>
@@ -331,7 +331,7 @@ export function InventoryView() {
                       </p>
                     </td>
                     <td className="py-3 px-3 text-right">
-                      <span className={row.inventoryQuantity <= 5 ? "font-bold text-amber-700" : "font-medium text-slate-700"}>
+                      <span className={row.inventoryQuantity <= 5 ? " text-amber-700" : "font-medium text-slate-700"}>
                         {row.inventoryQuantity}
                       </span>
                     </td>
@@ -357,7 +357,7 @@ export function InventoryView() {
                     <td className="py-3 pl-3 pr-4 text-right">
                       {row.hasCost ? (
                         <div>
-                          <p className={`font-bold ${row.margin >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{money(row.margin)}</p>
+                          <p className={` ${row.margin >= 0 ? "text-emerald-700" : "text-rose-700"}`}>{money(row.margin)}</p>
                           <p className={`text-xs ${row.margin >= 0 ? "text-emerald-500" : "text-rose-500"}`}>
                             {row.marginPercent.toFixed(1)}%
                           </p>

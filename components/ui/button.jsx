@@ -2,9 +2,9 @@ import { cn } from "@/lib/utils";
 
 const variants = {
   primary:
-    "bg-indigo-600 text-white hover:bg-indigo-700 active:translate-y-px shadow-sm",
+    "bg-indigo-600 text-white hover:bg-indigo-700 active:translate-y-px shadow-xs",
   secondary:
-    "border border-[var(--line)] bg-[var(--panel)] text-slate-700 hover:bg-slate-50 hover:border-slate-300 active:translate-y-px shadow-sm",
+    "border border-[var(--line)] bg-[var(--panel)] text-slate-700 hover:bg-slate-50 hover:border-slate-300 active:translate-y-px shadow-xs",
   ghost:
     "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
 };

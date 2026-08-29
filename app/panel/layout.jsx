@@ -183,7 +183,7 @@ function BrandSwitcher({ session, variant = "sidebar" }) {
             : "w-full rounded-lg px-2.5 py-2 hover:bg-slate-100",
         )}
       >
-        <div className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px] font-bold text-white">
+        <div className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px]  text-white">
           {name[0]?.toUpperCase() || "W"}
         </div>
         <span className={cn("min-w-0 truncate text-[13px] font-semibold text-slate-800", isCompact ? "max-w-[140px]" : "flex-1")}>{name}</span>
@@ -275,7 +275,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
             <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-600 text-white">
               <Layers3 size={15} />
             </div>
-            <span className="text-[15px] font-bold tracking-tight text-slate-900">Wokbook</span>
+            <span className="text-[15px]  tracking-tight text-slate-900">Wokbook</span>
           </div>
           <button className="rounded-md p-1 text-slate-400 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)}>
             <X size={16} />
@@ -283,7 +283,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
         </div>
 
         {/* Brand switcher */}
-        <BrandSwitcher session={session} />
+        {/* <BrandSwitcher session={session} /> */}
 
         {/* Nav items */}
         <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 pb-3">
@@ -313,7 +313,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
         {/* User footer */}
         <div className="border-t border-[var(--line)] p-3">
           <div className="flex items-center gap-2.5">
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-600 text-[11px] font-bold text-white">
+            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-indigo-600 text-[11px]  text-white">
               {initials}
             </div>
             <div className="min-w-0 flex-1">
@@ -476,7 +476,7 @@ export default function PanelLayout({ children }) {
 
       <Sidebar open={open} setOpen={setOpen} session={session} onLogout={logout} />
 
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-white">
         <Topbar setOpen={setOpen} onSyncAll={syncAllChannels} canSync={canSync} period={period} setPeriod={setPeriod} session={session} />
         <SubNavBar pathname={pathname} />
         <FollowUpReminderBanner onOpenCustomer={(c) => setFollowUpCustomer(c)} />

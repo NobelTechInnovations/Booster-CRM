@@ -110,24 +110,24 @@ export function CompanyView({ onCompanyUpdate }) {
   ];
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-4 lg:px-8">
+    <div className="mx-auto  px-4 py-4 lg:px-8">
       {/* Header */}
       <section className="mb-6">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <Badge tone="indigo">Company Workspace</Badge>
-            <h1 className="mt-2 text-3xl font-extrabold tracking-tight text-slate-950 md:text-4xl">Company</h1>
+            <h1 className="mt-2 text-3xl  tracking-tight text-slate-950 ">Company</h1>
             <p className="mt-1 text-sm text-slate-500">Manage your business profile, legal identity, and banking details.</p>
           </div>
 
           {/* Company ID card */}
           {(company._id || company.id) && (
-            <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 shadow-sm">
+            <div className="flex items-center gap-3 rounded-xl border border-[var(--line)] bg-white px-4 py-2.5 shadow-xs">
               <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-50">
                 <Building2 size={17} className="text-indigo-600" />
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-400">Company ID</p>
+                <p className="text-[10px]  uppercase tracking-wide text-slate-400">Company ID</p>
                 <p className="text-xs font-mono font-semibold text-slate-700">{String(company._id || company.id).slice(-12)}</p>
               </div>
               <div className="ml-2 flex items-center gap-1.5">
@@ -161,7 +161,7 @@ export function CompanyView({ onCompanyUpdate }) {
             key={tab.key}
             onClick={() => setActiveTab(tab.key)}
             className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === tab.key
-              ? "bg-white text-indigo-700 shadow-sm ring-1 ring-[var(--line)]"
+              ? "bg-white text-indigo-700 shadow-xs ring-1 ring-[var(--line)]"
               : "text-slate-500 hover:text-slate-900"
               }`}
           >
@@ -222,7 +222,7 @@ export function CompanyView({ onCompanyUpdate }) {
 
               {/* Quick facts */}
               <div className="rounded-xl border border-[var(--line)] bg-[var(--primary-soft)] p-4">
-                <p className="mb-3 text-xs font-bold uppercase tracking-wide text-indigo-700">Workspace summary</p>
+                <p className="mb-3 text-xs  uppercase tracking-wide text-indigo-700">Workspace summary</p>
                 <dl className="space-y-2 text-sm">
                   {[
                     { label: "Name", value: company.name || "—" },
@@ -279,7 +279,7 @@ export function CompanyView({ onCompanyUpdate }) {
 
           {/* KYC status panel */}
           <div className="space-y-5">
-            <div className="rounded-xl border border-[var(--line)] bg-white p-5 shadow-sm">
+            <div className="rounded-xl border border-[var(--line)] bg-white p-5 shadow-xs">
               <div className="mb-4 flex items-center gap-3">
                 <div className={`grid h-11 w-11 place-items-center rounded-xl ${kycStatus === "verified" ? "bg-emerald-100 text-emerald-600" :
                   kycStatus === "submitted" ? "bg-amber-100 text-amber-600" :
@@ -288,7 +288,7 @@ export function CompanyView({ onCompanyUpdate }) {
                   <ShieldCheck size={22} />
                 </div>
                 <div>
-                  <p className="text-sm font-bold text-slate-900">KYC Status</p>
+                  <p className="text-sm  text-slate-900">KYC Status</p>
                   <p className={`text-sm font-semibold capitalize ${kycStatus === "verified" ? "text-emerald-700" :
                     kycStatus === "submitted" ? "text-amber-700" :
                       "text-slate-400"
@@ -333,13 +333,13 @@ export function CompanyView({ onCompanyUpdate }) {
 
 function SectionCard({ title, icon: Icon, desc, children }) {
   return (
-    <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+    <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-xs">
       <div className="mb-5 flex items-center gap-3 border-b border-slate-50 pb-4">
         <div className="grid h-9 w-9 place-items-center rounded-xl bg-indigo-50">
           <Icon size={17} className="text-indigo-600" />
         </div>
         <div>
-          <h3 className="text-sm font-bold text-slate-900">{title}</h3>
+          <h3 className="text-sm  text-slate-900">{title}</h3>
           {desc && <p className="text-xs text-slate-500">{desc}</p>}
         </div>
       </div>

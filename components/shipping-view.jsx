@@ -300,7 +300,7 @@ export function ShippingView() {
       <section className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Badge tone="indigo">Multi-Carrier Shipping Engine</Badge>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">
+          <h1 className="mt-2 text-2xl  tracking-tight text-slate-950 md:text-[24px]">
             Shipping Channels & Logistics
           </h1>
           <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">
@@ -319,7 +319,7 @@ export function ShippingView() {
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div>
-                    <h3 className="font-bold text-slate-900">{p.name}</h3>
+                    <h3 className=" text-slate-900">{p.name}</h3>
                     <p className="mt-0.5 text-xs text-[var(--muted)]">
                       {connected ? "Connected & Synced" : p.status === "available" ? "Ready to connect" : "Coming Soon"}
                     </p>
@@ -428,7 +428,7 @@ export function ShippingView() {
                         .filter((w) => !selectedProviderFilter || w.provider === selectedProviderFilter)
                         .map((w) => (
                           <tr key={w._id || w.externalWarehouseId} className="hover:bg-slate-50">
-                            <td className="px-4 py-3 text-slate-900 font-bold">{w.name}</td>
+                            <td className="px-4 py-3 text-slate-900 ">{w.name}</td>
                             <td className="px-4 py-3">
                               <Badge tone={w.provider === "velocity" ? "teal" : w.provider === "shiprocket" ? "blue" : "purple"}>
                                 {providers.find((p) => p.provider === w.provider)?.name || w.provider}
@@ -599,11 +599,11 @@ export function ShippingView() {
 
               {serviceResults ? (
                 <div className="mt-4 max-h-72 overflow-y-auto rounded-md border p-3 text-xs space-y-3 bg-slate-50">
-                  <p className="font-bold text-slate-900 border-b pb-1">Serviceability Results ({Object.keys(serviceResults).length} Carrier{Object.keys(serviceResults).length > 1 ? "s" : ""}):</p>
+                  <p className=" text-slate-900 border-b pb-1">Serviceability Results ({Object.keys(serviceResults).length} Carrier{Object.keys(serviceResults).length > 1 ? "s" : ""}):</p>
                   {Object.entries(serviceResults).map(([provKey, resItem]) => (
-                    <div key={provKey} className="rounded border bg-white p-2.5 shadow-sm space-y-1">
+                    <div key={provKey} className="rounded border bg-white p-2.5 shadow-xs space-y-1">
                       <div className="flex items-center justify-between">
-                        <span className="font-bold uppercase text-[11px] text-indigo-800">{provKey}</span>
+                        <span className=" uppercase text-[11px] text-indigo-800">{provKey}</span>
                         {resItem.success ? (
                           <Badge tone="indigo" className="text-[10px]">Serviceable</Badge>
                         ) : (

@@ -41,7 +41,7 @@ export function SignupForm() {
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
             Owner account
           </div>
-          <h2 className="text-[1.5rem] font-extrabold tracking-tight text-slate-950">Create workspace</h2>
+          <h2 className="text-[1.5rem] font-bold tracking-tight text-slate-950">Create workspace</h2>
           <p className="mt-1 text-sm text-slate-500">Set up your brand's command centre</p>
         </div>
 

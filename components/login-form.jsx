@@ -64,7 +64,7 @@ export function LoginForm() {
             <span className="h-1.5 w-1.5 rounded-full bg-indigo-500" />
             Secure login
           </div>
-          <h2 className="text-[1.5rem] font-extrabold tracking-tight text-slate-950">Sign in</h2>
+          <h2 className="text-[1.5rem] font-bold tracking-tight text-slate-950">Sign in</h2>
           <p className="mt-1 text-sm text-slate-500">Access your operations panel</p>
         </div>
 
@@ -101,13 +101,13 @@ export function LoginForm() {
                 {companyChoices.map((company) => (
                   <button
                     key={company.companyId}
-                    className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-left text-sm transition hover:border-indigo-400 hover:shadow-sm"
+                    className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-left text-sm transition hover:border-indigo-400 hover:shadow-xs"
                     type="button"
                     onClick={() => chooseCompany(company.companyId)}
                     disabled={loading}
                   >
                     <span>
-                      <span className="block font-bold text-slate-900">{company.companyName}</span>
+                      <span className="block  text-slate-900">{company.companyName}</span>
                       <span className="text-xs text-slate-500">{company.role}</span>
                     </span>
                     <ChevronRight size={16} className="text-indigo-600" />

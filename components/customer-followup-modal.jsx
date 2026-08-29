@@ -160,7 +160,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-4 border-b border-[var(--line)] bg-[var(--primary-soft)]">
           <div className="flex items-center gap-3">
-            <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white text-sm font-bold shrink-0">
+            <div className="grid h-9 w-9 place-items-center rounded-lg bg-indigo-700 text-white text-sm  shrink-0">
               {(customer?.name || "?")[0]?.toUpperCase()}
             </div>
             <div>
@@ -355,7 +355,7 @@ export function CustomerFollowUpModal({ customer, onClose, onUpdate, onCreateOrd
                   {followUps.map((fu, idx) => (
                     <div key={idx} className="flex gap-3 rounded-xl border border-[var(--line)] bg-[var(--panel-soft)] p-3">
                       <div className="mt-0.5 shrink-0">
-                        <div className={cn("grid h-7 w-7 place-items-center rounded-full text-xs font-bold", outcomeColor(fu.outcome), "bg-white border border-current/20")}>
+                        <div className={cn("grid h-7 w-7 place-items-center rounded-full text-xs ", outcomeColor(fu.outcome), "bg-white border border-current/20")}>
                           {idx + 1}
                         </div>
                       </div>

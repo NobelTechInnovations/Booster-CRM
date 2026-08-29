@@ -122,7 +122,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-full bg-green-100 mb-4">
             <CheckCircle2 size={28} className="text-green-600" />
           </div>
-          <h2 className="text-lg font-bold text-slate-900">Order Created!</h2>
+          <h2 className="text-lg  text-slate-900">Order Created!</h2>
           <p className="mt-1 text-sm text-[var(--muted)]">
             Shopify order <strong>{success.shopifyOrderName}</strong> was created and added to the fulfillment queue.
           </p>
@@ -228,7 +228,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                       </div>
                       <div className="flex flex-col items-center gap-1 shrink-0">
                         <button onClick={() => updateQty(item.key, 1)} className="h-5 w-5 grid place-items-center rounded bg-slate-100 hover:bg-slate-200"><Plus size={10} /></button>
-                        <span className="text-xs font-bold w-4 text-center">{item.quantity}</span>
+                        <span className="text-xs  w-4 text-center">{item.quantity}</span>
                         <button onClick={() => updateQty(item.key, -1)} className="h-5 w-5 grid place-items-center rounded bg-slate-100 hover:bg-slate-200"><Minus size={10} /></button>
                       </div>
                       <button onClick={() => removeFromCart(item.key)} className="text-rose-400 hover:text-rose-600"><Trash2 size={12} /></button>
@@ -275,7 +275,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
                       </div>
                     )}
                   </div>
-                  <div className="flex items-center justify-between pt-1 text-xs font-bold text-slate-900">
+                  <div className="flex items-center justify-between pt-1 text-xs  text-slate-900">
                     <span>Order Total</span>
                     <span>{formatMoney(total)}</span>
                   </div>
@@ -341,7 +341,7 @@ export function CreateOrderModal({ customer, onClose, onOrderCreated }) {
           <div className="flex-1">
             {error && <p className="text-xs text-rose-600 font-medium">{error}</p>}
           </div>
-          <p className="text-sm font-bold text-slate-900">{formatMoney(total)}</p>
+          <p className="text-sm  text-slate-900">{formatMoney(total)}</p>
           <button onClick={onClose} className="h-8 px-3 rounded-lg border border-[var(--line)] text-xs text-slate-600 hover:bg-slate-100">Cancel</button>
           <button
             onClick={placeOrder}

@@ -165,15 +165,15 @@ function InvoiceModal({ order, company, onClose }) {
           {/* Letterhead */}
           <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3.5">
             <div>
-              <span className="inline-block rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-extrabold uppercase tracking-wider text-white">{brandWord}</span>
-              <h1 className="mt-1.5 text-base font-extrabold leading-tight tracking-tight text-slate-950">{legalName}</h1>
+              <span className="inline-block rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">{brandWord}</span>
+              <h1 className="mt-1.5 text-base font-bold leading-tight tracking-tight text-slate-950">{legalName}</h1>
               {gstin ? <p className="mt-0.5 text-[11px] font-medium text-slate-500">GSTIN {gstin}</p> : null}
               {registeredAddress ? <p className="mt-0.5 max-w-xs text-[11px] leading-4 text-slate-500">{registeredAddress}</p> : null}
             </div>
             <div className="text-right">
-              <p className="inline-block rounded border border-slate-300 px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-widest text-slate-700">Tax Invoice</p>
+              <p className="inline-block rounded border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-700">Tax Invoice</p>
               <p className="mt-2 text-[10px] text-slate-400">Invoice #</p>
-              <p className="font-mono text-xs font-bold text-slate-900">{invoiceNumber}</p>
+              <p className="font-mono text-xs  text-slate-900">{invoiceNumber}</p>
             </div>
           </div>
 
@@ -181,30 +181,30 @@ function InvoiceModal({ order, company, onClose }) {
           <div className="grid grid-cols-3 gap-3 border-b border-slate-100 bg-slate-50 px-4 py-2 text-[11px]">
             <div>
               <p className="font-semibold uppercase tracking-wide text-slate-400">Invoice Date</p>
-              <p className="font-bold text-slate-800">{invoiceDate}</p>
+              <p className=" text-slate-800">{invoiceDate}</p>
             </div>
             <div>
               <p className="font-semibold uppercase tracking-wide text-slate-400">Order Reference</p>
-              <p className="font-bold text-slate-800">{order.name}</p>
+              <p className=" text-slate-800">{order.name}</p>
             </div>
             <div className="text-right">
               <p className="font-semibold uppercase tracking-wide text-slate-400">Payment</p>
-              <p className="font-bold text-slate-800">{order.isCOD ? "Cash on Delivery" : order.financialStatus || "Prepaid"}</p>
+              <p className=" text-slate-800">{order.isCOD ? "Cash on Delivery" : order.financialStatus || "Prepaid"}</p>
             </div>
           </div>
 
           <div className="px-4 py-3.5">
             <div className="grid grid-cols-2 gap-4 pb-3.5">
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Bill To</p>
-                <p className="mt-0.5 font-bold text-slate-900">{order.customerName || "Customer"}</p>
+                <p className="text-[10px]  uppercase tracking-wide text-slate-500">Bill To</p>
+                <p className="mt-0.5  text-slate-900">{order.customerName || "Customer"}</p>
                 {order.email ? <p className="text-[11px] text-slate-500">{order.email}</p> : null}
                 {order.phone ? <p className="text-[11px] text-slate-500">{order.phone}</p> : null}
               </div>
               <div>
-                <p className="text-[10px] font-bold uppercase tracking-wide text-slate-500">Ship To</p>
+                <p className="text-[10px]  uppercase tracking-wide text-slate-500">Ship To</p>
                 <p className="mt-0.5 text-[11px] leading-5 text-slate-700">
-                  {addr.name && <span className="block font-bold text-slate-900">{addr.name}</span>}
+                  {addr.name && <span className="block  text-slate-900">{addr.name}</span>}
                   {[addr.address1, addr.address2].filter(Boolean).join(", ")}
                   <br />
                   {[addr.city, addr.province, addr.zip].filter(Boolean).join(", ")}
@@ -261,8 +261,8 @@ function InvoiceModal({ order, company, onClose }) {
                   </div>
                 </div>
                 <div className="flex items-baseline justify-between border-t border-slate-200 bg-slate-900 px-3 py-2">
-                  <span className="text-[11px] font-bold uppercase tracking-wide text-white">Grand Total</span>
-                  <span className="text-base font-extrabold text-white">₹{total.toFixed(2)}</span>
+                  <span className="text-[11px]  uppercase tracking-wide text-white">Grand Total</span>
+                  <span className="text-base font-bold text-white">₹{total.toFixed(2)}</span>
                 </div>
               </div>
             </div>
@@ -329,7 +329,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             </button>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-extrabold text-slate-900">{order.name}</h2>
+                <h2 className="text-lg font-bold text-slate-900">{order.name}</h2>
                 <Badge tone={statusTone(order.fulfillmentStatus)}>{order.fulfillmentStatus || "unfulfilled"}</Badge>
                 <Badge tone={paymentTone(order.financialStatus)}>{order.financialStatus || "—"}</Badge>
                 {order.isCOD && <Badge tone="amber">COD</Badge>}
@@ -360,9 +360,9 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             <section className="rounded-xl border border-[var(--line)] p-4">
               <div className="mb-3 flex items-center gap-2">
                 <User size={15} className="text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-800">Customer</h3>
+                <h3 className="text-sm  text-slate-800">Customer</h3>
                 {hasSiblings && (
-                  <span className="ml-auto flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-bold text-indigo-700">
+                  <span className="ml-auto flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px]  text-indigo-700">
                     <Repeat2 size={10} />
                     Repeat • {siblingOrders.length + 1} orders
                   </span>
@@ -385,7 +385,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
               {/* Other orders from same customer */}
               {hasSiblings && (
                 <div className="mt-3 rounded-lg border border-indigo-100 bg-indigo-50 p-3">
-                  <p className="mb-2 text-[11px] font-bold text-indigo-800 uppercase tracking-wide">Previous orders</p>
+                  <p className="mb-2 text-[11px]  text-indigo-800 uppercase tracking-wide">Previous orders</p>
                   <div className="flex flex-wrap gap-1.5">
                     {siblingOrders.map((sib) => (
                       <button
@@ -405,7 +405,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             <section className="rounded-xl border border-[var(--line)] p-4">
               <div className="mb-3 flex items-center gap-2">
                 <MapPin size={15} className="text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-800">Shipping Address</h3>
+                <h3 className="text-sm  text-slate-800">Shipping Address</h3>
               </div>
               {addr.name || addr.address1 ? (
                 <div className="text-sm leading-6 text-slate-700">
@@ -425,12 +425,12 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             <section className="rounded-xl border border-[var(--line)] p-4">
               <div className="mb-3 flex items-center gap-2">
                 <CreditCard size={15} className="text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-800">Payment & Delivery</h3>
+                <h3 className="text-sm  text-slate-800">Payment & Delivery</h3>
               </div>
               <div className="grid grid-cols-2 gap-3 text-sm">
                 <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">Total</p>
-                  <p className="mt-0.5 text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</p>
+                  <p className="mt-0.5 text-base  text-slate-900">{formatMoney(order.totalPrice)}</p>
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">Payment</p>
@@ -464,14 +464,14 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
               <section className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Truck size={15} className="text-emerald-700" />
-                  <h3 className="text-sm font-bold text-slate-800">Tracking</h3>
+                  <h3 className="text-sm  text-slate-800">Tracking</h3>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[11px] font-semibold uppercase text-slate-500">
                       {order.trackingCompany || order.shippingProvider || "Courier"}
                     </p>
-                    <p className="mt-0.5 font-mono text-sm font-bold text-slate-900">
+                    <p className="mt-0.5 font-mono text-sm  text-slate-900">
                       {order.trackingNumber || order.awbCode}
                     </p>
                   </div>
@@ -497,7 +497,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             <section className="rounded-xl border border-[var(--line)] p-4">
               <div className="mb-3 flex items-center gap-2">
                 <Package size={15} className="text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-800">Order Items</h3>
+                <h3 className="text-sm  text-slate-800">Order Items</h3>
                 <span className="ml-auto text-xs text-slate-400">{lineItems.length} item{lineItems.length !== 1 ? "s" : ""}</span>
               </div>
               <div className="space-y-3">
@@ -514,7 +514,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                       {item.sku && <p className="text-xs text-slate-400">SKU: {item.sku}</p>}
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-bold text-slate-900">{formatMoney(item.price || item.price_set?.shop_money?.amount || 0)}</p>
+                      <p className="text-sm  text-slate-900">{formatMoney(item.price || item.price_set?.shop_money?.amount || 0)}</p>
                       <p className="text-xs text-slate-500">× {item.quantity}</p>
                     </div>
                   </div>
@@ -538,7 +538,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                     <span>{formatMoney(order.totalTax)}</span>
                   </div>
                 )}
-                <div className="flex justify-between font-bold text-slate-900">
+                <div className="flex justify-between  text-slate-900">
                   <span>Total</span>
                   <span>{formatMoney(order.totalPrice)}</span>
                 </div>
@@ -550,7 +550,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
               <section className="rounded-xl border border-[var(--line)] p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Tag size={15} className="text-indigo-600" />
-                  <h3 className="text-sm font-bold text-slate-800">Notes & Tags</h3>
+                  <h3 className="text-sm  text-slate-800">Notes & Tags</h3>
                 </div>
                 {order.note && (
                   <p className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-800 border border-amber-100">{order.note}</p>
@@ -572,7 +572,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
               <section className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Info size={15} className="text-indigo-600" />
-                  <h3 className="text-sm font-bold text-slate-800">Traffic Attribution</h3>
+                  <h3 className="text-sm  text-slate-800">Traffic Attribution</h3>
                 </div>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   {order.utmSource && <div><p className="font-semibold text-slate-500 uppercase">Source</p><p className="text-slate-700">{order.utmSource}</p></div>}
@@ -586,7 +586,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             <section className="rounded-xl border border-[var(--line)] p-4">
               <div className="mb-3 flex items-center gap-2">
                 <Clock size={15} className="text-indigo-600" />
-                <h3 className="text-sm font-bold text-slate-800">Timeline</h3>
+                <h3 className="text-sm  text-slate-800">Timeline</h3>
               </div>
               <ol className="space-y-3">
                 <TimelineStep label="Order placed" date={order.shopifyCreatedAt} done tone="slate" />
@@ -762,7 +762,7 @@ export function OrdersView() {
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Badge tone="indigo">{filterChannel === "all" ? "All Channels" : PROVIDER_LABELS[filterChannel] || filterChannel}</Badge>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Orders</h1>
+          <h1 className="mt-2 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Orders</h1>
           <p className="mt-1 text-sm text-slate-500">
             {counts.total} total · {counts.unfulfilled} to ship · {counts.fulfilled} fulfilled
           </p>
@@ -792,7 +792,7 @@ export function OrdersView() {
             <select
               value={filterChannel}
               onChange={(e) => setFilterChannel(e.target.value)}
-              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
+              className="h-9 rounded-lg border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 shadow-xs outline-none focus:border-emerald-600 focus:ring-2 focus:ring-emerald-100"
             >
               {channelTabs.map((tab) => (
                 <option key={tab.key} value={tab.key}>{tab.label}</option>
@@ -800,7 +800,7 @@ export function OrdersView() {
             </select>
 
             {/* Status filter */}
-            <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex rounded-lg border border-slate-200 bg-white shadow-xs overflow-hidden">
               {[
                 { key: "all", label: `All (${counts.total})` },
                 { key: "unfulfilled", label: `Pending (${counts.unfulfilled})` },
@@ -821,7 +821,7 @@ export function OrdersView() {
             </div>
 
             {/* Payment filter */}
-            <div className="flex rounded-lg border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div className="flex rounded-lg border border-slate-200 bg-white shadow-xs overflow-hidden">
               {[
                 { key: "all", label: "All" },
                 { key: "cod", label: "COD" },
@@ -865,7 +865,7 @@ export function OrdersView() {
           ) : (
             <table className="w-full min-w-[820px] border-collapse text-sm">
               <thead>
-                <tr className="border-b border-[var(--line)] bg-slate-50 text-left text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                <tr className="border-b border-[var(--line)] bg-slate-50 text-left text-[11px]  uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3">Order</th>
                   <th className="px-4 py-3">Customer</th>
                   <th className="px-4 py-3">Date</th>
@@ -889,9 +889,9 @@ export function OrdersView() {
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-bold text-slate-900">{order.name}</span>
+                          <span className=" text-slate-900">{order.name}</span>
                           {isRepeat && (
-                            <span className="flex items-center gap-0.5 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold text-indigo-700">
+                            <span className="flex items-center gap-0.5 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px]  text-indigo-700">
                               <Repeat2 size={9} />
                               {siblings.length + 1}×
                             </span>
@@ -930,7 +930,7 @@ export function OrdersView() {
                           {order.isCOD && <Badge tone="amber">COD</Badge>}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-right font-bold text-slate-900">
+                      <td className="px-4 py-3 text-right  text-slate-900">
                         {formatMoney(order.totalPrice)}
                       </td>
                       <td className="px-4 py-3 text-right">
@@ -938,13 +938,13 @@ export function OrdersView() {
                           <button
                             onClick={() => setInvoiceOrder(order)}
                             title="Generate tax invoice"
-                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-slate-500 shadow-sm transition hover:border-indigo-400 hover:text-indigo-700"
+                            className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-slate-500 shadow-xs transition hover:border-indigo-400 hover:text-indigo-700"
                           >
                             <FileText size={12} />
                           </button>
                           <button
                             onClick={() => setSelectedOrder(order)}
-                            className="inline-flex h-7 items-center gap-1 rounded-lg border border-[var(--line)] bg-white px-2.5 text-[11px] font-semibold text-slate-600 shadow-sm transition hover:border-indigo-400 hover:text-indigo-700 group-hover:border-indigo-300"
+                            className="inline-flex h-7 items-center gap-1 rounded-lg border border-[var(--line)] bg-white px-2.5 text-[11px] font-semibold text-slate-600 shadow-xs transition hover:border-indigo-400 hover:text-indigo-700 group-hover:border-indigo-300"
                           >
                             View
                             <ChevronRight size={12} />

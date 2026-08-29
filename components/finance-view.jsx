@@ -211,7 +211,7 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc 
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="text-[13px] font-medium text-[var(--muted)]">{label}</p>
-          <p className="mt-2 text-[26px] font-bold leading-none tracking-tight text-slate-950">{value}</p>
+          <p className="mt-2 text-[26px]  leading-none tracking-tight text-slate-950">{value}</p>
         </div>
         <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg", tileIconTone[tone] || tileIconTone.slate)}>
           <Icon size={18} />
@@ -512,7 +512,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
                         </Badge>
                       </td>
                       <td className="py-3 pr-4">{new Date(o.cancelledAt || o.shopifyCreatedAt).toLocaleDateString("en-IN")}</td>
-                      <td className="py-3 pr-0 text-right font-bold text-rose-700">{formatMoney(o.totalPrice, currency)}</td>
+                      <td className="py-3 pr-0 text-right  text-rose-700">{formatMoney(o.totalPrice, currency)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -584,7 +584,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
                               <button className="rounded-md p-1.5 text-slate-400 hover:bg-slate-100" onClick={() => setEditingShipId(null)} aria-label="Cancel"><X size={14} /></button>
                             </div>
                           ) : (
-                            <button className="font-bold text-slate-900 hover:text-indigo-700 hover:underline" onClick={() => startEditShip(o)}>
+                            <button className=" text-slate-900 hover:text-indigo-700 hover:underline" onClick={() => startEditShip(o)}>
                               {formatMoney(o.shippingCost, currency)}
                             </button>
                           )}
@@ -757,7 +757,7 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
                     <p className="truncate font-semibold">{product.title}</p>
                     <p className="text-xs text-[var(--muted)]">{product.quantity} units sold</p>
                   </div>
-                  <p className="font-bold">{formatMoney(product.revenue, currency)}</p>
+                  <p className="">{formatMoney(product.revenue, currency)}</p>
                 </div>
               ))
             )}
@@ -777,7 +777,7 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
                     <Store size={14} className="text-[var(--primary)]" />
                     <p className="font-semibold">{channel.orders} orders</p>
                   </div>
-                  <p className="font-bold">{formatMoney(channel.revenue, currency)}</p>
+                  <p className="">{formatMoney(channel.revenue, currency)}</p>
                 </div>
               ))
             )}
@@ -808,7 +808,7 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
                       <p className="text-xs text-[var(--muted)]">{c.province || "—"} · {c.orders} orders</p>
                     </div>
                   </div>
-                  <p className="font-bold">{formatMoney(c.revenue, currency)}</p>
+                  <p className="">{formatMoney(c.revenue, currency)}</p>
                 </div>
               ))
             )}
@@ -829,7 +829,7 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
                     <p className="font-semibold">{s.province}</p>
                     <span className="text-xs text-[var(--muted)]">{s.orders} orders</span>
                   </div>
-                  <p className="font-bold">{formatMoney(s.revenue, currency)}</p>
+                  <p className="">{formatMoney(s.revenue, currency)}</p>
                 </div>
               ))
             )}
@@ -1081,14 +1081,14 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFil
             {partnerSummary.byPartner.map((p) => (
               <div key={p.userId} className="rounded-lg border border-indigo-100 bg-indigo-50/50 px-3 py-2.5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-700">{p.userName}</p>
-                <p className="mt-0.5 text-lg font-bold text-slate-900">{formatMoney(p.total)}</p>
+                <p className="mt-0.5 text-lg  text-slate-900">{formatMoney(p.total)}</p>
                 <p className="text-[11px] text-[var(--muted)]">{p.count} expense{p.count !== 1 ? "s" : ""}</p>
               </div>
             ))}
             {partnerSummary.unassigned.count > 0 ? (
               <div className="rounded-lg border border-amber-100 bg-amber-50/50 px-3 py-2.5">
                 <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">Unassigned</p>
-                <p className="mt-0.5 text-lg font-bold text-slate-900">{formatMoney(partnerSummary.unassigned.total)}</p>
+                <p className="mt-0.5 text-lg  text-slate-900">{formatMoney(partnerSummary.unassigned.total)}</p>
                 <p className="text-[11px] text-[var(--muted)]">{partnerSummary.unassigned.count} not tagged yet</p>
               </div>
             ) : null}
@@ -1143,7 +1143,7 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFil
                     )}
                   </td>
                   <td className="py-3 pr-4">{expense.paymentMethod || "-"}</td>
-                  <td className="py-3 pr-0 text-right font-bold text-rose-700">{formatMoney(expense.amount)}</td>
+                  <td className="py-3 pr-0 text-right  text-rose-700">{formatMoney(expense.amount)}</td>
                   <td className="py-3 pl-4 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
@@ -1397,7 +1397,7 @@ function PurchaseFormModal({ vendors, onClose, onSaved }) {
           </div>
           <div className="mt-3 flex items-center justify-end gap-2 border-t border-[var(--line)] pt-3">
             <p className="text-sm font-semibold text-slate-600">Total amount</p>
-            <p className="text-lg font-bold text-slate-950">{formatMoney(total)}</p>
+            <p className="text-lg  text-slate-950">{formatMoney(total)}</p>
           </div>
         </div>
 
@@ -1511,7 +1511,7 @@ function VendorsPurchasesTab({ vendors, purchases, isLoading, onRefresh }) {
                     <td className="py-3 pr-4">
                       <Badge tone={purchase.paymentStatus === "paid" ? "green" : purchase.paymentStatus === "partial" ? "amber" : "rose"}>{purchase.paymentStatus}</Badge>
                     </td>
-                    <td className="py-3 pr-0 text-right font-bold">{formatMoney(purchase.totalAmount)}</td>
+                    <td className="py-3 pr-0 text-right ">{formatMoney(purchase.totalAmount)}</td>
                     <td className="py-3 pl-4 text-right">
                       <button
                         className="rounded-md p-1.5 text-slate-500 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-50"
@@ -1879,7 +1879,7 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
                 ) : demographics.byGender.map((g) => (
                   <div key={g.gender} className="rounded-md border border-[var(--line)] px-3 py-2.5">
                     <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">{g.gender}</p>
-                    <p className="mt-1 text-lg font-bold">{formatMoney(g.spend, demographics.currency)}</p>
+                    <p className="mt-1 text-lg ">{formatMoney(g.spend, demographics.currency)}</p>
                     <p className="text-xs text-[var(--muted)]">{g.clicks.toLocaleString("en-IN")} clicks · {g.purchases} purchases</p>
                   </div>
                 ))}
@@ -2158,7 +2158,7 @@ export function FinanceView({ defaultTab = "overview" }) {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Finance</Badge>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Finance & Ad Spend</h1>
+          <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Finance & Ad Spend</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Sales, expenses, vendor & raw-material purchases, and Meta ad spend with ROAS — all in one place.
           </p>

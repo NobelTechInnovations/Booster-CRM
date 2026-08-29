@@ -78,7 +78,7 @@ function LinkWarehouseModal({ provider, onClose, onLinked }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
-          <h2 className="text-base font-bold text-slate-900">Link an existing {provider} warehouse</h2>
+          <h2 className="text-base  text-slate-900">Link an existing {provider} warehouse</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="max-h-[75vh] space-y-3 overflow-y-auto px-4 py-4">
@@ -182,7 +182,7 @@ function BulkShipModal({ orderCount, shippingChannels, warehouses, initialProvid
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && !isShipping && onClose()}>
       <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
-          <h2 className="text-base font-bold text-slate-900">Bulk ship {orderCount} order{orderCount === 1 ? "" : "s"}</h2>
+          <h2 className="text-base  text-slate-900">Bulk ship {orderCount} order{orderCount === 1 ? "" : "s"}</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
 
@@ -406,7 +406,7 @@ function CourierSelectModal({
               <Truck size={18} />
             </div>
             <div>
-              <p className="font-bold text-slate-900 leading-tight">
+              <p className=" text-slate-900 leading-tight">
                 Ship Order {order?.name}
               </p>
               <p className="text-xs text-[var(--muted)] mt-0.5">
@@ -494,7 +494,7 @@ function CourierSelectModal({
           {/* Rates list */}
           <div>
             <div className="flex items-center justify-between mb-2">
-              <span className="text-xs font-bold text-slate-800">Available Courier Partners & Prices</span>
+              <span className="text-xs  text-slate-800">Available Courier Partners & Prices</span>
               <button onClick={fetchRates} disabled={ratesLoading} className="text-[11px] font-semibold text-indigo-700 hover:underline flex items-center gap-1">
                 <RefreshCcw size={10} className={ratesLoading ? "animate-spin" : ""} />
                 Re-check Rates
@@ -523,14 +523,14 @@ function CourierSelectModal({
                           {isChecked && <Check size={12} />}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-slate-900">{option.name}</p>
+                          <p className="text-xs  text-slate-900">{option.name}</p>
                           <p className="text-[10px] text-[var(--muted)]">
                             Mode: {option.mode} • Est: {option.etd}
                           </p>
                         </div>
                       </div>
                       <div className="text-right">
-                        <p className="text-sm font-bold text-indigo-800">{formatMoney(option.rate)}</p>
+                        <p className="text-sm  text-indigo-800">{formatMoney(option.rate)}</p>
                         <p className="text-[10px] text-[var(--muted)]">Freight Charge</p>
                       </div>
                     </div>
@@ -798,7 +798,7 @@ export function FulfillmentView() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <Badge tone="indigo">Fulfillment</Badge>
-            <h1 className="mt-2 text-xl font-bold tracking-tight text-slate-950 md:text-[28px]">
+            <h1 className="mt-2 text-xl  tracking-tight text-slate-950 md:text-[24px]">
               Automated Fulfillment
             </h1>
             <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--muted)]">
@@ -817,26 +817,26 @@ export function FulfillmentView() {
         <button
           onClick={() => setActiveTab("toship")}
           className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === "toship"
-            ? "bg-indigo-700 text-white shadow-sm"
+            ? "bg-indigo-700 text-white shadow-xs"
             : "text-slate-600 hover:text-slate-900"
             }`}
         >
           <PackageCheck size={15} />
           To Ship
-          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === "toship" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px]  ${activeTab === "toship" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
             {orders.length}
           </span>
         </button>
         <button
           onClick={() => setActiveTab("fulfilled")}
           className={`flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-semibold transition ${activeTab === "fulfilled"
-            ? "bg-emerald-700 text-white shadow-sm"
+            ? "bg-emerald-700 text-white shadow-xs"
             : "text-slate-600 hover:text-slate-900"
             }`}
         >
           <CheckCircle size={15} />
           Fulfilled
-          <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-bold ${activeTab === "fulfilled" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
+          <span className={`rounded-full px-1.5 py-0.5 text-[10px]  ${activeTab === "fulfilled" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-600"}`}>
             {fulfilledOrders.length}
           </span>
         </button>
@@ -925,7 +925,7 @@ export function FulfillmentView() {
                       <div className="flex flex-1 flex-wrap items-start justify-between gap-3">
                         <div>
                           <div className="flex items-center gap-2">
-                            <span className="text-base font-bold text-slate-900">{order.name}</span>
+                            <span className="text-base  text-slate-900">{order.name}</span>
                             <Badge tone="green">Fulfilled</Badge>
                             <Badge tone={order.isCOD ? "amber" : "green"}>
                               {order.isCOD ? "COD" : "Prepaid"}
@@ -970,7 +970,7 @@ export function FulfillmentView() {
                           )}
                         </div>
                         <div className="text-right">
-                          <span className="text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</span>
+                          <span className="text-base  text-slate-900">{formatMoney(order.totalPrice)}</span>
                           <p className="text-xs text-slate-400 mt-0.5">
                             {order.shopifyCreatedAt ? new Date(order.shopifyCreatedAt).toLocaleDateString("en-IN") : ""}
                           </p>
@@ -1032,7 +1032,7 @@ export function FulfillmentView() {
                   <Truck size={16} className="text-indigo-700" />
                   Default Channel:
                   <select
-                    className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-sm outline-none focus:border-indigo-700"
+                    className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-xs outline-none focus:border-indigo-700"
                     value={selectedProvider}
                     onChange={(e) => setSelectedProvider(e.target.value)}
                     disabled={!connectedProviders.length}
@@ -1053,7 +1053,7 @@ export function FulfillmentView() {
                   <Building2 size={16} className="text-indigo-700" />
                   Pickup Warehouse:
                   <select
-                    className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-sm outline-none focus:border-indigo-700"
+                    className="h-9 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-medium shadow-xs outline-none focus:border-indigo-700"
                     value={selectedWarehouse}
                     onChange={(e) => setSelectedWarehouse(e.target.value)}
                     disabled={!providerWarehouses.length}
@@ -1082,7 +1082,7 @@ export function FulfillmentView() {
               </div>
 
               {/* Filter Tabs */}
-              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              <div className="flex items-center rounded-lg border border-slate-200 bg-white p-1 shadow-xs">
                 <button
                   className={`rounded-md px-3 py-1 text-xs font-semibold transition ${filterMode === "all" ? "bg-slate-950 text-white" : "text-slate-600 hover:text-slate-900"
                     }`}
@@ -1180,7 +1180,7 @@ export function FulfillmentView() {
                           <div className="flex flex-1 flex-wrap items-start justify-between gap-3">
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="text-base font-bold text-slate-900">{order.name}</span>
+                                <span className="text-base  text-slate-900">{order.name}</span>
                                 <Badge tone={order.isCOD ? "amber" : "green"}>
                                   {order.isCOD ? `COD (${formatMoney(order.codAmount || order.totalPrice)})` : "Prepaid"}
                                 </Badge>
@@ -1213,7 +1213,7 @@ export function FulfillmentView() {
 
                             {/* Order Actions */}
                             <div className="flex flex-col items-end gap-2">
-                              <span className="text-base font-bold text-slate-900">{formatMoney(order.totalPrice)}</span>
+                              <span className="text-base  text-slate-900">{formatMoney(order.totalPrice)}</span>
                               <div className="flex items-center gap-1.5">
                                 <Button
                                   disabled={isCancelling}

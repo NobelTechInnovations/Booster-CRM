@@ -31,7 +31,7 @@ export function CardHeader({ className, ...props }) {
 export function CardTitle({ className, ...props }) {
   return (
     <h2
-      className={cn("text-[15px] font-bold tracking-tight text-slate-900", className)}
+      className={cn("text-[15px]  tracking-tight text-slate-900", className)}
       {...props}
     />
   );

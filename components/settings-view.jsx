@@ -467,7 +467,7 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
         <div className="flex items-start justify-between border-b border-[var(--line)] px-4 py-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{lead.provider}</p>
-            <h2 className="text-lg font-extrabold text-slate-900">{lead.customerName || lead.customerPhone || lead.customerEmail || "Lead"}</h2>
+            <h2 className="text-lg font-bold text-slate-900">{lead.customerName || lead.customerPhone || lead.customerEmail || "Lead"}</h2>
             <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-slate-500">
               {lead.customerPhone ? <span className="flex items-center gap-1"><PhoneCall size={11} />{lead.customerPhone}</span> : null}
               {lead.cartValue ? <span className="font-semibold text-slate-700">{formatMoney(lead.cartValue)}</span> : null}
@@ -574,11 +574,11 @@ function LeadRow({ lead, duplicateCount, onView, onFollowUp }) {
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               {isUnseen ? (
-                <span className="shrink-0 rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-white">New</span>
+                <span className="shrink-0 rounded-full bg-amber-400 px-1.5 py-0.5 text-[9px]  uppercase tracking-wide text-white">New</span>
               ) : null}
               <p className="truncate text-sm font-semibold text-slate-800">{lead.customerName || lead.customerPhone || lead.customerEmail || "Unknown"}</p>
               {duplicateCount > 1 ? (
-                <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px] font-bold text-amber-700" title={`${duplicateCount} records share this phone`}>{duplicateCount}×</span>
+                <span className="shrink-0 rounded-full bg-amber-100 px-1.5 py-0.5 text-[10px]  text-amber-700" title={`${duplicateCount} records share this phone`}>{duplicateCount}×</span>
               ) : null}
             </div>
             {lead.customerPhone && lead.customerName ? <p className="text-[11px] text-slate-400">{lead.customerPhone}</p> : null}
@@ -1000,7 +1000,7 @@ export function SettingsView() {
     <div className="mx-auto max-w-[1200px] px-4 py-4 lg:px-8">
       <section className="mb-6">
         <Badge tone="indigo">Settings</Badge>
-        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Settings</h1>
+        <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Settings</h1>
         <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--muted)]">
           Tax and invoicing defaults, notification preferences, and account security.
         </p>

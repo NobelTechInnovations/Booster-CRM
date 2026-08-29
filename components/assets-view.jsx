@@ -68,7 +68,7 @@ function AssetFormModal({ initial, onClose, onSaved }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-md rounded-lg border border-[var(--line)] bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
-          <h2 className="text-base font-bold text-slate-900">{initial ? "Edit asset" : "Add asset"}</h2>
+          <h2 className="text-base  text-slate-900">{initial ? "Edit asset" : "Add asset"}</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3 px-4 py-4">
@@ -164,11 +164,11 @@ function AdjustStockModal({ asset, onClose, onSaved }) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="w-full max-w-sm rounded-lg border border-[var(--line)] bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
-          <h2 className="text-base font-bold text-slate-900">Adjust stock — {asset.name}</h2>
+          <h2 className="text-base  text-slate-900">Adjust stock — {asset.name}</h2>
           <button onClick={onClose} className="grid h-7 w-7 place-items-center rounded-md text-slate-400 hover:bg-slate-100"><X size={16} /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-3 px-4 py-4">
-          <p className="text-sm text-slate-500">Current stock: <span className="font-bold text-slate-800">{asset.currentStock} {asset.unit}</span></p>
+          <p className="text-sm text-slate-500">Current stock: <span className=" text-slate-800">{asset.currentStock} {asset.unit}</span></p>
           <label className="block text-sm font-semibold text-slate-700">
             Quantity (+ to add, − to remove)
             <input type="number" autoFocus value={delta} onChange={(e) => setDelta(e.target.value)} placeholder="e.g. 500 or -10"
@@ -232,7 +232,7 @@ function MappingFormModal({ product, assets, existing, onClose, onSaved }) {
       <div className="w-full max-w-lg rounded-lg border border-[var(--line)] bg-white shadow-xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-3.5">
           <div>
-            <h2 className="text-base font-bold text-slate-900">What does this consume?</h2>
+            <h2 className="text-base  text-slate-900">What does this consume?</h2>
             <p className="text-xs text-slate-500">
               {product.productTitle} {product.variantTitle ? `— ${product.variantTitle}` : ""} ·{" "}
               {product.hasSku ? `SKU ${product.sku}` : <span className="text-amber-600">No SKU set in Shopify</span>}
@@ -298,18 +298,18 @@ function AssetsTab({ assets, isLoading, onRefresh }) {
       <div className="grid gap-3 sm:grid-cols-3">
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Total Assets</p>
-          <p className="mt-2 text-2xl font-bold">{assets.length}</p>
+          <p className="mt-2 text-2xl ">{assets.length}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Total Units in Stock</p>
-          <p className="mt-2 text-2xl font-bold">{assets.reduce((s, a) => s + Number(a.currentStock || 0), 0).toLocaleString("en-IN")}</p>
+          <p className="mt-2 text-2xl ">{assets.reduce((s, a) => s + Number(a.currentStock || 0), 0).toLocaleString("en-IN")}</p>
         </Card>
         <Card className="p-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-medium text-[var(--muted)]">Low Stock</p>
             <AlertTriangle size={16} className={lowStockCount ? "text-amber-600" : "text-slate-300"} />
           </div>
-          <p className="mt-2 text-2xl font-bold">{lowStockCount}</p>
+          <p className="mt-2 text-2xl ">{lowStockCount}</p>
         </Card>
       </div>
 
@@ -355,7 +355,7 @@ function AssetsTab({ assets, isLoading, onRefresh }) {
                       </td>
                       <td className="px-4 py-2.5"><Badge tone={CATEGORY_TONE[a.category] || "slate"}>{CATEGORY_LABEL[a.category] || a.category}</Badge></td>
                       <td className="px-4 py-2.5 text-right">
-                        <span className={cn("font-bold", low ? "text-rose-600" : "text-slate-900")}>{Number(a.currentStock).toLocaleString("en-IN")}</span>
+                        <span className={cn("", low ? "text-rose-600" : "text-slate-900")}>{Number(a.currentStock).toLocaleString("en-IN")}</span>
                         <span className="ml-1 text-xs text-slate-400">{a.unit}</span>
                         {low ? <Badge tone="rose" className="ml-2">Low</Badge> : null}
                       </td>
@@ -598,7 +598,7 @@ export function AssetsView() {
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-5">
         <Badge tone="indigo">Packaging</Badge>
-        <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Assets & Packaging</h1>
+        <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Assets & Packaging</h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
           Track jars, stickers, and other packaging you physically hold stock of. Stock deducts automatically when you ship an order through this panel —
           only for orders shipped from today onward, not your existing backlog.

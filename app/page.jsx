@@ -100,7 +100,7 @@ export default function Home() {
               <Layers3 size={20} />
             </div>
             <div>
-              <p className="text-sm font-bold leading-5 text-slate-900">Wokbook</p>
+              <p className="text-sm  leading-5 text-slate-900">Wokbook</p>
               <p className="text-[11px] font-medium text-[var(--muted)]">Commerce Operations Platform</p>
             </div>
           </Link>
@@ -133,7 +133,7 @@ export default function Home() {
               <Sparkles size={11} />
               Built for DTC & multi-brand sellers
             </Badge>
-            <h1 className="mt-5 max-w-2xl text-[2.6rem] font-extrabold leading-[1.12] tracking-tight text-slate-950 md:text-6xl">
+            <h1 className="mt-5 max-w-2xl text-[2.6rem] font-bold leading-[1.12] tracking-tight text-slate-950 md:text-6xl">
               The Commerce OS
               <br />
               <span className="text-[var(--primary)]">built for growing brands.</span>
@@ -168,14 +168,14 @@ export default function Home() {
           </div>
 
           {/* Dashboard Preview Card */}
-          <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-sm">
+          <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-xs">
             {/* Mini topbar */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
                 <div className="grid h-7 w-7 place-items-center rounded-lg bg-[var(--primary)] text-white">
                   <Layers3 size={14} />
                 </div>
-                <span className="text-xs font-bold text-slate-800">Wokbook Panel</span>
+                <span className="text-xs  text-slate-800">Wokbook Panel</span>
               </div>
               <div className="flex gap-1">
                 <div className="h-2.5 w-2.5 rounded-full bg-rose-400" />
@@ -194,7 +194,7 @@ export default function Home() {
               ].map((kpi) => (
                 <div key={kpi.label} className="rounded-xl border border-[var(--line)] p-3">
                   <p className="text-[11px] font-medium text-slate-500">{kpi.label}</p>
-                  <p className="mt-1 text-xl font-bold text-slate-900">{kpi.value}</p>
+                  <p className="mt-1 text-xl  text-slate-900">{kpi.value}</p>
                   <span className={`mt-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold ${kpi.bg} ${kpi.color}`}>
                     {kpi.change}
                   </span>
@@ -225,7 +225,7 @@ export default function Home() {
                 <div key={order.name} className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-xs">
                   <div className="flex items-center gap-2">
                     <div className={`h-1.5 w-1.5 rounded-full ${order.dot}`} />
-                    <span className="font-bold text-slate-800">{order.name}</span>
+                    <span className=" text-slate-800">{order.name}</span>
                     <span className="text-slate-500">{order.customer}</span>
                   </div>
                   <div className="flex items-center gap-2">
@@ -245,7 +245,7 @@ export default function Home() {
           {stats.map((stat) => (
             <div key={stat.label} className="flex flex-col items-center rounded-2xl border border-[var(--line)] bg-white py-8 text-center">
               <stat.icon size={20} className="mb-3 text-[var(--primary)]" />
-              <p className="text-3xl font-extrabold text-slate-950">{stat.value}</p>
+              <p className="text-3xl font-bold text-slate-950">{stat.value}</p>
               <p className="mt-1 text-sm font-medium text-[var(--muted)]">{stat.label}</p>
             </div>
           ))}
@@ -259,7 +259,7 @@ export default function Home() {
             <Zap size={11} />
             Everything you need
           </Badge>
-          <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 md:text-4xl">
+          <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 ">
             One platform for your entire operation
           </h2>
           <p className="mt-3 mx-auto max-w-xl text-base text-slate-600">
@@ -271,7 +271,7 @@ export default function Home() {
           {features.map((feature) => (
             <div
               key={feature.title}
-              className="group rounded-2xl border border-[var(--line)] bg-white p-6 shadow-sm transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_-8px_rgba(11,21,51,0.12)]"
+              className="group rounded-2xl border border-[var(--line)] bg-white p-6 shadow-xs transition-all hover:-translate-y-1 hover:shadow-[0_8px_30px_-8px_rgba(11,21,51,0.12)]"
             >
               <div
                 className="grid h-11 w-11 place-items-center rounded-xl"
@@ -279,7 +279,7 @@ export default function Home() {
               >
                 <feature.icon size={22} />
               </div>
-              <h3 className="mt-4 text-base font-bold text-slate-900">{feature.title}</h3>
+              <h3 className="mt-4 text-base  text-slate-900">{feature.title}</h3>
               <p className="mt-2 text-sm leading-6 text-slate-600">{feature.desc}</p>
             </div>
           ))}
@@ -294,7 +294,7 @@ export default function Home() {
               <Zap size={11} />
               How it works
             </Badge>
-            <h2 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-950 md:text-4xl">
+            <h2 className="mt-4 text-3xl font-bold tracking-tight text-slate-950 ">
               Live in minutes, not weeks
             </h2>
           </div>
@@ -302,11 +302,11 @@ export default function Home() {
           <div className="mt-12 grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
             {steps.map((step) => (
               <div key={step.number} className="relative rounded-2xl border border-[var(--line)] bg-white p-6">
-                <span className="text-4xl font-extrabold text-[var(--primary-soft)]">{step.number}</span>
+                <span className="text-4xl font-bold text-[var(--primary-soft)]">{step.number}</span>
                 <div className="mt-3 grid h-10 w-10 place-items-center rounded-xl bg-[var(--primary-soft)] text-[var(--primary)]">
                   <step.icon size={19} />
                 </div>
-                <h3 className="mt-4 text-base font-bold text-slate-900">{step.title}</h3>
+                <h3 className="mt-4 text-base  text-slate-900">{step.title}</h3>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{step.desc}</p>
               </div>
             ))}
@@ -316,11 +316,11 @@ export default function Home() {
 
       {/* ── CTA ── */}
       <section className="mx-auto max-w-7xl px-4 py-16 lg:px-4">
-        <div className="rounded-3xl border border-[var(--line)] bg-white p-10 text-center shadow-sm md:p-16">
+        <div className="rounded-3xl border border-[var(--line)] bg-white p-10 text-center shadow-xs md:p-16">
           <div className="mx-auto mb-4 grid h-14 w-14 place-items-center rounded-2xl bg-[var(--primary-soft)] text-[var(--primary)]">
             <ShieldCheck size={26} />
           </div>
-          <h2 className="text-3xl font-extrabold text-slate-950 md:text-4xl">Ready to scale your brand?</h2>
+          <h2 className="text-3xl font-bold text-slate-950 ">Ready to scale your brand?</h2>
           <p className="mt-4 mx-auto max-w-xl text-base text-slate-600">
             Create your company workspace and connect your first channel in under 5 minutes. No setup fees. Designed for Indian DTC brands.
           </p>
@@ -350,7 +350,7 @@ export default function Home() {
                 <div className="grid h-8 w-8 place-items-center rounded-lg bg-[var(--primary)] text-white">
                   <Layers3 size={16} />
                 </div>
-                <span className="text-sm font-bold text-slate-900">Wokbook</span>
+                <span className="text-sm  text-slate-900">Wokbook</span>
               </Link>
               <p className="mt-3 max-w-xs text-sm leading-6 text-slate-500">
                 The commerce operating system for DTC and multi-brand sellers — orders, shipping, finance, and ads in one panel.

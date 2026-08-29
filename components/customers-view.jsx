@@ -83,7 +83,7 @@ function NewCustomerModal({ onClose, onCreated }) {
       <div className="w-full max-w-lg rounded-2xl border border-[var(--line)] bg-white shadow-2xl">
         <div className="flex items-center justify-between border-b border-[var(--line)] px-4 py-4">
           <div>
-            <h2 className="text-lg font-extrabold text-slate-900">New customer</h2>
+            <h2 className="text-lg font-bold text-slate-900">New customer</h2>
             <p className="text-xs text-slate-500">Created directly in Shopify — same as adding one there.</p>
           </div>
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
@@ -209,11 +209,11 @@ export function CustomersView() {
   }, [customers, search, sortBy]);
 
   return (
-    <div className="mx-auto max-w-[1400px] px-4 py-4 lg:px-8">
+    <div className="mx-auto  px-4 py-4 lg:px-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-4">
         <div>
           <Badge tone="indigo">CRM</Badge>
-          <h1 className="mt-2 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Customers</h1>
+          <h1 className="mt-2 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Customers</h1>
           <p className="mt-1 text-sm text-slate-500">{customers.length} synced from Shopify — create new ones here too.</p>
         </div>
         <Button onClick={() => setShowNew(true)}>
@@ -237,7 +237,7 @@ export function CustomersView() {
             <select
               value={sortBy}
               onChange={(e) => setSortBy(e.target.value)}
-              className="h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-xs font-semibold text-slate-700 shadow-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              className="h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-xs font-semibold text-slate-700 shadow-xs outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
             >
               <option value="latest">Latest first</option>
               <option value="oldest">Oldest first</option>
@@ -279,7 +279,7 @@ export function CustomersView() {
                       <div className="flex items-center gap-2">
                         <p className="font-semibold text-slate-900">{c.name || [c.firstName, c.lastName].filter(Boolean).join(" ") || "Unnamed"}</p>
                         {c.phone && leadPhones.has(c.phone) ? (
-                          <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide text-indigo-700">Lead</span>
+                          <span className="shrink-0 rounded-full bg-indigo-100 px-1.5 py-0.5 text-[9px]  uppercase tracking-wide text-indigo-700">Lead</span>
                         ) : null}
                       </div>
                       {c.tags?.length ? <p className="mt-0.5 flex flex-wrap gap-1">{c.tags.slice(0, 3).map((t) => <span key={t} className="rounded-full bg-slate-100 px-1.5 py-0.5 text-[10px] text-slate-500">{t}</span>)}</p> : null}

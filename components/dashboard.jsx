@@ -169,7 +169,7 @@ function Sidebar({ open, setOpen, activeView, setActiveView }) {
               <Layers3 size={21} />
             </div>
             <div>
-              <p className="text-sm font-bold leading-5">Wokbook</p>
+              <p className="text-sm  leading-5">Wokbook</p>
               <p className="text-xs text-[var(--muted)]">Commerce Operations Platform</p>
             </div>
           </div>
@@ -335,7 +335,7 @@ function KpiRow({ items, salesTrend = [] }) {
         return (
           <div key={item.label} className="flex flex-col">
             <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
-            <p className="mt-1.5 text-[26px] font-bold leading-none tracking-tight text-slate-950">{item.value}</p>
+            <p className="mt-1.5 text-[26px]  leading-none tracking-tight text-slate-950">{item.value}</p>
             <p className={cn("mt-1.5 text-[12px] font-semibold", changeColor)}>
               {isNeg ? "↘" : "↗"} {item.change}
             </p>
@@ -570,15 +570,15 @@ function ChannelsPanel({
           const syncFailed = channel.sync?.orders === "failed";
 
           return (
-            <div key={channelId} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-sm">
+            <div key={channelId} className="rounded-2xl border border-[var(--line)] bg-white p-4 shadow-xs">
               <div className="flex items-start justify-between gap-3">
                 <div className="flex items-center gap-3">
-                  <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white text-base font-extrabold ring-2", colors.bg, colors.ring)}>
+                  <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white text-base font-bold ring-2", colors.bg, colors.ring)}>
                     {colors.label}
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="font-bold text-slate-900">{channel.name || channel.provider}</p>
+                      <p className=" text-slate-900">{channel.name || channel.provider}</p>
                       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
                         <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
                         Live
@@ -602,17 +602,17 @@ function ChannelsPanel({
               <div className="mt-3 grid grid-cols-3 gap-2 text-center">
                 <div className="rounded-lg bg-slate-50 px-2 py-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Orders</p>
-                  <p className="text-sm font-bold text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
+                  <p className="text-sm  text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
                 </div>
                 <div className="rounded-lg bg-slate-50 px-2 py-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
-                  <p className="text-sm font-bold text-slate-900">
+                  <p className="text-sm  text-slate-900">
                     {currency === "INR" ? "₹" : ""}{Number(salesTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </p>
                 </div>
                 <div className="rounded-lg bg-slate-50 px-2 py-1.5">
                   <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Last Sync</p>
-                  <p className="text-sm font-bold text-slate-900">{formatChannelSync(channel.sync)}</p>
+                  <p className="text-sm  text-slate-900">{formatChannelSync(channel.sync)}</p>
                 </div>
               </div>
 
@@ -857,7 +857,7 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
   return (
     <div
       className={cn(
-        "flex flex-col rounded-2xl border bg-white shadow-sm transition-shadow hover:shadow-md",
+        "flex flex-col rounded-2xl border bg-white shadow-xs transition-shadow hover:shadow-md",
         isConnected ? "border-emerald-200" : "border-[var(--line)]",
       )}
     >
@@ -865,11 +865,11 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
       <div className="flex items-start justify-between gap-3 p-5 pb-4">
         <div className="flex items-center gap-3">
           {/* Provider logo tile */}
-          <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white text-lg font-extrabold ring-4", colors.bg, colors.ring)}>
+          <div className={cn("grid h-11 w-11 shrink-0 place-items-center rounded-xl text-white text-lg font-bold ring-4", colors.bg, colors.ring)}>
             {colors.label}
           </div>
           <div>
-            <h3 className="font-bold text-slate-900">{channel.name}</h3>
+            <h3 className=" text-slate-900">{channel.name}</h3>
             <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{channel.phase}</p>
           </div>
         </div>
@@ -902,11 +902,11 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
         <div className="mx-5 mb-4 grid grid-cols-2 gap-2 rounded-xl bg-slate-50 p-3 ring-1 ring-slate-100">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Orders Synced</p>
-            <p className="mt-0.5 text-lg font-extrabold text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
+            <p className="mt-0.5 text-lg font-bold text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
           </div>
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
-            <p className="mt-0.5 text-lg font-extrabold text-slate-900">
+            <p className="mt-0.5 text-lg font-bold text-slate-900">
               {currency === "INR" ? "₹" : currency + " "}{Number(salesTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
             </p>
           </div>
@@ -976,7 +976,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Channel Integrations</Badge>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Channels</h1>
+          <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Channels</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Connect your marketplaces and stores to sync orders, products, and inventory in real time.
           </p>
@@ -1021,7 +1021,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
               { step: "03", title: "Operate", desc: "Fulfil, ship, and report across all channels from a single dashboard." },
             ].map((item) => (
               <div key={item.step} className="flex gap-4">
-                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-50 text-xs font-extrabold text-indigo-700">
+                <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-50 text-xs font-bold text-indigo-700">
                   {item.step}
                 </div>
                 <div>
@@ -1079,7 +1079,7 @@ function OrdersPanel({ orders }) {
                 </td>
                 <td className="py-3 pr-4">{order.payment}</td>
                 <td className="py-3 pr-4">{order.courier}</td>
-                <td className={cn("py-3 pr-0 text-right font-bold", String(order.profit).startsWith("-") ? "text-rose-600" : "text-emerald-700")}>
+                <td className={cn("py-3 pr-0 text-right ", String(order.profit).startsWith("-") ? "text-rose-600" : "text-emerald-700")}>
                   {order.profit}
                 </td>
               </tr>
@@ -1126,7 +1126,7 @@ function Metric({ label, value }) {
   return (
     <div>
       <p className="text-xs font-semibold uppercase text-slate-500">{label}</p>
-      <p className="mt-1 font-bold">{value}</p>
+      <p className="mt-1 ">{value}</p>
     </div>
   );
 }
@@ -1570,7 +1570,7 @@ function OrderCells({ record }) {
   return (
     <>
       <td className="py-3 pr-4 align-top">
-        <p className="font-bold">{record.name || record.externalId}</p>
+        <p className="">{record.name || record.externalId}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{record.customerName || "Guest customer"}</p>
         <p className="mt-1 text-xs text-slate-500">{record.email || record.phone || "No contact"}</p>
       </td>
@@ -1590,7 +1590,7 @@ function OrderCells({ record }) {
         )}
       </td>
       <td className="py-3 pr-4 align-top">
-        <p className="font-bold">{recordMoney(record.totalPrice, record.currency)}</p>
+        <p className="">{recordMoney(record.totalPrice, record.currency)}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">Tax {recordMoney(record.totalTax, record.currency)}</p>
       </td>
       <td className="py-3 pr-4 align-top">
@@ -1611,7 +1611,7 @@ function ProductCells({ record }) {
         <div className="flex gap-3">
           {record.imageUrl ? <img src={record.imageUrl} alt="" className="h-12 w-12 rounded-md border border-[var(--line)] object-cover" /> : <div className="grid h-12 w-12 place-items-center rounded-md bg-slate-100"><Package size={18} /></div>}
           <div className="min-w-0">
-            <p className="line-clamp-2 font-bold">{record.title || record.externalId}</p>
+            <p className="line-clamp-2 ">{record.title || record.externalId}</p>
             <p className="mt-1 text-xs text-[var(--muted)]">{record.vendor || "Shopify"} / {record.productType || "No type"}</p>
           </div>
         </div>
@@ -1627,7 +1627,7 @@ function ProductCells({ record }) {
         </div>
       </td>
       <td className="py-3 pr-4 align-top">
-        <p className={cn("font-bold", Number(record.totalInventory || 0) <= 5 ? "text-amber-700" : "text-emerald-700")}>{Number(record.totalInventory || 0).toLocaleString("en-IN")}</p>
+        <p className={cn("", Number(record.totalInventory || 0) <= 5 ? "text-amber-700" : "text-emerald-700")}>{Number(record.totalInventory || 0).toLocaleString("en-IN")}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">Total available</p>
       </td>
       <td className="py-3 pr-4 align-top">
@@ -1658,7 +1658,7 @@ function CustomerCells({ record }) {
   return (
     <>
       <td className="py-3 pr-4 align-top">
-        <p className="font-bold">{record.name || record.email || record.phone || record.externalId}</p>
+        <p className="">{record.name || record.email || record.phone || record.externalId}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{record.email || "No email"}</p>
         <p className="mt-1 text-xs text-slate-500">{record.phone || "No phone"}</p>
         {record.followUpStatus && (
@@ -1682,7 +1682,7 @@ function CustomerCells({ record }) {
         )}
       </td>
       <td className="py-3 pr-4 align-top">
-        <p className="font-bold">{recordMoney(record.totalSpent, record.currency)}</p>
+        <p className="">{recordMoney(record.totalSpent, record.currency)}</p>
         <p className="mt-1 text-xs text-[var(--muted)]">{Number(record.ordersCount || 0).toLocaleString("en-IN")} orders</p>
         {record.followUps?.length > 0 && (
           <p className="mt-1 text-[10px] text-[var(--muted)]">{record.followUps.length} call log{record.followUps.length > 1 ? "s" : ""}</p>
@@ -2016,7 +2016,7 @@ function RecordsModuleView({ name }) {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{name}</Badge>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">{pageTitle}</h1>
+          <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">{pageTitle}</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Synced Shopify {pageTitle.toLowerCase()} across connected channels with detail view and Shopify update.
           </p>
@@ -2030,15 +2030,15 @@ function RecordsModuleView({ name }) {
       <section className="grid gap-4 md:grid-cols-3">
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Synced Records</p>
-          <p className="mt-2 text-2xl font-bold">{records.length.toLocaleString("en-IN")}</p>
+          <p className="mt-2 text-2xl ">{records.length.toLocaleString("en-IN")}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">{resource === "orders" ? "Sales Value" : resource === "products" ? "Total Inventory" : "Customer Spend"}</p>
-          <p className="mt-2 text-2xl font-bold">{resource === "products" ? totalValue.toLocaleString("en-IN") : recordMoney(totalValue, "INR")}</p>
+          <p className="mt-2 text-2xl ">{resource === "products" ? totalValue.toLocaleString("en-IN") : recordMoney(totalValue, "INR")}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">{resource === "orders" ? "Pending Orders" : resource === "products" ? "Low Stock" : "Missing Email"}</p>
-          <p className="mt-2 text-2xl font-bold">{alertCount.toLocaleString("en-IN")}</p>
+          <p className="mt-2 text-2xl ">{alertCount.toLocaleString("en-IN")}</p>
         </Card>
       </section>
 
@@ -2221,7 +2221,7 @@ function ProductMappingView() {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="amber">Product Mapping</Badge>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">Map Channel SKUs</h1>
+          <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Map Channel SKUs</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Match the same real products across Shopify and Amazon when channel SKUs are different.
           </p>
@@ -2235,19 +2235,19 @@ function ProductMappingView() {
       <section className="grid gap-4 md:grid-cols-4">
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Shopify SKUs</p>
-          <p className="mt-2 text-2xl font-bold">{shopifyOptions.length.toLocaleString("en-IN")}</p>
+          <p className="mt-2 text-2xl ">{shopifyOptions.length.toLocaleString("en-IN")}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Amazon SKUs</p>
-          <p className="mt-2 text-2xl font-bold">{amazonOptions.length.toLocaleString("en-IN")}</p>
+          <p className="mt-2 text-2xl ">{amazonOptions.length.toLocaleString("en-IN")}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Saved Maps</p>
-          <p className="mt-2 text-2xl font-bold">{mappedCount.toLocaleString("en-IN")}</p>
+          <p className="mt-2 text-2xl ">{mappedCount.toLocaleString("en-IN")}</p>
         </Card>
         <Card className="p-4">
           <p className="text-sm font-medium text-[var(--muted)]">Source</p>
-          <p className="mt-2 text-2xl font-bold">Real sync</p>
+          <p className="mt-2 text-2xl ">Real sync</p>
         </Card>
       </section>
 
@@ -2365,7 +2365,7 @@ export function ModuleView({ name, setActiveView }) {
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">{page.eyebrow}</Badge>
-          <h1 className="mt-3 text-2xl font-bold tracking-tight text-slate-950 md:text-[28px]">{page.title}</h1>
+          <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">{page.title}</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">{page.subtitle}</p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -2387,7 +2387,7 @@ export function ModuleView({ name, setActiveView }) {
         {page.cards.map(([label, value, description]) => (
           <Card key={label} className="p-4">
             <p className="text-sm font-medium text-[var(--muted)]">{label}</p>
-            <p className="mt-2 text-2xl font-bold">{value}</p>
+            <p className="mt-2 text-2xl ">{value}</p>
             <p className="mt-3 text-sm leading-6 text-[var(--muted)]">{description}</p>
           </Card>
         ))}
@@ -2449,7 +2449,7 @@ function BusinessMetricStrip({ kpis = [], channels = [] }) {
     return (
       <span className="flex items-center gap-2 whitespace-nowrap">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{k.label}</span>
-        <span className="text-[14px] font-bold text-slate-900">{k.value}</span>
+        <span className="text-[14px]  text-slate-900">{k.value}</span>
         <span className={cn("text-[11.5px] font-semibold", isNeg ? "text-rose-500" : "text-emerald-600")}>
           {isNeg ? "↘" : "↗"} {k.change}
         </span>
@@ -2459,7 +2459,7 @@ function BusinessMetricStrip({ kpis = [], channels = [] }) {
 
   return (
     <div className="mb-9 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--line)] pb-4">
-      <span className="flex shrink-0 items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-indigo-600">
+      <span className="flex shrink-0 items-center gap-1.5 text-[11px]  uppercase tracking-widest text-indigo-600">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         Live
       </span>
@@ -2520,7 +2520,7 @@ function MorningBrief({ dashboardData, companyName }) {
       <div className="flex items-start gap-3">
         <span className="mt-0.5 text-xl leading-none">{greetingEmoji}</span>
         <div>
-          <p className="text-[10px] font-bold uppercase tracking-[0.1em] text-slate-400">{greetingTime} · Morning Brief</p>
+          <p className="text-[10px]  uppercase tracking-[0.1em] text-slate-400">{greetingTime} · Morning Brief</p>
           <p className="mt-1.5 text-[17px] font-semibold leading-snug text-slate-900">{headline}</p>
           {chips.length > 0 && (
             <div className="mt-3 flex flex-wrap gap-x-5 gap-y-1.5">
@@ -2580,7 +2580,7 @@ function OpportunitiesSection({ dashboardData }) {
       <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-4">
         {cards.map((c) => (
           <div key={c.label} className={cn("border-l-2 py-0.5 pl-3.5", c.accent)}>
-            <p className="mb-1.5 text-[10.5px] font-bold uppercase tracking-widest text-slate-400">{c.label}</p>
+            <p className="mb-1.5 text-[10.5px]  uppercase tracking-widest text-slate-400">{c.label}</p>
             <p className="text-[13.5px] leading-snug text-slate-700">{c.text}</p>
           </div>
         ))}
@@ -2607,7 +2607,7 @@ function AdditionalInsights({ items }) {
         {picked.map((item) => (
           <div key={item.label} className="flex items-baseline gap-2">
             <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</span>
-            <span className="text-[14px] font-bold text-slate-800">{item.value}</span>
+            <span className="text-[14px]  text-slate-800">{item.value}</span>
             <span className="text-[11.5px] text-slate-400">{item.change}</span>
           </div>
         ))}
