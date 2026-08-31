@@ -16,6 +16,8 @@ import { AssetsView } from "@/components/assets-view";
 import { ReportsView } from "@/components/reports-view";
 import { AutomationView } from "@/components/automation-view";
 import { SettingsView } from "@/components/settings-view";
+import { SocialView } from "@/components/social-view";
+import { WhatsAppView } from "@/components/whatsapp-view";
 import { listChannels, getChannelDashboard, syncChannel } from "@/lib/api";
 
 export default function ModulePage({ params }) {
@@ -91,6 +93,8 @@ export default function ModulePage({ params }) {
     "customers": "Customers",
     "finance": "Finance",
     "ads": "Ads",
+    "social": "Social",
+    "whatsapp": "WhatsApp",
     "automation": "Automation",
     "reports": "Reports",
     "settings": "Settings"
@@ -169,6 +173,14 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Ads") {
     return <FinanceView defaultTab="ads" />;
+  }
+
+  if (activeViewName === "Social") {
+    return <SocialView />;
+  }
+
+  if (activeViewName === "WhatsApp") {
+    return <WhatsAppView />;
   }
 
   // Fallback to ModuleView for unimplemented modules

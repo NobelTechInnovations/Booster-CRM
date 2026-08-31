@@ -36,6 +36,8 @@ import {
   Sparkles,
   Check,
   Plus,
+  Camera,
+  MessageCircle,
 } from "lucide-react";
 import {
   clearSession,
@@ -80,6 +82,12 @@ const NAV_GROUPS = [
     label: "Channels", icon: PlugZap, href: "/panel/channels", children: [
       { label: "Sales Channels", icon: PlugZap, href: "/panel/channels" },
       { label: "Shipping Partners", icon: Truck, href: "/panel/shipping" },
+    ]
+  },
+  {
+    label: "Marketing", icon: Camera, href: "/panel/social", children: [
+      { label: "Social", icon: Camera, href: "/panel/social" },
+      { label: "WhatsApp", icon: MessageCircle, href: "/panel/whatsapp" },
     ]
   },
   {

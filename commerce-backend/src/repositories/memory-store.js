@@ -25,6 +25,10 @@ export const memory = {
   webhookEndpoints: new Map(),
   webhookEvents:  new Map(),
   webhookLeads:   new Map(),
+  socialPosts:    new Map(),
+  socialComments: new Map(),
+  whatsappConversations: new Map(),
+  whatsappMessages: new Map(),
 };
 
 export function id() {

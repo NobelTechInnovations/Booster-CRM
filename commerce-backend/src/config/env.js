@@ -43,4 +43,19 @@ export const env = {
     appUrl: process.env.META_APP_URL || process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
     scopes: process.env.META_SCOPES || "ads_read,business_management",
   },
+  // WhatsApp Cloud API. Per-company phone number + access token are NOT
+  // here — each company connects their own WhatsApp Business Account via
+  // POST /api/whatsapp/connect, stored on their own Channel doc, same as
+  // every other per-company integration in this app. Only the webhook
+  // verify token and signing secret live here, because Meta only supports
+  // ONE webhook URL + verify token per Meta App (app-level, not
+  // per-company) — every connected company's events arrive on this same
+  // shared webhook and get routed by phone_number_id (see
+  // modules/whatsapp/whatsapp.service.js). appSecret falls back to
+  // META_APP_SECRET since it's typically the same underlying Meta App.
+  whatsapp: {
+    webhookVerifyToken: process.env.WHATSAPP_WEBHOOK_VERIFY_TOKEN || "",
+    appSecret: process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET || "",
+    apiVersion: process.env.META_API_VERSION || "v21.0",
+  },
 };

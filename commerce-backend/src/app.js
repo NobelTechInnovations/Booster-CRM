@@ -15,6 +15,8 @@ import { webhookInboxRoutes } from "./modules/webhooks/webhook-inbox.routes.js";
 import { fulfillmentRoutes } from "./modules/fulfillment/fulfillment.routes.js";
 import { financeRoutes } from "./modules/finance/finance.routes.js";
 import { adsRoutes } from "./modules/ads/ads.routes.js";
+import { socialRoutes } from "./modules/social/social.routes.js";
+import { whatsappRoutes } from "./modules/whatsapp/whatsapp.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { automationRoutes } from "./modules/automation/automation.routes.js";
@@ -71,6 +73,8 @@ export function createApp() {
   app.use("/api/fulfillment", fulfillmentRoutes);
   app.use("/api/finance", financeRoutes);
   app.use("/api/ads", adsRoutes);
+  app.use("/api/social", socialRoutes);
+  app.use("/api/whatsapp", whatsappRoutes);
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/reports", reportsRoutes);
   app.use("/api/automation", automationRoutes);

@@ -7,9 +7,13 @@ const channelSchema = new mongoose.Schema(
     // "sales" = Shopify, Amazon, WooCommerce etc.
     // "shipping" = Velocity, Shiprocket, Shipmozo etc.
     // "ads" = Meta Ads etc.
+    // "social" = Instagram/Facebook Page performance + comment replies.
+    // "whatsapp" = WhatsApp Business API (Cloud API) — each company connects
+    // its own WhatsApp Business Account, so this is per-company like every
+    // other channel here, not a single app-wide number.
     channelType: {
       type: String,
-      enum: ["sales", "shipping", "ads"],
+      enum: ["sales", "shipping", "ads", "social", "whatsapp"],
       required: true,
       default: "sales",
       index: true,
@@ -22,7 +26,7 @@ const channelSchema = new mongoose.Schema(
         "shopify", "amazon", "woocommerce", "flipkart", "meesho", "myntra", "ajio", "etsy",
         // Shipping providers
         "velocity", "shiprocket", "shipmozo", "shipway", "ithink", "nimbuspost", "pickrr", "delhivery",
-        // Ads providers
+        // Ads / Social / WhatsApp providers (same Meta platform, distinguished by channelType + shop)
         "meta",
       ],
       required: true,
@@ -71,6 +75,18 @@ const channelSchema = new mongoose.Schema(
       adAccountName:     String,
       adAccountCurrency: String,
       businessId:        String,
+      // Social (Instagram/Facebook Page) fields
+      pageId:            String,
+      pageName:          String,
+      igUserId:          String,
+      igUsername:        String,
+      // WhatsApp Business API fields — phoneNumberId is what the incoming
+      // webhook payload carries (changes[].value.metadata.phone_number_id),
+      // so it's how a webhook event gets routed back to the right company.
+      phoneNumberId:       String,
+      whatsappBusinessAccountId: String,
+      whatsappDisplayName: String,
+      whatsappPhoneNumber: String,
     },
 
     // Sales channel sync state
@@ -112,5 +128,9 @@ const channelSchema = new mongoose.Schema(
 
 channelSchema.index({ companyId: 1, provider: 1, shop: 1 }, { unique: true });
 channelSchema.index({ companyId: 1, channelType: 1, status: 1 });
+// Cross-tenant lookup by WhatsApp phone_number_id — the incoming webhook
+// payload carries this and nothing else identifying, so this is how an
+// event gets routed back to the right company (see whatsapp.service.js).
+channelSchema.index({ "external.phoneNumberId": 1 }, { sparse: true });
 
 export const Channel = mongoose.model("Channel", channelSchema);

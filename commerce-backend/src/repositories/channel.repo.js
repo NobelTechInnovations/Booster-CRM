@@ -450,6 +450,155 @@ export async function updateMetaAdAccount({ companyId, channelId, adAccountId, a
   return withoutCredentials(channel);
 }
 
+// ─── Social Channel (Instagram / Facebook Page via Meta) ───────────────────
+// Deliberately a separate Channel doc from the Ads one above — same Meta
+// provider, but a distinct `shop` value ("meta-social" vs "meta-ads") so
+// the {companyId, provider, shop} unique index never collides between the
+// two, and disconnecting one never touches the other.
+
+export async function listSocialChannels(companyId) {
+  return listChannels(companyId, { channelType: "social" });
+}
+
+export async function upsertSocialChannel({ companyId, userId, accessToken, longLivedTokenExpiresAt, pageId, pageName, igUserId, igUsername }) {
+  const shop = "meta-social";
+  const name = pageName ? `Instagram/Facebook · ${pageName}` : "Instagram/Facebook";
+
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate(
+      { companyId, provider: "meta", shop },
+      {
+        $set: {
+          channelType: "social",
+          provider: "meta",
+          companyId,
+          shop,
+          name,
+          status: "connected",
+          scopes: [
+            "pages_show_list", "pages_read_engagement", "pages_manage_engagement",
+            "pages_manage_metadata", "instagram_basic", "instagram_manage_comments",
+            "instagram_manage_insights", "business_management",
+          ],
+          credentials: { accessToken, longLivedTokenExpiresAt },
+          external: { pageId, pageName, igUserId, igUsername },
+          connectedBy: userId,
+          disconnectedAt: null,
+        },
+      },
+      { new: true, upsert: true },
+    ).lean();
+  }
+
+  const existing = [...memory.channels.values()].find(
+    (ch) => String(ch.companyId) === String(companyId) && ch.provider === "meta" && ch.shop === shop,
+  );
+
+  const channel = {
+    _id: existing?._id || id(),
+    channelType: "social",
+    provider: "meta",
+    companyId,
+    shop,
+    name,
+    status: "connected",
+    scopes: [
+      "pages_show_list", "pages_read_engagement", "pages_manage_engagement",
+      "pages_manage_metadata", "instagram_basic", "instagram_manage_comments",
+      "instagram_manage_insights", "business_management",
+    ],
+    credentials: { accessToken, longLivedTokenExpiresAt },
+    external: { pageId, pageName, igUserId, igUsername },
+    sync: existing?.sync || { orders: "idle" },
+    connectedBy: userId,
+    disconnectedAt: null,
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+
+  memory.channels.set(channel._id, channel);
+  return clone(channel);
+}
+
+// ─── WhatsApp Channel ────────────────────────────────────────────────────────
+// Per-company, entered manually (System User token + Phone Number ID pasted
+// from the company's own WhatsApp Business Account in Meta Business Manager)
+// rather than OAuth — the Cloud API has no simple end-user consent flow for
+// provisioning a business phone number, so the standard integration pattern
+// is credential entry, not a redirect dance.
+
+export async function listWhatsAppChannels(companyId) {
+  return listChannels(companyId, { channelType: "whatsapp" });
+}
+
+export async function upsertWhatsAppChannel({ companyId, userId, phoneNumberId, whatsappBusinessAccountId, accessToken, whatsappDisplayName, whatsappPhoneNumber }) {
+  const shop = "whatsapp";
+  const name = whatsappDisplayName ? `WhatsApp · ${whatsappDisplayName}` : "WhatsApp Business";
+
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate(
+      { companyId, provider: "meta", shop },
+      {
+        $set: {
+          channelType: "whatsapp",
+          provider: "meta",
+          companyId,
+          shop,
+          name,
+          status: "connected",
+          credentials: { accessToken },
+          external: { phoneNumberId, whatsappBusinessAccountId, whatsappDisplayName, whatsappPhoneNumber },
+          connectedBy: userId,
+          disconnectedAt: null,
+        },
+      },
+      { new: true, upsert: true },
+    ).lean();
+  }
+
+  const existing = [...memory.channels.values()].find(
+    (ch) => String(ch.companyId) === String(companyId) && ch.provider === "meta" && ch.shop === shop,
+  );
+
+  const channel = {
+    _id: existing?._id || id(),
+    channelType: "whatsapp",
+    provider: "meta",
+    companyId,
+    shop,
+    name,
+    status: "connected",
+    credentials: { accessToken },
+    external: { phoneNumberId, whatsappBusinessAccountId, whatsappDisplayName, whatsappPhoneNumber },
+    connectedBy: userId,
+    disconnectedAt: null,
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+
+  memory.channels.set(channel._id, channel);
+  return clone(channel);
+}
+
+// Global (cross-tenant) lookup by phoneNumberId — how an inbound WhatsApp
+// webhook event (which only carries the phone_number_id, no companyId) gets
+// routed back to the right company. Needs the accessToken selected too
+// since the caller uses this to both resolve companyId AND to reply.
+export async function getWhatsAppChannelByPhoneNumberId(phoneNumberId) {
+  if (!phoneNumberId) return null;
+
+  if (isMongoConnected()) {
+    return Channel.findOne({ channelType: "whatsapp", "external.phoneNumberId": phoneNumberId })
+      .select("+credentials.accessToken")
+      .lean();
+  }
+
+  const found = [...memory.channels.values()].find(
+    (ch) => ch.channelType === "whatsapp" && ch.external?.phoneNumberId === phoneNumberId,
+  );
+  return found ? clone(found) : null;
+}
+
 // ─── Dashboard ───────────────────────────────────────────────────────────────
 
 export function getStoreMode() {
