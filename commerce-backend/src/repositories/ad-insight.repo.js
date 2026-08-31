@@ -61,6 +61,12 @@ export async function upsertAdInsights(records) {
 
   const saved = [];
   for (const record of records) {
+    // Key deliberately does NOT include adAccountId — matches the unique
+    // Mongo index above (companyId/channelId/adId/date only). Meta ad IDs
+    // are globally unique per the platform's own docs, so the same adId
+    // legitimately belonging to two different ad accounts under one
+    // channel shouldn't happen; the record's own adAccountId field (set
+    // below via `...record`) is still what every read filters on.
     const key = `${record.companyId}:${record.channelId}:${record.adId}:${dayKey(record.date)}`;
     const existing = memory.adInsights.get(key);
     const stored = { _id: existing?._id || id(), ...existing, ...record, updatedAt: now(), createdAt: existing?.createdAt || now() };
@@ -72,13 +78,18 @@ export async function upsertAdInsights(records) {
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
-export async function listAdInsights({ companyId, from, to, campaignId, channelId }) {
+export async function listAdInsights({ companyId, from, to, campaignId, channelId, adAccountId }) {
   const { start, end } = parseDateRange({ from, to });
   const filter = {
     companyId: mixedIdFilter(companyId),
     date: { $gte: start, $lte: end },
     ...(campaignId ? { campaignId } : {}),
     ...(channelId ? { channelId: mixedIdFilter(channelId) } : {}),
+    // Isolates the currently-selected ad account's rows from every other
+    // account ever synced on this channel — without this, switching ad
+    // accounts just blends both accounts' numbers together instead of
+    // showing the newly-selected one's own data.
+    ...(adAccountId ? { adAccountId } : {}),
   };
 
   if (isMongoConnected()) {
@@ -90,6 +101,7 @@ export async function listAdInsights({ companyId, from, to, campaignId, channelI
       if (String(row.companyId) !== String(companyId)) return false;
       if (campaignId && row.campaignId !== campaignId) return false;
       if (channelId && String(row.channelId) !== String(channelId)) return false;
+      if (adAccountId && row.adAccountId !== adAccountId) return false;
       const d = new Date(row.date);
       return d >= start && d <= end;
     })
@@ -97,8 +109,8 @@ export async function listAdInsights({ companyId, from, to, campaignId, channelI
     .map(clone);
 }
 
-export async function getAdSpendTotal({ companyId, from, to }) {
-  const rows = await listAdInsights({ companyId, from, to });
+export async function getAdSpendTotal({ companyId, from, to, channelId, adAccountId }) {
+  const rows = await listAdInsights({ companyId, from, to, channelId, adAccountId });
   const spend = rows.reduce((sum, row) => sum + toNumber(row.spend), 0);
   const gstAmount = spend * AD_GST_RATE;
   return {
@@ -110,8 +122,8 @@ export async function getAdSpendTotal({ companyId, from, to }) {
   };
 }
 
-export async function getAdsSummary({ companyId, from, to }) {
-  const rows = await listAdInsights({ companyId, from, to });
+export async function getAdsSummary({ companyId, from, to, channelId, adAccountId }) {
+  const rows = await listAdInsights({ companyId, from, to, channelId, adAccountId });
   const currency = rows.find((row) => row.currency)?.currency || "INR";
 
   const spend = rows.reduce((sum, row) => sum + toNumber(row.spend), 0);

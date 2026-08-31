@@ -186,7 +186,13 @@ function BrandSwitcher({ session, variant = "sidebar" }) {
         <div className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px]  text-white">
           {name[0]?.toUpperCase() || "W"}
         </div>
-        <span className={cn("min-w-0 truncate text-[13px] font-semibold text-slate-800", isCompact ? "max-w-[140px]" : "flex-1")}>{name}</span>
+        {/* Below `sm` the topbar is tight (hamburger + this + right-side
+            icons) — show just the avatar+chevron there, full name from
+            `sm` up. Never fully hidden, so it's still reachable on phones. */}
+        <span className={cn(
+          "min-w-0 truncate text-[13px] font-semibold text-slate-800",
+          isCompact ? "hidden max-w-[140px] sm:block" : "flex-1",
+        )}>{name}</span>
         <ChevronDown size={13} className={cn("shrink-0 text-slate-400 transition-transform", open && "rotate-180")} />
       </button>
 
@@ -282,8 +288,9 @@ function Sidebar({ open, setOpen, session, onLogout }) {
           </button>
         </div>
 
-        {/* Brand switcher */}
-        {/* <BrandSwitcher session={session} /> */}
+        {/* Brand switcher lives in the topbar only (see Topbar below) — a
+            second copy here would show on desktop at the same time as the
+            topbar's, so it's deliberately not rendered in the sidebar. */}
 
         {/* Nav items */}
         <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 pb-3">
@@ -339,12 +346,13 @@ function Topbar({ setOpen, onSyncAll, canSync, period, setPeriod, session }) {
         <Menu size={20} />
       </button>
 
-      {/* Brand switcher — visible on desktop where the sidebar's own switcher
-          may be scrolled out of view; hidden on mobile to save space next to
-          the menu button (sidebar's full switcher covers that case there). */}
-      <div className="hidden lg:block">
-        <BrandSwitcher session={session} variant="topbar" />
-      </div>
+      {/* Brand switcher — the sidebar's own switcher is commented out (dead
+          weight, not two competing switchers), so this is the ONLY brand
+          switcher in the app and needs to work at every width, including
+          mobile. The compact variant hides its text label below `sm` so it
+          doesn't crowd the hamburger button, but the avatar+chevron stay
+          tappable at every size. */}
+      <BrandSwitcher session={session} variant="topbar" />
 
       <div className="ml-auto flex items-center gap-2">
         <span className="hidden items-center gap-1.5 text-[12px] font-medium text-slate-500 sm:flex">

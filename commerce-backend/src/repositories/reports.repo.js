@@ -16,6 +16,18 @@ function fmtDate(d) {
   return new Date(d).toISOString().slice(0, 10);
 }
 
+// Shopify's financial_status values (pending/authorized/partially_paid/paid/
+// partially_refunded/refunded/voided), title-cased for display. Used instead
+// of ever hardcoding a status — a report showing every order as "Paid"
+// regardless of its actual financialStatus is worse than showing nothing.
+function paymentStatusLabel(financialStatus) {
+  if (!financialStatus) return "Unknown";
+  return financialStatus
+    .split("_")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+}
+
 // ─── 1. Sales Report ─────────────────────────────────────────────────────────
 async function salesReport({ companyId, from, to }) {
   const { orders } = await getOrdersInRange({ companyId, from, to });
@@ -86,7 +98,7 @@ async function gstReport({ companyId, from, to }) {
       recordedTax,
       expectedTax,
       total,
-      status: "Paid",
+      status: paymentStatusLabel(o.financialStatus),
     };
   });
 

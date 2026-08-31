@@ -8,6 +8,7 @@ import { ProductMapping } from "../models/product-mapping.model.js";
 import { memory, id, clone, now, toDate, toNumber, fullName } from "./memory-store.js";
 import { listSkuCosts } from "./sku-cost.repo.js";
 import { listAssetMappings, listAssets } from "./asset.repo.js";
+import { parseUtmFromOrder } from "../utils/utm.js";
 
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
@@ -617,6 +618,25 @@ export async function saveSyncedAmazonData({ companyId, channelId, shop, orders 
 
 // ─── Queries ─────────────────────────────────────────────────────────────────
 
+// Layers manualDiscount/manualExtraCharge on top of the channel-reported
+// totalPrice at READ time — never persisted back into totalPrice itself, so
+// a Shopify re-sync (which re-writes totalPrice straight from the live
+// order on every poll/webhook) can never silently wipe out an adjustment.
+// originalTotalPrice is kept on the returned object too, so the UI can show
+// "₹499 (adjusted from ₹549)" instead of hiding that a manual edit happened.
+function applyManualAdjustments(order) {
+  const discount = toNumber(order.manualDiscount);
+  const extraCharge = toNumber(order.manualExtraCharge);
+  if (!discount && !extraCharge) return order;
+
+  const originalTotalPrice = toNumber(order.totalPrice);
+  return {
+    ...order,
+    originalTotalPrice,
+    totalPrice: Math.max(0, originalTotalPrice - discount + extraCharge),
+  };
+}
+
 export async function getSavedCommerceData(companyId) {
   if (isMongoConnected()) {
     const [orders, products, customers, channels] = await Promise.all([
@@ -626,7 +646,7 @@ export async function getSavedCommerceData(companyId) {
       Channel.find({ companyId }).sort({ updatedAt: -1 }).lean(),
     ]);
     return {
-      orders: deduplicateRecords(orders),
+      orders: deduplicateRecords(orders).map(applyManualAdjustments),
       products: deduplicateRecords(products),
       customers: deduplicateRecords(customers),
       channels,
@@ -635,7 +655,7 @@ export async function getSavedCommerceData(companyId) {
 
   const owned = (e) => String(e.companyId) === String(companyId);
   return {
-    orders:    deduplicateRecords([...memory.orders.values()].filter(owned).sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0))),
+    orders:    deduplicateRecords([...memory.orders.values()].filter(owned).sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0))).map(applyManualAdjustments),
     products:  deduplicateRecords([...memory.products.values()].filter(owned).sort((a, b) => new Date(b.shopifyUpdatedAt || 0) - new Date(a.shopifyUpdatedAt || 0))),
     customers: deduplicateRecords([...memory.customers.values()].filter(owned).sort((a, b) => new Date(b.shopifyUpdatedAt || 0) - new Date(a.shopifyUpdatedAt || 0))),
     channels:  [...memory.channels.values()].filter(owned).map(withoutCredentials),
@@ -649,8 +669,28 @@ function publicSyncedRecord(record, channels = []) {
   copy.channelName  = channel?.name || copy.provider;
   copy.channelStatus = channel?.status || "connected";
   copy.channelShop  = channel?.shop || copy.shop;
+
+  // Orders carry their full Shopify payload in `raw` (landing_site,
+  // referring_site, note_attributes) — parseUtmFromOrder already derives
+  // campaign attribution from it for ad-spend matching, but nothing ever
+  // surfaced those fields on the order itself, and `raw` is deleted right
+  // below before this goes to the frontend. orders-view.jsx has always
+  // read order.utmSource/utmCampaign/order.landingSite expecting them to
+  // exist — they never did, so that "which campaign was this order from"
+  // card never rendered for any order. Deriving it here (from the same
+  // `raw` data attribution already uses) fixes that for every order,
+  // historical included, with no backfill needed.
+  if (copy.raw && (copy.provider === "shopify" || copy.externalId)) {
+    const utm = parseUtmFromOrder(copy);
+    copy.utmSource = utm.source || "";
+    copy.utmMedium = utm.medium || "";
+    copy.utmCampaign = utm.campaign || "";
+    copy.utmContent = utm.content || "";
+    copy.landingSite = copy.raw?.landing_site || "";
+  }
+
   delete copy.raw;
-  return copy;
+  return copy.totalPrice !== undefined ? applyManualAdjustments(copy) : copy;
 }
 
 function modelForResource(resource) {
@@ -1139,7 +1179,7 @@ export async function getOrdersInRange({ companyId, from, to, channelId }) {
       ...(channelId ? { channelId } : {}),
     };
     const orders = await SyncedOrder.find(filter).sort({ shopifyCreatedAt: 1 }).limit(20000).lean();
-    return { orders: deduplicateRecords(orders), start, end };
+    return { orders: deduplicateRecords(orders).map(applyManualAdjustments), start, end };
   }
 
   const owned = (o) =>
@@ -1152,7 +1192,7 @@ export async function getOrdersInRange({ companyId, from, to, channelId }) {
 
   const orders = deduplicateRecords([...memory.orders.values()].filter(owned)).sort(
     (a, b) => new Date(a.shopifyCreatedAt) - new Date(b.shopifyCreatedAt),
-  );
+  ).map(applyManualAdjustments);
 
   return { orders, start, end };
 }
@@ -1168,9 +1208,19 @@ export function isRevenueOrder(order) {
     && !order.isRTO;
 }
 
+// Same historical/manually-imported fallback labels as channelReport() in
+// reports.repo.js — orders with no live channelId (imported before a
+// channel connection existed, or from a provider that's since been
+// disconnected) still get a readable label instead of "Unknown".
+const CHANNEL_PROVIDER_LABELS = { local: "Local Shop", website: "Website (Historical)", flipkart: "Flipkart", shopdeck: "Shopdeck", amazon: "Amazon", shopify: "Shopify" };
+
 export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", channelId }) {
-  const { orders, start, end } = await getOrdersInRange({ companyId, from, to, channelId });
+  const [{ orders, start, end }, channels] = await Promise.all([
+    getOrdersInRange({ companyId, from, to, channelId }),
+    Channel.find({ companyId }).lean(),
+  ]);
   const validOrders = orders.filter(isRevenueOrder);
+  const channelNameById = new Map(channels.map((c) => [String(c._id), c.name || c.provider]));
 
   const currency = orders.find((o) => o.currency)?.currency || "INR";
   const revenue = validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
@@ -1213,8 +1263,17 @@ export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", 
       productTotals.set(key, entry);
     }
 
-    const channelKey = String(order.channelId || "unknown");
-    const channelEntry = channelTotals.get(channelKey) || { channelId: channelKey, revenue: 0, orders: 0 };
+    const channelKey = order.channelId ? String(order.channelId) : `provider:${order.provider}`;
+    const channelEntry = channelTotals.get(channelKey) || {
+      channelId: order.channelId ? String(order.channelId) : null,
+      // channelBreakdown never carried a resolved name before — the frontend
+      // had nothing to render but order counts, so "which channel" was
+      // never actually visible. Same lookup+fallback pattern as
+      // reports.repo.js's channelReport.
+      channelName: (order.channelId && channelNameById.get(String(order.channelId))) || CHANNEL_PROVIDER_LABELS[order.provider] || "Unknown",
+      revenue: 0,
+      orders: 0,
+    };
     channelEntry.revenue += toNumber(order.totalPrice);
     channelEntry.orders += 1;
     channelTotals.set(channelKey, channelEntry);
@@ -1266,7 +1325,10 @@ export async function getSalesAnalytics({ companyId, from, to, groupBy = "day", 
     // sometimes only captured a state, or neither, and that's not the same
     // as "zero orders from anywhere".
     geoTaggedOrders,
-    channelBreakdown: [...channelTotals.values()].map((channel) => ({ ...channel, revenue: Math.round(channel.revenue) })),
+    // `key` is the Map's own grouping key (unique per row, unlike channelId
+    // which is null for every provider-fallback row) — the frontend list
+    // key needs it since two different providers can both have channelId:null.
+    channelBreakdown: [...channelTotals.entries()].map(([key, channel]) => ({ ...channel, key, revenue: Math.round(channel.revenue) })),
   };
 }
 
@@ -1322,6 +1384,26 @@ export async function updateOrderShippingCost({ companyId, orderId, shippingCost
     shopifyOrderId: order.externalId,
     update: { shippingCost: Math.max(0, toNumber(shippingCost)), shippingCostSource: "manual" },
   });
+}
+
+// Manual discount/extra-charge adjustment on any synced order (Shopify,
+// Amazon, or manually-created) — unlike shipping cost above, this works for
+// every provider, since it's the general "I want to give this customer an
+// extra discount" / "add a packaging/handling charge" case, not tied to
+// Amazon's per-order shipping fee specifically. Stored separately from
+// totalPrice (see applyManualAdjustments) so it survives future re-syncs.
+export async function updateOrderManualAdjustments({ companyId, orderId, discount, extraCharge, note }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) return null;
+
+  const update = {
+    manualDiscount: Math.max(0, toNumber(discount)),
+    manualExtraCharge: Math.max(0, toNumber(extraCharge)),
+    manualAdjustmentNote: String(note || "").slice(0, 500),
+  };
+
+  const updated = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
+  return updated ? applyManualAdjustments(updated) : null;
 }
 
 // Revenue that was refunded/cancelled/returned in this period — kept separate

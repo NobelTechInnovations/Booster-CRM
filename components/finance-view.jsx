@@ -772,10 +772,13 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
               <p className="text-sm text-[var(--muted)]">No channel data in this range yet.</p>
             ) : (
               analytics.channelBreakdown.map((channel) => (
-                <div key={channel.channelId} className="flex items-center justify-between rounded-md border border-[var(--line)] px-3 py-2 text-sm">
-                  <div className="flex items-center gap-2">
-                    <Store size={14} className="text-[var(--primary)]" />
-                    <p className="font-semibold">{channel.orders} orders</p>
+                <div key={channel.key || channel.channelId} className="flex items-center justify-between rounded-md border border-[var(--line)] px-3 py-2 text-sm">
+                  <div className="flex items-center gap-2 min-w-0">
+                    <Store size={14} className="shrink-0 text-[var(--primary)]" />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold">{channel.channelName || "Unknown"}</p>
+                      <p className="text-xs text-[var(--muted)]">{channel.orders} orders</p>
+                    </div>
                   </div>
                   <p className="">{formatMoney(channel.revenue, currency)}</p>
                 </div>
@@ -2134,7 +2137,10 @@ export function FinanceView({ defaultTab = "overview" }) {
       setAdsChannel(metaChannel);
 
       if (metaChannel) {
-        const adsSummaryRes = await getAdsSummary(range);
+        // Passing channelId explicitly (not relying on the backend's
+        // "first Meta channel" fallback) so this stays correct if a
+        // company ever has more than one Meta connection.
+        const adsSummaryRes = await getAdsSummary({ ...range, channelId: metaChannel._id || metaChannel.id });
         if (requestIdRef.current !== requestId) return;
         setAdsSummary(adsSummaryRes.summary);
       } else {

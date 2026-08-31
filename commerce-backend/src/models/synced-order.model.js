@@ -41,6 +41,19 @@ const syncedOrderSchema = new mongoose.Schema(
     totalDiscounts:      { type: Number, default: 0 },
     paymentGatewayNames: [String],
 
+    // Manual post-sync adjustments (extra discount given, or an extra
+    // shipping/handling/packaging charge added after the order already
+    // synced from Shopify/Amazon) — deliberately kept SEPARATE from
+    // totalPrice rather than overwriting it: totalPrice stays exactly what
+    // the channel reported so re-syncs never silently wipe an adjustment
+    // (Shopify's own sync re-writes totalPrice from the live order on every
+    // poll/webhook), and every revenue read applies these on top via
+    // applyManualAdjustments() in order.repo.js instead. manualNote records
+    // why, for the order's own audit trail.
+    manualDiscount:      { type: Number, default: 0 },
+    manualExtraCharge:   { type: Number, default: 0 },
+    manualAdjustmentNote: { type: String, default: "" },
+
     // COD detection
     isCOD:     { type: Boolean, default: false },
     codAmount:  { type: Number, default: 0 },

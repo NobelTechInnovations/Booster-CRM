@@ -186,6 +186,13 @@ export async function syncAdInsights({ companyId, channelId, days = 30 }) {
       .map((row) => ({
         companyId,
         channelId,
+        // Tags every row with the account it was actually synced from —
+        // without this, switching the selected ad account and re-syncing
+        // just adds more rows to the same untagged pool, and every read
+        // (summary, insights, attribution) blends every account ever
+        // synced on this channel together instead of showing the one
+        // that's currently selected.
+        adAccountId: channel.external.adAccountId,
         provider: "meta",
         campaignId: row.campaign_id,
         campaignName: row.campaign_name,
@@ -209,7 +216,7 @@ export async function syncAdInsights({ companyId, channelId, days = 30 }) {
       }));
 
     await upsertAdInsights(records);
-    await runAttribution({ companyId, channelId, from: since, to: until });
+    await runAttribution({ companyId, channelId, adAccountId: channel.external.adAccountId, from: since, to: until });
 
     const updatedChannel = await updateChannelSyncState({
       channelId,
@@ -314,9 +321,9 @@ export async function getAdsDemographics({ companyId, channelId, from, to }) {
 
 const MAX_ATTRIBUTION_DAY_DRIFT_MS = 3 * 86400000; // Meta's insight date is ad-account-local; order timestamps are UTC.
 
-export async function runAttribution({ companyId, channelId, from, to }) {
+export async function runAttribution({ companyId, channelId, adAccountId, from, to }) {
   const [insights, { orders }] = await Promise.all([
-    listAdInsights({ companyId, channelId, from, to }),
+    listAdInsights({ companyId, channelId, adAccountId, from, to }),
     getOrdersInRange({ companyId, from, to }),
   ]);
 

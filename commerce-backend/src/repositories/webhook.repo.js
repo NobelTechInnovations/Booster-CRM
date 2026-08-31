@@ -291,8 +291,12 @@ export async function addLeadFollowUp({ companyId, leadId, note, outcome, nextFo
 
     const lead = await WebhookLead.findOneAndUpdate({ _id: leadId, companyId: mixedIdFilter(companyId) }, update, { new: true }).lean();
 
-    // Auto-link to SyncedCustomer when converting a lead
-    if (lead && followUpStatus === "converted" && lead.customerPhone && !lead.linkedCustomerId) {
+    // Auto-link to SyncedCustomer on ANY follow-up update, not just when
+    // marked "converted" — if this lead's phone already matches a real
+    // customer, that link should show up (and the follow-up be visible on
+    // the customer's own page) as soon as we know about the match, not
+    // only once someone happens to set status to converted.
+    if (lead && lead.customerPhone && !lead.linkedCustomerId) {
       const customer = await SyncedCustomer.findOne({
         companyId: mixedIdFilter(companyId),
         phone: lead.customerPhone,
@@ -313,8 +317,9 @@ export async function addLeadFollowUp({ companyId, leadId, note, outcome, nextFo
       if (nextFollowUpAt) lead.nextFollowUpAt = new Date(nextFollowUpAt);
       lead.updatedAt = now();
 
-      // Auto-link in-memory when converting
-      if (followUpStatus === "converted" && lead.customerPhone && !lead.linkedCustomerId) {
+      // Auto-link in-memory on any follow-up update — same reasoning as
+      // the Mongo path above.
+      if (lead.customerPhone && !lead.linkedCustomerId) {
         for (const cust of (memory.syncedCustomers?.values() || [])) {
           if (String(cust.companyId) === String(companyId) && cust.phone === lead.customerPhone) {
             lead.linkedCustomerId = cust._id;

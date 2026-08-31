@@ -15,6 +15,7 @@ import {
   Info,
   MapPin,
   Package,
+  Pencil,
   Phone,
   Printer,
   RefreshCcw,
@@ -30,7 +31,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { listAllOrders, getCompanyProfile } from "@/lib/api";
+import { listAllOrders, getCompanyProfile, updateOrderAdjustments } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -308,12 +309,46 @@ function TimelineStep({ label, sublabel, date, done, tone = "slate" }) {
 
 // ─── Order Detail Modal ───────────────────────────────────────────────────────
 
-function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenerateInvoice }) {
+function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenerateInvoice, onOrderUpdated }) {
+  const [editingAdjustments, setEditingAdjustments] = useState(false);
+  const [discountInput, setDiscountInput] = useState("");
+  const [extraChargeInput, setExtraChargeInput] = useState("");
+  const [noteInput, setNoteInput] = useState("");
+  const [savingAdjustments, setSavingAdjustments] = useState(false);
+  const [adjustmentError, setAdjustmentError] = useState("");
+
   if (!order) return null;
 
   const addr = order.shippingAddress || {};
   const lineItems = order.lineItems || order.line_items || [];
   const hasSiblings = siblingOrders && siblingOrders.length > 0;
+  const hasAdjustment = Number(order.manualDiscount || 0) > 0 || Number(order.manualExtraCharge || 0) > 0;
+
+  function startEditAdjustments() {
+    setDiscountInput(String(order.manualDiscount || ""));
+    setExtraChargeInput(String(order.manualExtraCharge || ""));
+    setNoteInput(order.manualAdjustmentNote || "");
+    setAdjustmentError("");
+    setEditingAdjustments(true);
+  }
+
+  async function saveAdjustments() {
+    setSavingAdjustments(true);
+    setAdjustmentError("");
+    try {
+      const res = await updateOrderAdjustments(order.externalId || order._id || order.id, {
+        discount: Number(discountInput) || 0,
+        extraCharge: Number(extraChargeInput) || 0,
+        note: noteInput,
+      });
+      onOrderUpdated?.(res.order);
+      setEditingAdjustments(false);
+    } catch (err) {
+      setAdjustmentError(err.message);
+    } finally {
+      setSavingAdjustments(false);
+    }
+  }
 
   return (
     <div
@@ -431,6 +466,11 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                 <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">Total</p>
                   <p className="mt-0.5 text-base  text-slate-900">{formatMoney(order.totalPrice)}</p>
+                  {hasAdjustment && (
+                    <p className="mt-0.5 text-[11px] text-slate-400">
+                      Adjusted from {formatMoney(order.originalTotalPrice)}
+                    </p>
+                  )}
                 </div>
                 <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">Payment</p>
@@ -454,6 +494,80 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                   <div className="col-span-2">
                     <p className="text-[11px] font-semibold uppercase text-slate-500">Shipping Provider</p>
                     <p className="mt-0.5 font-medium text-slate-700">{order.shippingProvider} {order.awbCode ? `· AWB: ${order.awbCode}` : ""}</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Manual discount / extra charge — layered on top of the
+                  synced total, never overwrites it (see applyManualAdjustments
+                  in order.repo.js), so it survives future re-syncs. */}
+              <div className="mt-3 border-t border-[var(--line)] pt-3">
+                {!editingAdjustments ? (
+                  <div className="flex items-center justify-between">
+                    <div className="text-xs text-slate-500">
+                      {hasAdjustment ? (
+                        <span>
+                          {Number(order.manualDiscount || 0) > 0 && <>↘ {formatMoney(order.manualDiscount)} discount </>}
+                          {Number(order.manualExtraCharge || 0) > 0 && <>↗ {formatMoney(order.manualExtraCharge)} extra charge</>}
+                        </span>
+                      ) : (
+                        <span>No manual discount or extra charge applied.</span>
+                      )}
+                    </div>
+                    <button
+                      onClick={startEditAdjustments}
+                      className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
+                    >
+                      <Pencil size={12} />
+                      {hasAdjustment ? "Edit" : "Add discount / charge"}
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase text-slate-500">Discount (₹)</span>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={discountInput}
+                          onChange={(e) => setDiscountInput(e.target.value)}
+                          className="mt-1 h-9 w-full rounded-md border border-[var(--line)] px-2.5 text-sm outline-none focus:border-indigo-500"
+                          placeholder="0"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase text-slate-500">Extra Charge (₹)</span>
+                        <input
+                          type="number" min="0" step="0.01"
+                          value={extraChargeInput}
+                          onChange={(e) => setExtraChargeInput(e.target.value)}
+                          className="mt-1 h-9 w-full rounded-md border border-[var(--line)] px-2.5 text-sm outline-none focus:border-indigo-500"
+                          placeholder="0"
+                        />
+                      </label>
+                    </div>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold uppercase text-slate-500">Note (optional)</span>
+                      <input
+                        type="text"
+                        value={noteInput}
+                        onChange={(e) => setNoteInput(e.target.value)}
+                        className="mt-1 h-9 w-full rounded-md border border-[var(--line)] px-2.5 text-sm outline-none focus:border-indigo-500"
+                        placeholder="e.g. loyalty discount, packaging charge"
+                      />
+                    </label>
+                    {adjustmentError && <p className="text-xs font-medium text-rose-600">{adjustmentError}</p>}
+                    <div className="flex gap-2">
+                      <Button onClick={saveAdjustments} disabled={savingAdjustments} className="h-8 px-3 text-xs">
+                        {savingAdjustments ? "Saving…" : "Save"}
+                      </Button>
+                      <button
+                        onClick={() => setEditingAdjustments(false)}
+                        className="rounded-md px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
@@ -972,6 +1086,10 @@ export function OrdersView() {
           onClose={() => setSelectedOrder(null)}
           onOpenOrder={(o) => setSelectedOrder(o)}
           onGenerateInvoice={(o) => setInvoiceOrder(o)}
+          onOrderUpdated={(updated) => {
+            setSelectedOrder(updated);
+            setOrders((prev) => prev.map((o) => ((o._id || o.id) === (updated._id || updated.id) ? { ...o, ...updated } : o)));
+          }}
         />
       )}
 

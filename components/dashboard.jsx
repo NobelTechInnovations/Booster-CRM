@@ -2626,8 +2626,24 @@ export function DashboardView() {
   const inventoryItems = dashboardData?.inventory || [];
   const hasData = !!dashboardData?.kpis?.length;
 
+  const activeCompanyName = session?.company?.name || "Your Workspace";
+
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
+
+      {/* Which brand/company is live on this dashboard — the topbar brand
+          switcher shows this too, but small and easy to miss; this makes it
+          unambiguous which workspace's numbers are on screen. */}
+      <div className="mb-4 flex items-center gap-2">
+        <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px] font-bold text-white">
+          {activeCompanyName[0]?.toUpperCase() || "W"}
+        </div>
+        <h1 className="text-[17px] font-bold tracking-tight text-slate-900">{activeCompanyName}</h1>
+        <span className="ml-1 inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10.5px] font-semibold text-emerald-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          Live
+        </span>
+      </div>
 
       {/* Business metric strip — plain command-bar row, no card */}
       <BusinessMetricStrip kpis={kpiItems} channels={connectedChannels || []} />

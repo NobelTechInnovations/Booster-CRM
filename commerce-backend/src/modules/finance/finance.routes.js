@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost } from "../../repositories/order.repo.js";
+import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost, updateOrderManualAdjustments } from "../../repositories/order.repo.js";
 import {
   createExpense,
   createPurchase,
@@ -98,6 +98,22 @@ financeRoutes.patch(
     if (!result) throw new HttpError(404, "Order not found");
     if (result.error) throw new HttpError(400, result.error);
     res.json({ message: "Shipping cost updated", order: result });
+  }),
+);
+
+financeRoutes.patch(
+  "/orders/:orderId/adjustments",
+  requirePermission("finance:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await updateOrderManualAdjustments({
+      companyId: req.auth.companyId,
+      orderId: req.params.orderId,
+      discount: req.body?.discount,
+      extraCharge: req.body?.extraCharge,
+      note: req.body?.note,
+    });
+    if (!result) throw new HttpError(404, "Order not found");
+    res.json({ message: "Order adjustments updated", order: result });
   }),
 );
 

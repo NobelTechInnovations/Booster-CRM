@@ -3,7 +3,7 @@ import { env } from "../../config/env.js";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { listAdsChannels } from "../../repositories/channel.repo.js";
+import { listAdsChannels, getChannelForSync } from "../../repositories/channel.repo.js";
 import { getAdsSummary, linkAdProduct, listAdInsights } from "../../repositories/ad-insight.repo.js";
 import {
   buildMetaAuthorizeUrl,
@@ -141,9 +141,15 @@ adsRoutes.post(
   requireAuth,
   requirePermission("ads:manage"),
   asyncHandler(async (req, res) => {
+    const channel = await getChannelForSync({ channelId: req.params.channelId, companyId: req.auth.companyId });
     const result = await runAttribution({
       companyId: req.auth.companyId,
       channelId: req.params.channelId,
+      // Scope to whichever ad account is currently selected — otherwise
+      // this recomputes attribution across every account ever synced on
+      // this channel, mixing accounts together the same way the summary
+      // used to.
+      adAccountId: channel?.external?.adAccountId,
       from: req.body?.from,
       to: req.body?.to,
     });
@@ -153,16 +159,31 @@ adsRoutes.post(
 
 // ─── Insights ────────────────────────────────────────────────────────────────
 
+// Resolves which ad account to scope insights/summary reads to: the caller
+// can pass channelId explicitly (query param), otherwise this falls back to
+// the company's first connected Meta channel — either way, the returned
+// adAccountId is whatever's CURRENTLY selected on that channel, so a read
+// right after switching accounts reflects the new account, not a blend of
+// every account ever synced there.
+async function resolveAdAccountScope({ companyId, channelId }) {
+  const channel = channelId
+    ? await getChannelForSync({ channelId, companyId })
+    : (await listAdsChannels(companyId))[0];
+  return { channelId: channel?._id, adAccountId: channel?.external?.adAccountId };
+}
+
 adsRoutes.get(
   "/insights",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const scope = await resolveAdAccountScope({ companyId: req.auth.companyId, channelId: req.query.channelId });
     const insights = await listAdInsights({
       companyId: req.auth.companyId,
       from: req.query.from,
       to: req.query.to,
       campaignId: req.query.campaignId,
-      channelId: req.query.channelId,
+      channelId: scope.channelId,
+      adAccountId: scope.adAccountId,
     });
     res.json({ insights });
   }),
@@ -172,10 +193,13 @@ adsRoutes.get(
   "/summary",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const scope = await resolveAdAccountScope({ companyId: req.auth.companyId, channelId: req.query.channelId });
     const summary = await getAdsSummary({
       companyId: req.auth.companyId,
       from: req.query.from,
       to: req.query.to,
+      channelId: scope.channelId,
+      adAccountId: scope.adAccountId,
     });
     res.json({ summary });
   }),

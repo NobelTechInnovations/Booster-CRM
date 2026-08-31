@@ -4,6 +4,15 @@ const adInsightSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
     channelId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    // A single Meta channel can have its *selected* ad account switched at
+    // any time (Settings → Ads → account picker) — channelId alone doesn't
+    // change when that happens, so rows from every account ever synced on
+    // this channel used to land in the same pool with no way to tell them
+    // apart. Every read (summary, insights list, attribution) now filters
+    // by this alongside channelId, so switching accounts shows that
+    // account's own numbers instead of a blend of whichever accounts were
+    // ever synced.
+    adAccountId: { type: String, index: true },
     provider: { type: String, default: "meta", index: true },
 
     campaignId: { type: String, index: true },
@@ -43,5 +52,6 @@ const adInsightSchema = new mongoose.Schema(
 adInsightSchema.index({ companyId: 1, channelId: 1, adId: 1, date: 1 }, { unique: true });
 adInsightSchema.index({ companyId: 1, date: -1 });
 adInsightSchema.index({ companyId: 1, campaignId: 1 });
+adInsightSchema.index({ companyId: 1, channelId: 1, adAccountId: 1, date: -1 });
 
 export const AdInsight = mongoose.model("AdInsight", adInsightSchema);
