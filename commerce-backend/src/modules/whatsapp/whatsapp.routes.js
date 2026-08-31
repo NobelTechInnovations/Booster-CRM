@@ -96,6 +96,35 @@ whatsappRoutes.get(
   }),
 );
 
+// Start a brand-new conversation with a phone number that has never messaged
+// in (no existing WhatsAppConversation row to look up an id from) — the
+// "/conversations/:id/messages" route below requires one to already exist,
+// which is exactly the gap this closes: sending the *first* outbound
+// message to a customer. sendWhatsAppMessage's upsertConversation call
+// already creates the conversation row on demand, so this is otherwise
+// identical to a reply, just keyed by phone number instead of conversation id.
+whatsappRoutes.post(
+  "/conversations/start",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const to = String(req.body?.to || "").trim();
+    if (!to) throw new HttpError(400, "Recipient phone number is required");
+
+    const [channel] = await listWhatsAppChannels(req.auth.companyId);
+    if (!channel) throw new HttpError(400, "Connect a WhatsApp number first");
+
+    const result = await sendWhatsAppMessage({
+      companyId: req.auth.companyId,
+      channelId: channel._id || channel.id,
+      to,
+      text: req.body?.text,
+      sentByUserName: req.auth.displayName || req.auth.email || "",
+    });
+    res.json(result);
+  }),
+);
+
 whatsappRoutes.get(
   "/conversations/:id/messages",
   requireAuth,

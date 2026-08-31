@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock } from "lucide-react";
+import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import {
   listWhatsAppConversations,
   getWhatsAppMessages,
   sendWhatsAppMessage,
+  startWhatsAppConversation,
 } from "@/lib/api";
 
 function fmt(date) {
@@ -91,6 +92,67 @@ function WhatsAppConnectForm({ onConnected }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// ─── New chat (start a conversation with a number that has no thread yet) ───
+// WhatsApp's Cloud API only allows a free-text message when the customer
+// messaged in within the last 24 hours — a genuinely first-ever contact to
+// a number that has never messaged in will be rejected by Meta unless sent
+// as an approved message template, which this app doesn't build yet. The
+// note below sets that expectation up front rather than letting the error
+// surface as a confusing failure.
+function NewChatForm({ onStarted, onCancel }) {
+  const [to, setTo] = useState("");
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState("");
+
+  async function send(e) {
+    e.preventDefault();
+    if (!to.trim() || !text.trim()) return;
+    setSending(true);
+    setError("");
+    try {
+      const res = await startWhatsAppConversation(to.trim(), text.trim());
+      onStarted(res.conversation);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <form onSubmit={send} className="space-y-2.5 border-b border-[var(--line)] bg-slate-50/60 p-3">
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">New chat</p>
+        <button type="button" onClick={onCancel} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600">
+          <X size={14} />
+        </button>
+      </div>
+      <input
+        value={to}
+        onChange={(e) => setTo(e.target.value)}
+        placeholder="Phone number, e.g. 919876543210"
+        className="h-9 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-xs outline-none focus:border-indigo-500"
+      />
+      <textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="First message…"
+        rows={2}
+        className="w-full resize-none rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
+      />
+      {error ? <p className="text-xs font-medium text-rose-700">{error}</p> : null}
+      <p className="text-[10px] leading-4 text-slate-400">
+        Only works if this number has messaged your WhatsApp before, or within the last 24 hours — Meta blocks
+        cold outreach without an approved message template.
+      </p>
+      <Button type="submit" disabled={sending || !to.trim() || !text.trim()} className="h-8 w-full text-xs">
+        {sending ? "Sending…" : "Start chat"}
+      </Button>
+    </form>
   );
 }
 
@@ -208,6 +270,7 @@ export function WhatsAppView() {
   const [conversations, setConversations] = useState([]);
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [selected, setSelected] = useState(null);
+  const [showNewChat, setShowNewChat] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -231,6 +294,12 @@ export function WhatsAppView() {
 
   useEffect(() => { if (channel) loadConversations(); }, [channel]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  function handleStarted(conversation) {
+    setShowNewChat(false);
+    setSelected(conversation);
+    loadConversations();
+  }
+
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -242,10 +311,16 @@ export function WhatsAppView() {
           </p>
         </div>
         {channel ? (
-          <Button variant="secondary" onClick={loadConversations} disabled={loadingConversations} className="h-9 text-xs">
-            <RefreshCw size={13} className={loadingConversations ? "animate-spin" : ""} />
-            Refresh
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button onClick={() => setShowNewChat(true)} className="h-9 text-xs">
+              <Plus size={13} />
+              New chat
+            </Button>
+            <Button variant="secondary" onClick={loadConversations} disabled={loadingConversations} className="h-9 text-xs">
+              <RefreshCw size={13} className={loadingConversations ? "animate-spin" : ""} />
+              Refresh
+            </Button>
+          </div>
         ) : null}
       </section>
 
@@ -261,6 +336,7 @@ export function WhatsAppView() {
               <div className="border-b border-[var(--line)] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Conversations</p>
               </div>
+              {showNewChat ? <NewChatForm onStarted={handleStarted} onCancel={() => setShowNewChat(false)} /> : null}
               <div className="flex-1 overflow-y-auto">
                 {loadingConversations ? (
                   <div className="p-4"><ListRowsSkeleton rows={5} /></div>
