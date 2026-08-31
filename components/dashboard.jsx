@@ -2458,7 +2458,7 @@ function BusinessMetricStrip({ kpis = [], channels = [] }) {
   }
 
   return (
-    <div className="mb-9 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--line)] p-4 bg-white">
+    <div className="mb-9 flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-[var(--line)] p-4 bg-[#f5f5f5]">
       <span className="flex shrink-0 items-center gap-1.5 text-[11px]  uppercase tracking-widest text-indigo-600">
         <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
         Live
@@ -2516,7 +2516,7 @@ function MorningBrief({ dashboardData, companyName }) {
   ].filter(Boolean);
 
   return (
-    <div className="mb-10 flex items-start justify-between gap-4 bg-white p-4 rounded-xl">
+    <div className="mb-10 flex items-start justify-between gap-4 bg-[#f5f5f5] p-4 rounded-xl">
       <div className="flex items-start gap-3">
         <span className="mt-0.5 text-xl leading-none">{greetingEmoji}</span>
         <div>
