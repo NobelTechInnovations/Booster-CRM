@@ -452,7 +452,41 @@ function FixPermissionsButton() {
 
 // ─── Main view ───────────────────────────────────────────────────────────────
 
+// Measures exactly how much viewport height is left below this element's
+// own top edge, and keeps it updated — instead of guessing the surrounding
+// chrome's height (topbar/sub-nav/banners) as a hardcoded pixel value,
+// which silently breaks the moment that chrome's height changes (a longer
+// banner, a different zoom level, a narrower/mobile viewport, browser
+// devtools open, etc.) and lets the whole page scroll instead of just the
+// chat pane inside it.
+function useAvailableHeight(deps) {
+  const ref = useRef(null);
+  const [height, setHeight] = useState(null);
+
+  useEffect(() => {
+    function measure() {
+      if (!ref.current) return;
+      setHeight(window.innerHeight - ref.current.getBoundingClientRect().top);
+    }
+    measure();
+    window.addEventListener("resize", measure);
+    // Catches anything above this element changing height (a banner
+    // appearing/disappearing, content reflow) without needing every such
+    // change threaded through as an explicit dependency.
+    const observer = new ResizeObserver(measure);
+    observer.observe(document.body);
+    return () => {
+      window.removeEventListener("resize", measure);
+      observer.disconnect();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, deps);
+
+  return { ref, height };
+}
+
 export function WhatsAppView() {
+  const { ref: pageRef, height: pageHeight } = useAvailableHeight([]);
   const [channel, setChannel] = useState(null);
   const [loadingChannel, setLoadingChannel] = useState(true);
   const [conversations, setConversations] = useState([]);
@@ -573,7 +607,11 @@ export function WhatsAppView() {
   }
 
   return (
-    <div className="mx-auto flex h-[calc(100vh-95px)] max-w-[1920px] flex-col overflow-hidden px-4 py-4 lg:px-8">
+    <div
+      ref={pageRef}
+      className="mx-auto flex max-w-[1920px] flex-col overflow-hidden px-4 py-4 lg:px-8"
+      style={{ height: pageHeight ? `${pageHeight}px` : "100vh" }}
+    >
       <section className="mb-4 shrink-0 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="teal">WhatsApp Business</Badge>

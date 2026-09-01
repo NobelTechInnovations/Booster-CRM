@@ -11,6 +11,7 @@ import {
   Copy,
   CreditCard,
   KeyRound,
+  MessageCircle,
   Package,
   Percent,
   PhoneCall,
@@ -32,6 +33,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatMoney } from "@/lib/utils";
+import { SendWhatsAppModal } from "@/components/send-whatsapp-modal";
 import {
   getCompanyProfile,
   updateTaxSettings,
@@ -449,7 +451,7 @@ function LogFollowUpModal({ lead, onClose, onLogged }) {
 // Right-side drawer — full event timeline for one lead, replacing the old
 // under-row inline JSON expansion for readability (a cart with 5+ stage
 // events made the table nearly unreadable inline).
-function LeadDrawer({ lead, onClose, onLogFollowUp }) {
+function LeadDrawer({ lead, onClose, onLogFollowUp, onWhatsApp }) {
   const [events, setEvents] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [expandedId, setExpandedId] = useState(null);
@@ -486,8 +488,14 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
           <button onClick={onClose} className="grid h-8 w-8 shrink-0 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
 
-        <div className="border-b border-[var(--line)] px-4 py-3">
-          <Button className="w-full h-9" onClick={() => onLogFollowUp(lead)}>
+        <div className="flex gap-2 border-b border-[var(--line)] px-4 py-3">
+          {lead.customerPhone ? (
+            <Button variant="secondary" className="h-9 flex-1" onClick={() => onWhatsApp(lead)}>
+              <MessageCircle size={14} />
+              Send WhatsApp
+            </Button>
+          ) : null}
+          <Button className="h-9 flex-1" onClick={() => onLogFollowUp(lead)}>
             <PhoneCall size={14} />
             Log follow-up
           </Button>
@@ -554,7 +562,7 @@ function LeadDrawer({ lead, onClose, onLogFollowUp }) {
   );
 }
 
-function LeadRow({ lead, duplicateCount, onView, onFollowUp }) {
+function LeadRow({ lead, duplicateCount, onView, onFollowUp, onWhatsApp }) {
   const hasGeo = lead.geoResolvedAt && (lead.geoCity || lead.geoRegion);
   const geoPending = !lead.geoResolvedAt && lead.ipAddress;
   const isUnseen = !lead.seenAt;
@@ -622,9 +630,16 @@ function LeadRow({ lead, duplicateCount, onView, onFollowUp }) {
         ) : null}
       </td>
       <td className="py-2.5 pr-0 text-right" onClick={(e) => e.stopPropagation()}>
-        <button onClick={() => onFollowUp(lead)} className="rounded-md p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700" title="Log follow-up">
-          <PhoneCall size={15} />
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          {lead.customerPhone ? (
+            <button onClick={() => onWhatsApp(lead)} className="rounded-md p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700" title="Send WhatsApp">
+              <MessageCircle size={15} />
+            </button>
+          ) : null}
+          <button onClick={() => onFollowUp(lead)} className="rounded-md p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700" title="Log follow-up">
+            <PhoneCall size={15} />
+          </button>
+        </div>
       </td>
     </tr>
   );
@@ -664,6 +679,7 @@ function WebhooksTab() {
   const [filterEndpoint, setFilterEndpoint] = useState("");
   const [viewingLead, setViewingLead] = useState(null);
   const [followUpLead, setFollowUpLead] = useState(null);
+  const [whatsappLead, setWhatsappLead] = useState(null);
   const [sortKey, setSortKey] = useState("lastEventAt:desc");
   // No phone captured on the cart/order event (e.g. a Fastrr cart still at
   // latest_stage:"INIT" before checkout) means there's no number to actually
@@ -890,6 +906,7 @@ function WebhooksTab() {
                     duplicateCount={lead.customerPhone ? (phoneCount.get(lead.customerPhone) || 1) : 1}
                     onView={handleViewLead}
                     onFollowUp={setFollowUpLead}
+                    onWhatsApp={setWhatsappLead}
                   />
                 ))}
               </tbody>
@@ -898,9 +915,17 @@ function WebhooksTab() {
         </CardContent>
       </Card>
 
+      {whatsappLead ? (
+        <SendWhatsAppModal
+          phone={whatsappLead.customerPhone}
+          name={whatsappLead.customerName}
+          onClose={() => setWhatsappLead(null)}
+        />
+      ) : null}
+
       {showAdd ? <AddEndpointModal onClose={() => setShowAdd(false)} onCreated={refresh} /> : null}
       {viewingLead ? (
-        <LeadDrawer lead={viewingLead} onClose={() => setViewingLead(null)} onLogFollowUp={setFollowUpLead} />
+        <LeadDrawer lead={viewingLead} onClose={() => setViewingLead(null)} onLogFollowUp={setFollowUpLead} onWhatsApp={setWhatsappLead} />
       ) : null}
       {followUpLead ? (
         <LogFollowUpModal lead={followUpLead} onClose={() => setFollowUpLead(null)} onLogged={handleLeadUpdated} />
