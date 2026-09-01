@@ -33,7 +33,7 @@ export async function listChannels(companyId, { channelType } = {}) {
 export async function getChannelForSync({ channelId, companyId }) {
   if (isMongoConnected()) {
     return Channel.findOne({ _id: channelId, companyId })
-      .select("+credentials.accessToken +credentials.refreshToken +credentials.token +credentials.tokenExpiresAt +credentials.username +credentials.password +credentials.apiKey +credentials.apiSecret")
+      .select("+credentials.accessToken +credentials.pageAccessToken +credentials.refreshToken +credentials.token +credentials.tokenExpiresAt +credentials.username +credentials.password +credentials.apiKey +credentials.apiSecret")
       .lean();
   }
   const channel = memory.channels.get(channelId);
@@ -460,7 +460,14 @@ export async function listSocialChannels(companyId) {
   return listChannels(companyId, { channelType: "social" });
 }
 
-export async function upsertSocialChannel({ companyId, userId, accessToken, longLivedTokenExpiresAt, pageId, pageName, igUserId, igUsername }) {
+// pageAccessToken is distinct from the user-level accessToken exchanged from
+// the OAuth code — Meta's "new Pages experience" rejects Page/Instagram
+// media, insights, comments, and reply calls made with a user token
+// (error_subcode 2069032, "A Page access token is required for this call").
+// findFirstPageWithInstagram already gets this token per-Page from
+// /me/accounts; it's stored here so social.service.js's Graph calls can use
+// the right one instead of the user token.
+export async function upsertSocialChannel({ companyId, userId, accessToken, pageAccessToken, longLivedTokenExpiresAt, pageId, pageName, igUserId, igUsername }) {
   const shop = "meta-social";
   const name = pageName ? `Instagram/Facebook · ${pageName}` : "Instagram/Facebook";
 
@@ -480,7 +487,7 @@ export async function upsertSocialChannel({ companyId, userId, accessToken, long
             "pages_manage_metadata", "instagram_basic", "instagram_manage_comments",
             "instagram_manage_insights", "business_management",
           ],
-          credentials: { accessToken, longLivedTokenExpiresAt },
+          credentials: { accessToken, pageAccessToken, longLivedTokenExpiresAt },
           external: { pageId, pageName, igUserId, igUsername },
           connectedBy: userId,
           disconnectedAt: null,
@@ -507,7 +514,7 @@ export async function upsertSocialChannel({ companyId, userId, accessToken, long
       "pages_manage_metadata", "instagram_basic", "instagram_manage_comments",
       "instagram_manage_insights", "business_management",
     ],
-    credentials: { accessToken, longLivedTokenExpiresAt },
+    credentials: { accessToken, pageAccessToken, longLivedTokenExpiresAt },
     external: { pageId, pageName, igUserId, igUsername },
     sync: existing?.sync || { orders: "idle" },
     connectedBy: userId,

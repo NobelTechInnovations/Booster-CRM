@@ -47,6 +47,12 @@ const channelSchema = new mongoose.Schema(
 
     credentials: {
       accessToken:    { type: String, select: false },
+      // Page-scoped token from /me/accounts, distinct from the user-level
+      // accessToken above — Meta's "new Pages experience" rejects Page and
+      // Instagram media/insights/comments/reply calls made with a user
+      // token (error_subcode 2069032), so social.service.js's Graph calls
+      // use this one instead. Only ever set on the "social" channel type.
+      pageAccessToken: { type: String, select: false },
       refreshToken:   { type: String, select: false },
       username:       { type: String, select: false },
       password:       { type: String, select: false },

@@ -88,25 +88,32 @@ async function exchangeForLongLivedToken(shortLivedToken) {
 // if a business has multiple Pages, this picks the first one that DOES have
 // an IG account linked, since that's almost always the one actually in use
 // for their storefront/marketing.
+// /me/accounts returns a page-scoped access_token per Page alongside its
+// id/name — that Page token (not the user token findFirstPageWithInstagram
+// is called with) is what Meta's Graph API actually requires for Page and
+// Instagram media/insights/comments/reply calls under the "new Pages
+// experience" (a user token gets error_subcode 2069032, "A Page access
+// token is required for this call"). It's carried through in the return
+// value so completeSocialConnection can save it on the channel.
 async function findFirstPageWithInstagram(accessToken) {
   const pagesParams = new URLSearchParams({ fields: "id,name,access_token", access_token: accessToken });
   const pages = await graphFetchAll(`${GRAPH_BASE()}/me/accounts?${pagesParams.toString()}`, { maxRows: 50 });
 
   for (const page of pages) {
-    const igParams = new URLSearchParams({ fields: "instagram_business_account", access_token: accessToken });
+    const igParams = new URLSearchParams({ fields: "instagram_business_account", access_token: page.access_token });
     const igLookup = await graphFetch(`${GRAPH_BASE()}/${page.id}?${igParams.toString()}`).catch(() => ({}));
     const igUserId = igLookup?.instagram_business_account?.id;
     if (igUserId) {
-      const igDetailsParams = new URLSearchParams({ fields: "username", access_token: accessToken });
+      const igDetailsParams = new URLSearchParams({ fields: "username", access_token: page.access_token });
       const igDetails = await graphFetch(`${GRAPH_BASE()}/${igUserId}?${igDetailsParams.toString()}`).catch(() => ({}));
-      return { pageId: page.id, pageName: page.name, igUserId, igUsername: igDetails?.username || "" };
+      return { pageId: page.id, pageName: page.name, pageAccessToken: page.access_token, igUserId, igUsername: igDetails?.username || "" };
     }
   }
 
   // Still connect the first Page even with no IG account, so Facebook Page
   // post sync/reply works — Instagram-specific calls just won't have
   // anything to sync against until the user links an IG Business account.
-  return pages[0] ? { pageId: pages[0].id, pageName: pages[0].name, igUserId: "", igUsername: "" } : {};
+  return pages[0] ? { pageId: pages[0].id, pageName: pages[0].name, pageAccessToken: pages[0].access_token, igUserId: "", igUsername: "" } : {};
 }
 
 export async function completeSocialConnection(query) {
@@ -125,13 +132,13 @@ export async function completeSocialConnection(query) {
   const expiresIn = Number(longLived.expires_in || shortLived.expires_in || 0);
   const longLivedTokenExpiresAt = expiresIn ? new Date(Date.now() + expiresIn * 1000) : undefined;
 
-  const { pageId, pageName, igUserId, igUsername } = await findFirstPageWithInstagram(accessToken).catch(() => ({}));
+  const { pageId, pageName, pageAccessToken, igUserId, igUsername } = await findFirstPageWithInstagram(accessToken).catch(() => ({}));
   if (!pageId) {
     throw new HttpError(400, "No Facebook Page found on this account. Connect an account that manages at least one Facebook Page.");
   }
 
   const channel = await upsertSocialChannel({
-    companyId, userId, accessToken, longLivedTokenExpiresAt, pageId, pageName, igUserId, igUsername,
+    companyId, userId, accessToken, pageAccessToken, longLivedTokenExpiresAt, pageId, pageName, igUserId, igUsername,
   });
 
   return { channel };
@@ -155,7 +162,8 @@ async function fetchPostInsights(mediaId, accessToken, metrics) {
 
 async function syncInstagramPosts({ companyId, channelId, channel }) {
   if (!channel.external?.igUserId) return [];
-  const accessToken = channel.credentials.accessToken;
+  // Page token, not the user token — see the comment on findFirstPageWithInstagram.
+  const accessToken = channel.credentials.pageAccessToken || channel.credentials.accessToken;
 
   const params = new URLSearchParams({
     fields: "id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count",
@@ -200,7 +208,7 @@ async function syncInstagramPosts({ companyId, channelId, channel }) {
 }
 
 async function syncFacebookPosts({ companyId, channelId, channel }) {
-  const accessToken = channel.credentials.accessToken;
+  const accessToken = channel.credentials.pageAccessToken || channel.credentials.accessToken;
   const params = new URLSearchParams({
     fields: "id,message,full_picture,permalink_url,created_time,shares",
     limit: "25",
@@ -281,7 +289,7 @@ export async function syncCommentsForPost({ companyId, channelId, postId }) {
   const params = new URLSearchParams({
     fields: "id,text,username,timestamp,parent_id",
     limit: "50",
-    access_token: channel.credentials.accessToken,
+    access_token: channel.credentials.pageAccessToken || channel.credentials.accessToken,
   });
   const commentField = post.platform === "instagram" ? "comments" : "comments";
   const rows = await graphFetchAll(`${GRAPH_BASE()}/${post.externalPostId}/${commentField}?${params.toString()}`, { maxRows: 200 });
@@ -313,12 +321,13 @@ export async function replyToComment({ companyId, channelId, postId, commentId, 
   if (!channel) throw new HttpError(404, "Social channel not found");
   if (!message?.trim()) throw new HttpError(400, "Reply message is required");
 
-  const params = new URLSearchParams({ message, access_token: channel.credentials.accessToken });
+  const pageAccessToken = channel.credentials.pageAccessToken || channel.credentials.accessToken;
+  const params = new URLSearchParams({ message, access_token: pageAccessToken });
   const body = await graphFetch(`${GRAPH_BASE()}/${commentId}/replies?${params.toString()}`, { method: "POST" }).catch(() => {
     // Facebook Page comments use POST /{comment-id}/comments instead of
     // /replies (Instagram-specific endpoint) — retry the Facebook shape
     // before giving up.
-    const fbParams = new URLSearchParams({ message, access_token: channel.credentials.accessToken });
+    const fbParams = new URLSearchParams({ message, access_token: pageAccessToken });
     return graphFetch(`${GRAPH_BASE()}/${commentId}/comments?${fbParams.toString()}`, { method: "POST" });
   });
 
