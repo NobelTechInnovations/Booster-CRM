@@ -501,8 +501,9 @@ export async function upsertSocialChannel({ companyId, userId, accessToken, page
           status: "connected",
           scopes: [
             "pages_show_list", "pages_read_engagement", "pages_manage_engagement",
-            "pages_manage_metadata", "instagram_basic", "instagram_manage_comments",
-            "instagram_manage_insights", "business_management",
+            "pages_manage_posts", "pages_manage_metadata", "instagram_basic",
+            "instagram_manage_comments", "instagram_manage_insights",
+            "instagram_content_publish", "business_management",
           ],
           credentials: { accessToken, pageAccessToken, longLivedTokenExpiresAt },
           external: { pageId, pageName, igUserId, igUsername },
@@ -528,8 +529,9 @@ export async function upsertSocialChannel({ companyId, userId, accessToken, page
     status: "connected",
     scopes: [
       "pages_show_list", "pages_read_engagement", "pages_manage_engagement",
-      "pages_manage_metadata", "instagram_basic", "instagram_manage_comments",
-      "instagram_manage_insights", "business_management",
+      "pages_manage_posts", "pages_manage_metadata", "instagram_basic",
+      "instagram_manage_comments", "instagram_manage_insights",
+      "instagram_content_publish", "business_management",
     ],
     credentials: { accessToken, pageAccessToken, longLivedTokenExpiresAt },
     external: { pageId, pageName, igUserId, igUsername },

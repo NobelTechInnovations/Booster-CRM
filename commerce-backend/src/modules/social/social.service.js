@@ -19,10 +19,18 @@ const SOCIAL_SCOPES = [
   "pages_show_list",
   "pages_read_engagement",
   "pages_manage_engagement",
+  // Publishing a new Page post (not just replying to an existing comment,
+  // which pages_manage_engagement alone covers) needs pages_manage_posts —
+  // Meta returns (#200) "requires both pages_read_engagement and
+  // pages_manage_posts" without it, discovered when Create Post shipped.
+  "pages_manage_posts",
   "pages_manage_metadata",
   "instagram_basic",
   "instagram_manage_comments",
   "instagram_manage_insights",
+  // Publishing to Instagram (media container + media_publish) needs this
+  // separately from instagram_basic, which only covers read access.
+  "instagram_content_publish",
   "business_management",
 ].join(",");
 
