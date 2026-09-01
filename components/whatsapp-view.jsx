@@ -670,6 +670,7 @@ export function WhatsAppView() {
         <div className="mb-4 shrink-0 rounded-lg border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
       ) : null}
 
+      {pendingChoice || loadingChannel || !channel || showChangeNumber ? (
       <div className="min-h-0 flex-1 overflow-y-auto">
       {pendingChoice ? (
         <Card>
@@ -710,10 +711,20 @@ export function WhatsAppView() {
         <Card><CardContent><ListRowsSkeleton rows={3} /></CardContent></Card>
       ) : !channel ? (
         <WhatsAppConnectForm onConnected={setChannel} />
-      ) : showChangeNumber ? (
-        <WhatsAppConnectForm onConnected={handleChanged} />
       ) : (
-        <div className="flex h-full flex-col">
+        <WhatsAppConnectForm onConnected={handleChanged} />
+      )}
+      </div>
+      ) : (
+        // Deliberately NOT nested inside the overflow-y-auto wrapper above —
+        // that extra scrollable layer was the actual bug: with it, a long
+        // message list's own auto-scroll-to-latest (see MessageThread's
+        // bottomRef) would scroll *this* outer wrapper instead of (or as
+        // well as) the message list's own inner scroll area, dragging the
+        // connection-details strip, banner, and conversation list out of
+        // view along with it. Now there's exactly one scrollable thing in
+        // this state: the message list itself.
+        <div className="flex min-h-0 flex-1 flex-col">
           <Card className="mb-4 shrink-0">
             <CardContent className="grid grid-cols-1 gap-x-6 gap-y-2 py-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
@@ -811,7 +822,6 @@ export function WhatsAppView() {
           </Card>
         </div>
       )}
-      </div>
     </div>
   );
 }
