@@ -10,6 +10,7 @@ import {
   syncSocialPosts,
   syncCommentsForPost,
   replyToComment,
+  createSocialPost,
 } from "./social.service.js";
 import { env } from "../../config/env.js";
 
@@ -88,6 +89,22 @@ socialRoutes.get(
       channelId: req.params.channelId,
       page: Number(req.query.page) || 1,
       limit: Number(req.query.limit) || 25,
+    });
+    res.json(result);
+  }),
+);
+
+socialRoutes.post(
+  "/:channelId/posts",
+  requireAuth,
+  requirePermission("social:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await createSocialPost({
+      companyId: req.auth.companyId,
+      channelId: req.params.channelId,
+      platforms: req.body?.platforms,
+      caption: req.body?.caption,
+      mediaUrl: req.body?.mediaUrl,
     });
     res.json(result);
   }),

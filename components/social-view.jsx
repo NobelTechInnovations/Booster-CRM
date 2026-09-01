@@ -12,6 +12,9 @@ import {
   ChevronDown,
   ChevronUp,
   Unlink,
+  Play,
+  ImagePlus,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -25,6 +28,7 @@ import {
   listPostComments,
   replyToSocialComment,
   disconnectSocialChannel,
+  createSocialPost,
 } from "@/lib/api";
 
 function fmt(date) {
@@ -80,7 +84,12 @@ function CommentThread({ post, channelId }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [replyText, setReplyText] = useState("");
-  const [replyTargetId, setReplyTargetId] = useState(post._id); // reply to the post's top-level comment by default
+  // Default target is the post's Meta id (externalPostId), not the local
+  // Mongo _id — replyToComment posts straight to Meta's Graph API, which
+  // has no idea what a Mongo ObjectId is. Using post._id here silently
+  // 400'd on every "reply to this post" send that hadn't first clicked a
+  // specific comment to target instead.
+  const [replyTargetId, setReplyTargetId] = useState(post.externalPostId);
   const [sending, setSending] = useState(false);
 
   useEffect(() => {
@@ -143,7 +152,7 @@ function CommentThread({ post, channelId }) {
           value={replyText}
           onChange={(e) => setReplyText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendReply()}
-          placeholder={replyTargetId === post._id ? "Reply to this post…" : "Reply to selected comment…"}
+          placeholder={replyTargetId === post.externalPostId ? "Reply to this post…" : "Reply to selected comment…"}
           className="h-9 flex-1 rounded-lg border border-[var(--line)] bg-white px-3 text-xs outline-none focus:border-indigo-500"
         />
         <Button onClick={sendReply} disabled={sending || !replyText.trim()} className="h-9 px-3 text-xs">
@@ -179,6 +188,9 @@ function PostCard({ post, channelId }) {
           <p className="mt-1.5 line-clamp-2 text-[13px] text-slate-700">{post.caption || <span className="text-slate-400">No caption</span>}</p>
           <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
             <span className="flex items-center gap-1"><Eye size={12} /> {(stats.reach || 0).toLocaleString("en-IN")} reach</span>
+            {stats.views > 0 ? (
+              <span className="flex items-center gap-1"><Play size={12} /> {stats.views.toLocaleString("en-IN")} views</span>
+            ) : null}
             <span className="flex items-center gap-1"><Heart size={12} /> {(stats.likeCount || 0).toLocaleString("en-IN")}</span>
             <span className="flex items-center gap-1"><MessageCircle size={12} /> {(stats.commentsCount || 0).toLocaleString("en-IN")}</span>
             {post.permalink ? (
@@ -199,6 +211,98 @@ function PostCard({ post, channelId }) {
   );
 }
 
+// ─── Compose / publish a new post ────────────────────────────────────────────
+// Meta's publish APIs need a media file at a public URL, not an upload —
+// this app has no asset storage to host one at, so the URL is pasted in
+// (the company's own site/CDN). Instagram has no text-only post type, so
+// its checkbox requires a media URL; Facebook alone can post caption-only.
+function ComposePostForm({ channel, onPublished, onCancel }) {
+  const hasInstagram = Boolean(channel.external?.igUserId);
+  const [platforms, setPlatforms] = useState(() => {
+    const initial = [];
+    if (hasInstagram) initial.push("instagram");
+    initial.push("facebook");
+    return initial;
+  });
+  const [caption, setCaption] = useState("");
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [posting, setPosting] = useState(false);
+  const [error, setError] = useState("");
+
+  function togglePlatform(name) {
+    setPlatforms((prev) => (prev.includes(name) ? prev.filter((p) => p !== name) : [...prev, name]));
+  }
+
+  async function publish(e) {
+    e.preventDefault();
+    if (!platforms.length) return;
+    setPosting(true);
+    setError("");
+    try {
+      await createSocialPost(channel._id || channel.id, { platforms, caption, mediaUrl: mediaUrl.trim() });
+      onPublished();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setPosting(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <div>
+          <CardTitle>Create post</CardTitle>
+          <p className="mt-1 text-xs text-[var(--muted)]">Publishes live to the platforms you select below — this isn't a draft.</p>
+        </div>
+        <button type="button" onClick={onCancel} className="rounded p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
+          <X size={16} />
+        </button>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={publish} className="space-y-3">
+          <div className="flex items-center gap-4">
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+              <input type="checkbox" checked={platforms.includes("instagram")} disabled={!hasInstagram} onChange={() => togglePlatform("instagram")} />
+              Instagram
+            </label>
+            <label className="flex items-center gap-1.5 text-xs font-medium text-slate-700">
+              <input type="checkbox" checked={platforms.includes("facebook")} onChange={() => togglePlatform("facebook")} />
+              Facebook Page
+            </label>
+          </div>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase text-slate-500">Caption</span>
+            <textarea
+              value={caption}
+              onChange={(e) => setCaption(e.target.value)}
+              rows={3}
+              className="mt-1 w-full resize-none rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-sm outline-none focus:border-indigo-500"
+              placeholder="Write a caption…"
+            />
+          </label>
+          <label className="block">
+            <span className="text-[11px] font-semibold uppercase text-slate-500">
+              Media URL {platforms.includes("instagram") ? "(required for Instagram)" : "(optional for Facebook)"}
+            </span>
+            <input
+              value={mediaUrl}
+              onChange={(e) => setMediaUrl(e.target.value)}
+              className="mt-1 h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500"
+              placeholder="https://yoursite.com/photo.jpg — must be a public image or video URL"
+            />
+          </label>
+          {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
+          <Button type="submit" disabled={posting || !platforms.length} className="h-9 text-xs">
+            <ImagePlus size={13} />
+            {posting ? "Publishing…" : "Publish"}
+          </Button>
+        </form>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ─── Main view ───────────────────────────────────────────────────────────────
 
 export function SocialView() {
@@ -211,6 +315,7 @@ export function SocialView() {
   const [syncing, setSyncing] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
+  const [showCompose, setShowCompose] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -319,6 +424,10 @@ export function SocialView() {
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <Button onClick={() => setShowCompose((v) => !v)} className="h-9 text-xs">
+                  <ImagePlus size={13} />
+                  {showCompose ? "Cancel" : "Create Post"}
+                </Button>
                 <Button variant="secondary" onClick={reconnect} disabled={reconnecting} className="h-9 text-xs">
                   {reconnecting ? "Opening Meta…" : "Reconnect"}
                 </Button>
@@ -335,6 +444,18 @@ export function SocialView() {
             {syncNotice ? <div className="border-t border-emerald-100 bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-800">{syncNotice}</div> : null}
             {error ? <div className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700">{error}</div> : null}
           </Card>
+
+          {showCompose ? (
+            <ComposePostForm
+              channel={channel}
+              onCancel={() => setShowCompose(false)}
+              onPublished={() => {
+                setShowCompose(false);
+                setSyncNotice("Post published.");
+                loadPosts(1);
+              }}
+            />
+          ) : null}
 
           {loadingPosts && posts.length === 0 ? (
             <Card><CardContent><ListRowsSkeleton rows={4} /></CardContent></Card>

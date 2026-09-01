@@ -178,7 +178,12 @@ async function syncInstagramPosts({ companyId, channelId, channel }) {
     // capped to the 25 most recent posts above specifically to bound this.
     // VIDEO/CAROUSEL_ALBUM support a different metric set than IMAGE; reach/
     // impressions/saved work across all types, so that's what's requested.
-    const insights = await fetchPostInsights(item.id, accessToken, ["reach", "impressions", "saved"]);
+    // "plays" (view count) only exists for video-type media — requesting it
+    // for an IMAGE post gets the whole insights call rejected by Meta, so
+    // it's only added to the metric list for media types that support it.
+    const isVideo = ["VIDEO", "REELS"].includes(item.media_type);
+    const metrics = isVideo ? ["reach", "impressions", "saved", "plays"] : ["reach", "impressions", "saved"];
+    const insights = await fetchPostInsights(item.id, accessToken, metrics);
     records.push({
       companyId,
       channelId,
@@ -199,6 +204,7 @@ async function syncInstagramPosts({ companyId, channelId, channel }) {
         commentsCount: item.comments_count || 0,
         saved: insights.saved || 0,
         shares: 0,
+        views: insights.plays || 0,
       },
       lastSyncedAt: new Date(),
       raw: item,
@@ -346,4 +352,91 @@ export async function replyToComment({ companyId, channelId, postId, commentId, 
   }]);
 
   return { reply: saved };
+}
+
+// ─── Publish a new post ──────────────────────────────────────────────────────
+// Both Instagram and Facebook's publish APIs need a media file reachable at
+// a public URL — neither accepts a raw upload, and this app has no asset
+// storage of its own to host one at, so mediaUrl is caller-supplied (their
+// own site/CDN). Facebook alone also accepts caption-only posts; Instagram
+// has no text-only post type, so mediaUrl is required whenever "instagram"
+// is one of the target platforms.
+const VIDEO_EXTENSION = /\.(mp4|mov|m4v)(\?|$)/i;
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+// Image containers publish near-instantly; video containers need Meta to
+// finish transcoding first (status_code moves IN_PROGRESS -> FINISHED) —
+// polled with a short fixed backoff rather than assumed instant, since
+// publishing before it's FINISHED fails outright.
+async function publishInstagramPost({ igUserId, accessToken, caption, mediaUrl }) {
+  const isVideo = VIDEO_EXTENSION.test(mediaUrl);
+  const createParams = new URLSearchParams({
+    caption: caption || "",
+    access_token: accessToken,
+    ...(isVideo ? { video_url: mediaUrl, media_type: "REELS" } : { image_url: mediaUrl }),
+  });
+  const created = await graphFetch(`${GRAPH_BASE()}/${igUserId}/media?${createParams.toString()}`, { method: "POST" });
+  const creationId = created.id;
+
+  if (isVideo) {
+    for (let attempt = 0; attempt < 10; attempt += 1) {
+      const statusParams = new URLSearchParams({ fields: "status_code", access_token: accessToken });
+      const status = await graphFetch(`${GRAPH_BASE()}/${creationId}?${statusParams.toString()}`).catch(() => ({}));
+      if (status.status_code === "FINISHED") break;
+      if (status.status_code === "ERROR") throw new HttpError(502, "Instagram failed to process this video.");
+      await sleep(2000);
+    }
+  }
+
+  const publishParams = new URLSearchParams({ creation_id: creationId, access_token: accessToken });
+  const published = await graphFetch(`${GRAPH_BASE()}/${igUserId}/media_publish?${publishParams.toString()}`, { method: "POST" });
+  return published.id;
+}
+
+async function publishFacebookPost({ pageId, accessToken, caption, mediaUrl }) {
+  if (mediaUrl) {
+    const params = new URLSearchParams({ url: mediaUrl, caption: caption || "", access_token: accessToken });
+    const body = await graphFetch(`${GRAPH_BASE()}/${pageId}/photos?${params.toString()}`, { method: "POST" });
+    return body.post_id || body.id;
+  }
+  const params = new URLSearchParams({ message: caption || "", access_token: accessToken });
+  const body = await graphFetch(`${GRAPH_BASE()}/${pageId}/feed?${params.toString()}`, { method: "POST" });
+  return body.id;
+}
+
+export async function createSocialPost({ companyId, channelId, platforms, caption, mediaUrl }) {
+  const channel = await getChannelForSync({ channelId, companyId });
+  if (!channel || channel.provider !== "meta" || channel.channelType !== "social") {
+    throw new HttpError(404, "Social channel not found");
+  }
+
+  const targets = (Array.isArray(platforms) ? platforms : [platforms]).filter(Boolean);
+  if (!targets.length) throw new HttpError(400, "Choose at least one platform to post to");
+  if (!caption?.trim() && !mediaUrl?.trim()) throw new HttpError(400, "Add a caption or a media URL");
+  if (targets.includes("instagram") && !mediaUrl?.trim()) {
+    throw new HttpError(400, "Instagram posts need an image or video URL — it has no text-only post type");
+  }
+  if (targets.includes("instagram") && !channel.external?.igUserId) {
+    throw new HttpError(400, "No Instagram Business account linked to this connection");
+  }
+
+  const accessToken = channel.credentials.pageAccessToken || channel.credentials.accessToken;
+  const results = {};
+
+  if (targets.includes("instagram")) {
+    results.instagram = await publishInstagramPost({ igUserId: channel.external.igUserId, accessToken, caption, mediaUrl });
+  }
+  if (targets.includes("facebook")) {
+    results.facebook = await publishFacebookPost({ pageId: channel.external.pageId, accessToken, caption, mediaUrl });
+  }
+
+  // Pulls the freshly published post(s) — plus insights, once Meta has them
+  // — back into the panel immediately rather than leaving the feed stale
+  // until the next manual Sync Posts.
+  const syncResult = await syncSocialPosts({ companyId, channelId }).catch(() => null);
+
+  return { publishedIds: results, syncedRows: syncResult?.syncedRows ?? 0 };
 }

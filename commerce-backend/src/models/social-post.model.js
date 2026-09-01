@@ -32,6 +32,9 @@ const socialPostSchema = new mongoose.Schema(
       commentsCount: { type: Number, default: 0 },
       saved: { type: Number, default: 0 },
       shares: { type: Number, default: 0 },
+      // Video/Reels play count — 0 (and not shown) for image posts, which
+      // don't have a "views" concept on Instagram/Facebook.
+      views: { type: Number, default: 0 },
     },
 
     lastSyncedAt: Date,
