@@ -171,33 +171,35 @@ function PostCard({ post, channelId }) {
   const stats = post.insights || {};
 
   return (
-    <div className="overflow-hidden rounded-xl border border-[var(--line)] bg-white">
-      <div className="flex gap-3 p-4">
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-[var(--line)] bg-white">
+      <div className="relative aspect-square w-full shrink-0 bg-slate-100">
         {post.mediaUrl || post.thumbnailUrl ? (
-          <img src={post.thumbnailUrl || post.mediaUrl} alt="" className="h-20 w-20 shrink-0 rounded-lg object-cover" />
+          <img src={post.thumbnailUrl || post.mediaUrl} alt="" className="h-full w-full object-cover" />
         ) : (
-          <div className="grid h-20 w-20 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-300">
-            {post.platform === "instagram" ? <Camera size={22} /> : <Share2 size={22} />}
+          <div className="grid h-full w-full place-items-center text-slate-300">
+            {post.platform === "instagram" ? <Camera size={32} /> : <Share2 size={32} />}
           </div>
         )}
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <Badge tone={post.platform === "instagram" ? "rose" : "blue"}>{post.platform}</Badge>
-            <span className="text-[11px] text-slate-400">{fmt(post.postedAt)}</span>
-          </div>
-          <p className="mt-1.5 line-clamp-2 text-[13px] text-slate-700">{post.caption || <span className="text-slate-400">No caption</span>}</p>
-          <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px] text-slate-500">
-            <span className="flex items-center gap-1"><Eye size={12} /> {(stats.reach || 0).toLocaleString("en-IN")} reach</span>
-            {stats.views > 0 ? (
-              <span className="flex items-center gap-1"><Play size={12} /> {stats.views.toLocaleString("en-IN")} views</span>
-            ) : null}
-            <span className="flex items-center gap-1"><Heart size={12} /> {(stats.likeCount || 0).toLocaleString("en-IN")}</span>
-            <span className="flex items-center gap-1"><MessageCircle size={12} /> {(stats.commentsCount || 0).toLocaleString("en-IN")}</span>
-            {post.permalink ? (
-              <a href={post.permalink} target="_blank" rel="noreferrer" className="ml-auto text-indigo-600 hover:underline">View on {post.platform}</a>
-            ) : null}
-          </div>
+        <Badge tone={post.platform === "instagram" ? "rose" : "blue"} className="absolute left-2 top-2 shadow-sm">
+          {post.platform}
+        </Badge>
+      </div>
+      <div className="flex flex-1 flex-col p-3.5">
+        <span className="text-[11px] text-slate-400">{fmt(post.postedAt)}</span>
+        <p className="mt-1 line-clamp-2 text-[13px] text-slate-700">{post.caption || <span className="text-slate-400">No caption</span>}</p>
+        <div className="mt-2 flex flex-wrap items-center gap-2.5 text-[11px] text-slate-500">
+          <span className="flex items-center gap-1"><Eye size={12} /> {(stats.reach || 0).toLocaleString("en-IN")}</span>
+          {stats.views > 0 ? (
+            <span className="flex items-center gap-1"><Play size={12} /> {stats.views.toLocaleString("en-IN")}</span>
+          ) : null}
+          <span className="flex items-center gap-1"><Heart size={12} /> {(stats.likeCount || 0).toLocaleString("en-IN")}</span>
+          <span className="flex items-center gap-1"><MessageCircle size={12} /> {(stats.commentsCount || 0).toLocaleString("en-IN")}</span>
         </div>
+        {post.permalink ? (
+          <a href={post.permalink} target="_blank" rel="noreferrer" className="mt-1.5 text-[11px] text-indigo-600 hover:underline">
+            View on {post.platform}
+          </a>
+        ) : null}
       </div>
       <button
         onClick={() => setExpanded((v) => !v)}
@@ -463,7 +465,7 @@ export function SocialView() {
             <Card><CardContent><p className="py-8 text-center text-sm text-[var(--muted)]">No posts synced yet — hit Sync Posts above.</p></CardContent></Card>
           ) : (
             <>
-              <div className="grid gap-3">
+              <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 {posts.map((post) => (
                   <PostCard key={post._id} post={post} channelId={channel._id || channel.id} />
                 ))}

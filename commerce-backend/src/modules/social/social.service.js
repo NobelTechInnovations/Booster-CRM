@@ -8,7 +8,7 @@ import {
   updateChannelSyncState,
   upsertSocialChannel,
 } from "../../repositories/channel.repo.js";
-import { upsertSocialPosts, upsertSocialComments, listCommentsForPost, getSocialPost } from "../../repositories/social.repo.js";
+import { upsertSocialPosts, deleteStaleSocialPosts, upsertSocialComments, listCommentsForPost, getSocialPost } from "../../repositories/social.repo.js";
 
 const GRAPH_BASE = () => `https://graph.facebook.com/${env.meta.apiVersion}`;
 
@@ -278,6 +278,19 @@ export async function syncSocialPosts({ companyId, channelId }) {
     ]);
     const records = [...igRecords, ...fbRecords];
     await upsertSocialPosts(records);
+
+    // Prune posts deleted on Meta's side since the last sync — see
+    // deleteStaleSocialPosts for why this only touches the freshly-synced
+    // window per platform, not everything ever stored.
+    for (const [platform, batch] of [["instagram", igRecords], ["facebook", fbRecords]]) {
+      if (!batch.length) continue;
+      const oldest = batch.reduce((min, r) => (r.postedAt < min ? r.postedAt : min), batch[0].postedAt);
+      await deleteStaleSocialPosts({
+        companyId, channelId, platform,
+        keepExternalPostIds: batch.map((r) => r.externalPostId),
+        notOlderThan: oldest,
+      });
+    }
 
     const updatedChannel = await updateChannelSyncState({
       channelId, companyId, sync: { orders: "idle", lastSyncAt: new Date(), lastError: undefined },

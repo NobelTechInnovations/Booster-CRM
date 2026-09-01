@@ -53,6 +53,43 @@ export async function upsertSocialPosts(records) {
   return saved;
 }
 
+// Removes posts a sync no longer sees on Meta's side — deleting a post on
+// Instagram/Facebook previously left it stuck in our panel forever, since
+// upsertSocialPosts only ever adds or updates, never removes. Scoped to
+// posts within the freshly-synced window (postedAt >= the oldest post this
+// sync actually fetched) so a post simply older than the sync's 25-most-
+// recent cap — which legitimately wasn't re-fetched, not deleted — is left
+// alone rather than being wrongly pruned.
+export async function deleteStaleSocialPosts({ companyId, channelId, platform, keepExternalPostIds, notOlderThan }) {
+  if (!notOlderThan) return 0;
+
+  if (isMongoConnected()) {
+    const result = await SocialPost.deleteMany({
+      companyId: mixedIdFilter(companyId),
+      channelId: mixedIdFilter(channelId),
+      platform,
+      postedAt: { $gte: notOlderThan },
+      externalPostId: { $nin: keepExternalPostIds },
+    });
+    return result.deletedCount || 0;
+  }
+
+  let deleted = 0;
+  for (const [key, post] of memory.socialPosts.entries()) {
+    if (
+      String(post.companyId) === String(companyId) &&
+      String(post.channelId) === String(channelId) &&
+      post.platform === platform &&
+      new Date(post.postedAt) >= new Date(notOlderThan) &&
+      !keepExternalPostIds.includes(post.externalPostId)
+    ) {
+      memory.socialPosts.delete(key);
+      deleted += 1;
+    }
+  }
+  return deleted;
+}
+
 export async function listSocialPosts({ companyId, channelId, page = 1, limit = 25 }) {
   const skip = (Math.max(1, page) - 1) * limit;
 

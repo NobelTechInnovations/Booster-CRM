@@ -124,36 +124,35 @@ function WhatsAppConnectForm({ onConnected }) {
       setError("Still loading — give it a second and click Continue with Facebook again.");
       return;
     }
-    setSigningUp(true);
-    sessionInfoRef.current = {};
 
-    // Meta's SDK tries a newer silent login method (FedCM) before falling
-    // back to the classic popup — that fallback happens asynchronously
-    // inside Meta's own code, which is enough of a gap for Chrome to no
-    // longer trust the resulting window.open as user-initiated, so it
-    // blocks it (confirmed via the SDK's own telemetry: an
-    // POPUP_MAYBE_BLOCKED_OAUTH report). When that happens FB.login's
-    // callback never fires at all, so without this timeout the button
-    // would stay stuck on "Opening Facebook..." forever with zero
-    // feedback — this at least turns that into an actionable message.
-    let settled = false;
-    const blockedTimer = setTimeout(() => {
-      if (settled) return;
-      settled = true;
-      setSigningUp(false);
+    // A blind timeout here was wrong — it fired and claimed "blocked" even
+    // once pop-ups were explicitly allowed for this site, because a real
+    // human clicking through Facebook's multi-step signup wizard (login,
+    // pick a business, pick a number, confirm) can easily take longer than
+    // any short timeout, and there's no reliable way to tell "still
+    // blocked" apart from "still on step 2 of the wizard" from the
+    // outside. Instead, open+immediately close a throwaway test popup
+    // ourselves, synchronously, in this same click handler — if Chrome
+    // returns null it's a real, definitive, current block; if it opens,
+    // pop-ups are genuinely allowed and FB.login's own popup is trusted
+    // for as long as the user takes.
+    const testPopup = window.open("", "_blank", "width=1,height=1");
+    if (!testPopup) {
       setError(
-        "Facebook's sign-in window was blocked by your browser. Look for a blocked-popup icon in the address bar " +
+        "Your browser is blocking pop-ups for this site. Look for a blocked-popup icon in the address bar " +
         "(usually on the right side), choose \"Always allow pop-ups from wokbook.kalevafoods.in\", then click " +
         "Continue with Facebook again.",
       );
-    }, 4000);
+      return;
+    }
+    testPopup.close();
+
+    setSigningUp(true);
+    sessionInfoRef.current = {};
 
     try {
       window.FB.login(
         async (response) => {
-          if (settled) return;
-          settled = true;
-          clearTimeout(blockedTimer);
           const code = response?.authResponse?.code;
           if (!code) {
             setError(response?.status === "unknown" ? "Signup was closed before finishing." : "Meta didn't return an authorization code.");
@@ -190,8 +189,6 @@ function WhatsAppConnectForm({ onConnected }) {
         },
       );
     } catch (err) {
-      settled = true;
-      clearTimeout(blockedTimer);
       setError(err.message);
       setSigningUp(false);
     }
