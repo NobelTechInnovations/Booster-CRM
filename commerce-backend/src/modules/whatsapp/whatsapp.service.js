@@ -138,16 +138,31 @@ async function exchangeForLongLivedToken(shortLivedToken) {
 
 // Reads back which WhatsApp Business Account(s) this specific grant
 // actually covers, straight from the token itself — no need for the
-// popup's postMessage session info.
+// popup's postMessage session info. debug_token's granular_scopes is the
+// fast path when Meta populates it, but in practice (a plain OAuth
+// redirect, rather than the JS SDK's guided Embedded Signup wizard, has no
+// interactive "pick a WABA" step) it can come back empty even though the
+// user genuinely does have a usable WhatsApp Business Account — so this
+// falls back to directly walking businesses the token can see
+// (/me/businesses -> owned_whatsapp_business_accounts) rather than
+// trusting scope metadata alone.
 async function findGrantedWabaIds(accessToken) {
-  const params = new URLSearchParams({
-    input_token: accessToken,
-    access_token: `${env.meta.appId}|${env.meta.appSecret}`,
-  });
-  const body = await graphFetch(`${GRAPH_BASE()}/debug_token?${params.toString()}`).catch(() => ({}));
-  const scopes = body?.data?.granular_scopes || [];
-  const whatsappScope = scopes.find((s) => s.scope === "whatsapp_business_management");
-  return whatsappScope?.target_ids || [];
+  const debugParams = new URLSearchParams({ input_token: accessToken, access_token: `${env.meta.appId}|${env.meta.appSecret}` });
+  const debugBody = await graphFetch(`${GRAPH_BASE()}/debug_token?${debugParams.toString()}`).catch(() => ({}));
+  const scopes = debugBody?.data?.granular_scopes || [];
+  const fromScopes = scopes.find((s) => s.scope === "whatsapp_business_management")?.target_ids || [];
+  if (fromScopes.length) return fromScopes;
+
+  const businessParams = new URLSearchParams({ fields: "id,name", access_token: accessToken });
+  const businesses = await graphFetchAll(`${GRAPH_BASE()}/me/businesses?${businessParams.toString()}`, { maxRows: 25 }).catch(() => []);
+
+  const wabaIds = [];
+  for (const business of businesses) {
+    const wabaParams = new URLSearchParams({ fields: "id", access_token: accessToken });
+    const wabas = await graphFetchAll(`${GRAPH_BASE()}/${business.id}/owned_whatsapp_business_accounts?${wabaParams.toString()}`, { maxRows: 25 }).catch(() => []);
+    wabaIds.push(...wabas.map((w) => w.id));
+  }
+  return wabaIds;
 }
 
 async function findFirstPhoneNumber(accessToken, wabaIds) {
