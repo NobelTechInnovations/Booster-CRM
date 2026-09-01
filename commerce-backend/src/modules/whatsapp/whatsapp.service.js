@@ -286,13 +286,16 @@ export async function fixWhatsAppPermissions({ companyId }) {
 
   await subscribeAppToWaba(accessToken, wabaId);
   // Best-effort: an already-registered number throws here, which is fine
-  // (nothing to fix) — only a genuine registration failure should surface,
-  // and even then the subscribe step above already succeeded, so this
-  // isn't a reason to fail the whole "fix" action.
+  // (nothing to fix) — surfaced as a warning (not a failure of the whole
+  // action, since the subscribe step above already succeeded) so a
+  // genuine registration problem is at least visible instead of silently
+  // swallowed.
+  let registerWarning;
   await registerWhatsAppNumber(accessToken, phoneNumberId).catch((err) => {
+    registerWarning = err.message;
     console.warn(`[WhatsApp] Could not register phone number ${phoneNumberId}: ${err.message}`);
   });
-  return { ok: true };
+  return { ok: true, registerWarning };
 }
 
 export async function completeWhatsAppSignupRedirect(query) {

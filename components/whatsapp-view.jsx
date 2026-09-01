@@ -39,8 +39,8 @@ function FixPermissionsHint() {
     setFixing(true);
     setResult("");
     try {
-      await fixWhatsAppPermissions();
-      setResult("Fixed — try sending again.");
+      const res = await fixWhatsAppPermissions();
+      setResult(res.registerWarning ? `Subscribed, but registration failed: ${res.registerWarning}` : "Fixed — try sending again.");
     } catch (err) {
       setResult(err.message);
     } finally {
@@ -431,8 +431,8 @@ function FixPermissionsButton() {
     setFixing(true);
     setResult("");
     try {
-      await fixWhatsAppPermissions();
-      setResult("Done — sending should work now.");
+      const res = await fixWhatsAppPermissions();
+      setResult(res.registerWarning ? `Subscribed, but registration failed: ${res.registerWarning}` : "Done — sending should work now.");
     } catch (err) {
       setResult(err.message);
     } finally {
