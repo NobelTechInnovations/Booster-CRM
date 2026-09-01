@@ -43,3 +43,25 @@ export function requireAuth(req, _res, next) {
     return next(new HttpError(401, "Invalid or expired token"));
   }
 }
+
+// Same check as requireAuth, but also accepts the token as a ?token=
+// query param — for the handful of routes a plain <img src>/<a href> has to
+// load directly (no way to attach an Authorization header there). Prefers
+// the header when both are present. Only use this for read-only asset
+// routes, never for anything that mutates state.
+export function requireAuthHeaderOrQuery(req, _res, next) {
+  const header = req.headers.authorization || "";
+  const [type, headerToken] = header.split(" ");
+  const token = (type === "Bearer" && headerToken) ? headerToken : req.query?.token;
+
+  if (!token) {
+    return next(new HttpError(401, "Missing bearer token"));
+  }
+
+  try {
+    req.auth = jwt.verify(token, env.jwtSecret);
+    return next();
+  } catch (_error) {
+    return next(new HttpError(401, "Invalid or expired token"));
+  }
+}

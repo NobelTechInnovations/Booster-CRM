@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ShoppingCart,
   PhoneCall,
+  MessageCircle,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -21,6 +22,7 @@ import { cn, formatMoney } from "@/lib/utils";
 import { listSyncedRecords, createCustomer, listWebhookLeads } from "@/lib/api";
 import { CreateOrderModal } from "@/components/create-order-modal";
 import { CustomerFollowUpModal } from "@/components/customer-followup-modal";
+import { SendWhatsAppModal } from "@/components/send-whatsapp-modal";
 
 const inputClass = "h-10 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-sm outline-none transition focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100";
 
@@ -162,6 +164,7 @@ export function CustomersView() {
   const [showNew, setShowNew] = useState(false);
   const [orderTarget, setOrderTarget] = useState(null);
   const [followUpTarget, setFollowUpTarget] = useState(null);
+  const [whatsappTarget, setWhatsappTarget] = useState(null);
   const [sortBy, setSortBy] = useState("latest");
 
   async function loadCustomers() {
@@ -316,6 +319,11 @@ export function CustomersView() {
                         <button onClick={() => setFollowUpTarget(c)} className="rounded-md p-1.5 text-slate-500 hover:bg-indigo-50 hover:text-indigo-700" title="Log follow-up">
                           <PhoneCall size={15} />
                         </button>
+                        {c.phone ? (
+                          <button onClick={() => setWhatsappTarget(c)} className="rounded-md p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700" title="Send WhatsApp">
+                            <MessageCircle size={15} />
+                          </button>
+                        ) : null}
                         <button onClick={() => setOrderTarget(c)} className="rounded-md p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700" title="Create order">
                           <ShoppingCart size={15} />
                         </button>
@@ -350,6 +358,14 @@ export function CustomersView() {
           onClose={() => setFollowUpTarget(null)}
           onUpdate={() => loadCustomers()}
           onCreateOrder={(customer) => { setFollowUpTarget(null); setOrderTarget(customer); }}
+        />
+      ) : null}
+
+      {whatsappTarget ? (
+        <SendWhatsAppModal
+          phone={whatsappTarget.phone}
+          name={whatsappTarget.name || [whatsappTarget.firstName, whatsappTarget.lastName].filter(Boolean).join(" ")}
+          onClose={() => setWhatsappTarget(null)}
         />
       ) : null}
     </div>

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X, Unlink } from "lucide-react";
+import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X, Unlink, Paperclip } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -17,7 +17,9 @@ import {
   startWhatsAppConversation,
   disconnectWhatsAppChannel,
   fixWhatsAppPermissions,
+  whatsappMediaUrl,
 } from "@/lib/api";
+import { TemplateSendForm } from "@/components/whatsapp-template-picker";
 
 // Meta's own error text for the missing "subscribe app to WABA" step (see
 // fixWhatsAppPermissions in whatsapp.service.js) — matched so the UI can
@@ -193,19 +195,28 @@ function WhatsAppConnectForm({ onConnected }) {
 // as an approved message template, which this app doesn't build yet. The
 // note below sets that expectation up front rather than letting the error
 // surface as a confusing failure.
-function NewChatForm({ onStarted, onCancel }) {
+function NewChatForm({ onStarted, onCancel, conversations }) {
   const [to, setTo] = useState("");
   const [text, setText] = useState("");
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [showAttach, setShowAttach] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
+  // Once enough digits are typed to be a real number, check whether it's
+  // already an open conversation — if not, WhatsApp requires an approved
+  // template (see TemplateSendForm) instead of free text, so the form
+  // switches modes rather than let a doomed send fail with a confusing error.
+  const waId = to.replace(/\D/g, "");
+  const isColdNumber = waId.length >= 10 && !conversations.some((c) => c.waId === waId);
+
   async function send(e) {
     e.preventDefault();
-    if (!to.trim() || !text.trim()) return;
+    if (!to.trim() || (!text.trim() && !mediaUrl.trim())) return;
     setSending(true);
     setError("");
     try {
-      const res = await startWhatsAppConversation(to.trim(), text.trim());
+      const res = await startWhatsAppConversation(to.trim(), text.trim(), { mediaUrl: mediaUrl.trim() || undefined });
       onStarted(res.conversation);
     } catch (err) {
       setError(err.message);
@@ -215,7 +226,7 @@ function NewChatForm({ onStarted, onCancel }) {
   }
 
   return (
-    <form onSubmit={send} className="space-y-2.5 border-b border-[var(--line)] bg-slate-50/60 p-3">
+    <div className="space-y-2.5 border-b border-[var(--line)] bg-slate-50/60 p-3">
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">New chat</p>
         <button type="button" onClick={onCancel} className="rounded p-0.5 text-slate-400 hover:bg-slate-200 hover:text-slate-600">
@@ -228,36 +239,92 @@ function NewChatForm({ onStarted, onCancel }) {
         placeholder="Phone number, e.g. 919876543210"
         className="h-9 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-xs outline-none focus:border-indigo-500"
       />
-      <textarea
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        placeholder="First message…"
-        rows={2}
-        className="w-full resize-none rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
-      />
-      {error ? (
-        <div>
-          <p className="text-xs font-medium text-rose-700">{error}</p>
-          {isPermissionError(error) ? <FixPermissionsHint /> : null}
-        </div>
-      ) : null}
-      <p className="text-[10px] leading-4 text-slate-400">
-        Only works if this number has messaged your WhatsApp before, or within the last 24 hours — Meta blocks
-        cold outreach without an approved message template.
-      </p>
-      <Button type="submit" disabled={sending || !to.trim() || !text.trim()} className="h-8 w-full text-xs">
-        {sending ? "Sending…" : "Start chat"}
-      </Button>
-    </form>
+
+      {isColdNumber ? (
+        <TemplateSendForm to={to} onSent={onStarted} />
+      ) : (
+        <form onSubmit={send} className="space-y-2.5">
+          <textarea
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            placeholder="First message…"
+            rows={2}
+            className="w-full resize-none rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
+          />
+          <button
+            type="button"
+            onClick={() => setShowAttach((v) => !v)}
+            className="flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline"
+          >
+            <Paperclip size={11} />
+            {showAttach ? "Remove attachment" : "Attach image/file"}
+          </button>
+          {showAttach ? (
+            <input
+              value={mediaUrl}
+              onChange={(e) => setMediaUrl(e.target.value)}
+              placeholder="Image/file/video URL"
+              className="h-8 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-xs outline-none focus:border-indigo-500"
+            />
+          ) : null}
+          {error ? (
+            <div>
+              <p className="text-xs font-medium text-rose-700">{error}</p>
+              {isPermissionError(error) ? <FixPermissionsHint /> : null}
+            </div>
+          ) : null}
+          <p className="text-[10px] leading-4 text-slate-400">
+            Only works if this number has messaged your WhatsApp before, or within the last 24 hours.
+          </p>
+          <Button type="submit" disabled={sending || !to.trim() || (!text.trim() && !mediaUrl.trim())} className="h-8 w-full text-xs">
+            {sending ? "Sending…" : "Start chat"}
+          </Button>
+        </form>
+      )}
+    </div>
   );
 }
 
 // ─── Message thread ──────────────────────────────────────────────────────────
 
+const MEDIA_TYPES = new Set(["image", "video", "audio", "document", "sticker"]);
+
+// Outbound attachments carry the real link that was sent (mediaUrl).
+// Inbound ones only ever have Meta's opaque mediaId — never a directly
+// loadable URL — so those route through the backend's media proxy instead.
+function MessageMedia({ message }) {
+  if (!MEDIA_TYPES.has(message.type)) return null;
+  const src = message.direction === "outbound" ? message.mediaUrl : (message.mediaId ? whatsappMediaUrl(message.mediaId) : "");
+  if (!src) return <p className="text-xs italic text-slate-400">[{message.type} unavailable]</p>;
+
+  if (message.type === "image" || message.type === "sticker") {
+    return <img src={src} alt="Attachment" className="mb-1.5 max-h-64 rounded-lg object-cover" />;
+  }
+  if (message.type === "video") {
+    return <video src={src} controls className="mb-1.5 max-h-64 rounded-lg" />;
+  }
+  if (message.type === "audio") {
+    return <audio src={src} controls className="mb-1.5 w-full" />;
+  }
+  return (
+    <a
+      href={src}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="mb-1.5 flex items-center gap-1.5 rounded-lg bg-white/70 px-2 py-1.5 text-xs font-semibold text-indigo-700 hover:underline"
+    >
+      <Paperclip size={12} />
+      Open attachment
+    </a>
+  );
+}
+
 function MessageThread({ conversation, channelName }) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [text, setText] = useState("");
+  const [mediaUrl, setMediaUrl] = useState("");
+  const [showAttach, setShowAttach] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
@@ -287,17 +354,21 @@ function MessageThread({ conversation, channelName }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
   async function send() {
-    if (!text.trim()) return;
+    if (!text.trim() && !mediaUrl.trim()) return;
     setSending(true);
     setError("");
-    const draft = text;
+    const draftText = text;
+    const draftMedia = mediaUrl;
     setText("");
+    setMediaUrl("");
+    setShowAttach(false);
     try {
-      await sendWhatsAppMessage(conversation._id, draft);
+      await sendWhatsAppMessage(conversation._id, draftText, { mediaUrl: draftMedia.trim() || undefined });
       await load();
     } catch (err) {
       setError(err.message);
-      setText(draft);
+      setText(draftText);
+      setMediaUrl(draftMedia);
     } finally {
       setSending(false);
     }
@@ -328,7 +399,8 @@ function MessageThread({ conversation, channelName }) {
                   m.direction === "outbound" ? "bg-emerald-100 text-slate-800" : "bg-white text-slate-800 shadow-sm"
                 }`}
               >
-                <p className="whitespace-pre-wrap">{m.text}</p>
+                <MessageMedia message={m} />
+                {m.text ? <p className="whitespace-pre-wrap">{m.text}</p> : null}
                 <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-slate-400">
                   {fmt(m.timestamp)}
                   {m.direction === "outbound" ? statusIcon(m.status) : null}
@@ -347,7 +419,27 @@ function MessageThread({ conversation, channelName }) {
         </div>
       ) : null}
 
+      {showAttach ? (
+        <div className="border-t border-[var(--line)] px-3 pt-2">
+          <input
+            value={mediaUrl}
+            onChange={(e) => setMediaUrl(e.target.value)}
+            placeholder="Image/file/video URL to attach"
+            className="h-9 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-xs outline-none focus:border-indigo-500"
+          />
+        </div>
+      ) : null}
       <div className="flex items-center gap-2 border-t border-[var(--line)] p-3">
+        <button
+          type="button"
+          onClick={() => setShowAttach((v) => !v)}
+          title="Attach a file/image URL"
+          className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition ${
+            showAttach ? "bg-indigo-100 text-indigo-700" : "text-slate-400 hover:bg-slate-100"
+          }`}
+        >
+          <Paperclip size={16} />
+        </button>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -355,7 +447,7 @@ function MessageThread({ conversation, channelName }) {
           placeholder="Type a message…"
           className="h-10 flex-1 rounded-full border border-[var(--line)] bg-white px-4 text-sm outline-none focus:border-indigo-500"
         />
-        <Button onClick={send} disabled={sending || !text.trim()} className="h-10 w-10 shrink-0 rounded-full p-0">
+        <Button onClick={send} disabled={sending || (!text.trim() && !mediaUrl.trim())} className="h-10 w-10 shrink-0 rounded-full p-0">
           <Send size={15} />
         </Button>
       </div>
@@ -634,7 +726,7 @@ export function WhatsAppView() {
               <div className="border-b border-[var(--line)] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Conversations</p>
               </div>
-              {showNewChat ? <NewChatForm onStarted={handleStarted} onCancel={() => setShowNewChat(false)} /> : null}
+              {showNewChat ? <NewChatForm onStarted={handleStarted} onCancel={() => setShowNewChat(false)} conversations={conversations} /> : null}
               <div className="flex-1 overflow-y-auto">
                 {loadingConversations ? (
                   <div className="p-4"><ListRowsSkeleton rows={5} /></div>

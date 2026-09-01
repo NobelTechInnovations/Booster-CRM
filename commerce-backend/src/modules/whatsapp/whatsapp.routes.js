@@ -1,5 +1,6 @@
 import { Router } from "express";
-import { requireAuth, requirePermission } from "../../middleware/auth.js";
+import { Readable } from "node:stream";
+import { requireAuth, requirePermission, requireAuthHeaderOrQuery } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
@@ -13,6 +14,9 @@ import {
   finalizeWhatsAppSignup,
   fixWhatsAppPermissions,
   sendWhatsAppMessage,
+  sendWhatsAppTemplateMessage,
+  listMessageTemplates,
+  fetchWhatsAppMedia,
   handleIncomingWebhook,
 } from "./whatsapp.service.js";
 
@@ -215,9 +219,60 @@ whatsappRoutes.post(
       channelId: channel._id || channel.id,
       to,
       text: req.body?.text,
+      mediaUrl: req.body?.mediaUrl,
+      mediaType: req.body?.mediaType,
       sentByUserName: req.auth.displayName || req.auth.email || "",
     });
     res.json(result);
+  }),
+);
+
+// Starts a conversation with a number that has never messaged in, using an
+// approved message template — the only thing Meta allows for a genuinely
+// cold recipient (see sendWhatsAppTemplateMessage's comment).
+whatsappRoutes.post(
+  "/conversations/start-template",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const to = String(req.body?.to || "").trim();
+    if (!to) throw new HttpError(400, "Recipient phone number is required");
+
+    const [channel] = await listWhatsAppChannels(req.auth.companyId);
+    if (!channel) throw new HttpError(400, "Connect a WhatsApp number first");
+
+    const result = await sendWhatsAppTemplateMessage({
+      companyId: req.auth.companyId,
+      channelId: channel._id || channel.id,
+      to,
+      templateName: req.body?.templateName,
+      language: req.body?.language,
+      bodyParams: Array.isArray(req.body?.bodyParams) ? req.body.bodyParams : [],
+    });
+    res.json(result);
+  }),
+);
+
+whatsappRoutes.get(
+  "/templates",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const templates = await listMessageTemplates({ companyId: req.auth.companyId });
+    res.json({ templates });
+  }),
+);
+
+// Streams an inbound attachment's actual bytes through the backend — Meta's
+// own media URL needs a Bearer token and expires in minutes, so the
+// frontend can never load it directly. See fetchWhatsAppMedia's comment.
+whatsappRoutes.get(
+  "/media/:mediaId",
+  requireAuthHeaderOrQuery,
+  asyncHandler(async (req, res) => {
+    const { body, contentType } = await fetchWhatsAppMedia({ companyId: req.auth.companyId, mediaId: req.params.mediaId });
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Cache-Control", "private, max-age=3600");
+    Readable.fromWeb(body).pipe(res);
   }),
 );
 
@@ -252,6 +307,8 @@ whatsappRoutes.post(
       channelId: channel._id || channel.id,
       to: conversation.waId,
       text: req.body?.text,
+      mediaUrl: req.body?.mediaUrl,
+      mediaType: req.body?.mediaType,
       sentByUserName: req.auth.displayName || req.auth.email || "",
     });
     res.json(result);

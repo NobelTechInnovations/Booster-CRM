@@ -305,27 +305,50 @@ export async function finalizeWhatsAppSignup({ companyId, userId, selectionToken
 }
 
 // ─── Send ────────────────────────────────────────────────────────────────────
-// MVP scope: free-form text only, which covers every reply sent within
-// WhatsApp's 24-hour customer-service window (any conversation the customer
-// themselves started). Proactive/outside-window sends need a pre-approved
-// message template — a distinct Meta feature, intentionally not built here.
-export async function sendWhatsAppMessage({ companyId, channelId, to, text, sentByUserName }) {
+// Free-form text/media, which covers every reply sent within WhatsApp's
+// 24-hour customer-service window (any conversation the customer themselves
+// started, or one still inside that window). Messaging someone who has
+// *never* messaged this number before is a different, Meta-enforced case —
+// see sendWhatsAppTemplateMessage below.
+function guessMediaType(url) {
+  const ext = (url.split("?")[0].split(".").pop() || "").toLowerCase();
+  if (["jpg", "jpeg", "png", "webp"].includes(ext)) return "image";
+  if (["mp4", "3gp"].includes(ext)) return "video";
+  if (["mp3", "ogg", "amr", "aac"].includes(ext)) return "audio";
+  return "document"; // pdf, docx, xlsx, etc. — WhatsApp's catch-all attachment type
+}
+
+export async function sendWhatsAppMessage({ companyId, channelId, to, text, mediaUrl, mediaType, sentByUserName }) {
   const channel = await getChannelForSync({ channelId, companyId });
   if (!channel || channel.channelType !== "whatsapp") throw new HttpError(404, "WhatsApp channel not found");
   if (!to) throw new HttpError(400, "Recipient phone number is required");
-  if (!text?.trim()) throw new HttpError(400, "Message text is required");
+  if (!text?.trim() && !mediaUrl?.trim()) throw new HttpError(400, "Message text or attachment is required");
 
   const waId = String(to).replace(/\D/g, "");
+  const type = mediaUrl?.trim() ? (mediaType || guessMediaType(mediaUrl)) : "text";
+
+  const payload = mediaUrl?.trim()
+    ? {
+        messaging_product: "whatsapp", to: waId, type,
+        [type]: {
+          link: mediaUrl.trim(),
+          // Only image/video/document support a caption; audio doesn't.
+          ...(text?.trim() && type !== "audio" ? { caption: text.trim() } : {}),
+          ...(type === "document" ? { filename: mediaUrl.split("/").pop()?.split("?")[0] || "file" } : {}),
+        },
+      }
+    : { messaging_product: "whatsapp", to: waId, type: "text", text: { body: text } };
 
   const body = await graphFetch(`${GRAPH_BASE()}/${channel.external.phoneNumberId}/messages`, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${channel.credentials.accessToken}` },
-    body: JSON.stringify({ messaging_product: "whatsapp", to: waId, type: "text", text: { body: text } }),
+    body: JSON.stringify(payload),
   });
 
   const waMessageId = body.messages?.[0]?.id;
+  const preview = mediaUrl?.trim() ? (text?.trim() || `[${type}]`) : text;
   const conversation = await upsertConversation({
-    companyId, waId, lastMessageAt: new Date(), lastMessagePreview: text, incrementUnread: false,
+    companyId, waId, lastMessageAt: new Date(), lastMessagePreview: preview, incrementUnread: false,
   });
 
   const message = await createMessage({
@@ -333,14 +356,96 @@ export async function sendWhatsAppMessage({ companyId, channelId, to, text, sent
     conversationId: conversation._id,
     waMessageId,
     direction: "outbound",
-    type: "text",
-    text,
+    type,
+    text: text || "",
+    mediaUrl: mediaUrl?.trim() || "",
     status: "sent",
     timestamp: new Date(),
     sentByUserName: sentByUserName || "",
   });
 
   return { conversation, message };
+}
+
+// ─── Send (message template — for a number that has never messaged first) ──
+// WhatsApp only allows free-form text/media (sendWhatsAppMessage above)
+// within an open 24-hour customer-service window, i.e. a conversation the
+// customer started. Reaching a brand-new number requires a message
+// template Meta has approved in advance — this is a platform rule, not
+// something this app can route around. Templates are managed in Meta's own
+// WhatsApp Manager ("Message templates"); listMessageTemplates below just
+// surfaces the already-approved ones so the panel can offer them.
+export async function listMessageTemplates({ companyId }) {
+  const [summary] = await listWhatsAppChannels(companyId);
+  if (!summary) throw new HttpError(400, "Connect a WhatsApp number first");
+  const channel = await getChannelForSync({ channelId: summary._id || summary.id, companyId });
+  const accessToken = channel?.credentials?.accessToken;
+  const wabaId = channel?.external?.whatsappBusinessAccountId;
+  if (!accessToken || !wabaId) throw new HttpError(400, "Missing WhatsApp credentials — click Change number and reconnect.");
+
+  const params = new URLSearchParams({ fields: "name,status,category,language,components", access_token: accessToken });
+  const rows = await graphFetchAll(`${GRAPH_BASE()}/${wabaId}/message_templates?${params.toString()}`, { maxRows: 200 });
+  return rows.filter((t) => t.status === "APPROVED");
+}
+
+export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, templateName, language, bodyParams = [] }) {
+  const channel = await getChannelForSync({ channelId, companyId });
+  if (!channel || channel.channelType !== "whatsapp") throw new HttpError(404, "WhatsApp channel not found");
+  if (!to) throw new HttpError(400, "Recipient phone number is required");
+  if (!templateName) throw new HttpError(400, "Template name is required");
+
+  const waId = String(to).replace(/\D/g, "");
+  const components = bodyParams.length
+    ? [{ type: "body", parameters: bodyParams.map((value) => ({ type: "text", text: String(value ?? "") })) }]
+    : [];
+
+  const body = await graphFetch(`${GRAPH_BASE()}/${channel.external.phoneNumberId}/messages`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${channel.credentials.accessToken}` },
+    body: JSON.stringify({
+      messaging_product: "whatsapp", to: waId, type: "template",
+      template: { name: templateName, language: { code: language || "en_US" }, ...(components.length ? { components } : {}) },
+    }),
+  });
+
+  const waMessageId = body.messages?.[0]?.id;
+  const conversation = await upsertConversation({
+    companyId, waId, lastMessageAt: new Date(), lastMessagePreview: `Template: ${templateName}`, incrementUnread: false,
+  });
+
+  const message = await createMessage({
+    companyId,
+    conversationId: conversation._id,
+    waMessageId,
+    direction: "outbound",
+    type: "template",
+    text: `Template: ${templateName}`,
+    status: "sent",
+    timestamp: new Date(),
+  });
+
+  return { conversation, message };
+}
+
+// ─── Inbound media ───────────────────────────────────────────────────────────
+// Meta's own media URL requires a Bearer token and expires in minutes, so it
+// can never be handed straight to the browser — this resolves a stored
+// mediaId to actual bytes on demand, every time it's requested, rather than
+// trying to cache/re-host the file anywhere.
+export async function fetchWhatsAppMedia({ companyId, mediaId }) {
+  const [summary] = await listWhatsAppChannels(companyId);
+  if (!summary) throw new HttpError(404, "WhatsApp channel not found");
+  const channel = await getChannelForSync({ channelId: summary._id || summary.id, companyId });
+  const accessToken = channel?.credentials?.accessToken;
+  if (!accessToken) throw new HttpError(400, "Missing WhatsApp credentials");
+
+  const meta = await graphFetch(`${GRAPH_BASE()}/${mediaId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  const fileResponse = await fetch(meta.url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  if (!fileResponse.ok) throw new HttpError(502, "Could not download this attachment from Meta — it may have expired.");
+
+  return { body: fileResponse.body, contentType: meta.mime_type || fileResponse.headers.get("content-type") || "application/octet-stream" };
 }
 
 // ─── Receive (webhook) ───────────────────────────────────────────────────────
@@ -369,7 +474,11 @@ export async function handleIncomingWebhook(payload) {
 
       for (const msg of value.messages || []) {
         const waId = msg.from;
-        const text = msg.text?.body || msg.button?.text || (msg.type !== "text" ? `[${msg.type}]` : "");
+        // Meta nests media under a key matching the message type itself
+        // (msg.image.id, msg.document.id, ...) — msg[msg.type] covers every
+        // media type the same way without a type-by-type switch.
+        const mediaNode = ["image", "video", "audio", "document", "sticker"].includes(msg.type) ? msg[msg.type] : null;
+        const text = msg.text?.body || msg.button?.text || mediaNode?.caption || (msg.type !== "text" ? `[${msg.type}]` : "");
         const profileName = (value.contacts || []).find((c) => c.wa_id === waId)?.profile?.name || "";
         const timestamp = msg.timestamp ? new Date(Number(msg.timestamp) * 1000) : new Date();
 
@@ -384,6 +493,8 @@ export async function handleIncomingWebhook(payload) {
           direction: "inbound",
           type: msg.type || "text",
           text,
+          mediaId: mediaNode?.id || "",
+          mediaMimeType: mediaNode?.mime_type || "",
           status: "received",
           timestamp,
         });

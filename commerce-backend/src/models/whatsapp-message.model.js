@@ -11,9 +11,16 @@ const whatsappMessageSchema = new mongoose.Schema(
     waMessageId: { type: String, required: true },
 
     direction: { type: String, enum: ["inbound", "outbound"], required: true },
-    type: { type: String, default: "text" }, // text | image | document | template | ...
+    type: { type: String, default: "text" }, // text | image | video | document | audio | template | ...
     text: { type: String, default: "" },
+    // Outbound attachments carry a real, directly-fetchable link (whatever
+    // URL the sender attached). Inbound attachments only ever carry Meta's
+    // opaque media id — Meta's own media URLs need a Bearer token and
+    // expire in minutes, so inbound media is fetched on demand through
+    // GET /api/whatsapp/media/:mediaId instead of being stored as a URL.
     mediaUrl: { type: String, default: "" },
+    mediaId: { type: String, default: "" },
+    mediaMimeType: { type: String, default: "" },
 
     // sent -> delivered -> read is the normal outbound progression, updated
     // as Meta's status webhook events arrive; inbound messages are just
