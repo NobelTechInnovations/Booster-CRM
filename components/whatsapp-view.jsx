@@ -315,7 +315,7 @@ function MessageThread({ conversation, channelName, onDeleted }) {
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [deleting, setDeleting] = useState(false);
-  const bottomRef = useRef(null);
+  const listRef = useRef(null);
   const pollRef = useRef(null);
 
   async function handleDelete() {
@@ -351,7 +351,16 @@ function MessageThread({ conversation, channelName, onDeleted }) {
     return () => clearInterval(pollRef.current);
   }, [conversation._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
+  // Scrolls only this element's own scrollTop, not scrollIntoView() on a
+  // marker — scrollIntoView walks every scrollable ancestor up the tree,
+  // and an `overflow: hidden` ancestor (the chat Card, clipped on purpose
+  // so nothing pokes outside it) still counts as one and gets scrolled
+  // too, which is exactly what was dragging the thread header and
+  // conversation list out of view every time a new message arrived.
+  useEffect(() => {
+    const el = listRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages.length]);
 
   async function send() {
     if (!text.trim() && !attachment) return;
@@ -393,7 +402,7 @@ function MessageThread({ conversation, channelName, onDeleted }) {
         </button>
       </div>
 
-      <div className="flex-1 space-y-2 overflow-y-auto bg-slate-50/60 p-4">
+      <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-50/60 p-4">
         {isLoading ? (
           <p className="text-center text-xs text-[var(--muted)]">Loading messages…</p>
         ) : messages.length === 0 ? (
@@ -416,7 +425,6 @@ function MessageThread({ conversation, channelName, onDeleted }) {
             </div>
           ))
         )}
-        <div ref={bottomRef} />
       </div>
 
       {error ? (
