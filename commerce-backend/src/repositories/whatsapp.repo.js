@@ -98,6 +98,29 @@ export async function getConversation({ companyId, conversationId }) {
   return found ? clone(found) : null;
 }
 
+// Fully removes a conversation and every message in it — for clearing out
+// test conversations, not something Meta's own history is affected by
+// (this only ever touches this app's own copy of the thread).
+export async function deleteConversation({ companyId, conversationId }) {
+  if (isMongoConnected()) {
+    const conversation = await WhatsAppConversation.findOneAndDelete({ _id: conversationId, companyId: mixedIdFilter(companyId) }).lean();
+    if (!conversation) return null;
+    await WhatsAppMessage.deleteMany({ companyId: mixedIdFilter(companyId), conversationId });
+    return conversation;
+  }
+
+  const found = [...memory.whatsappConversations.entries()].find(([, c]) => String(c._id) === String(conversationId) && String(c.companyId) === String(companyId));
+  if (!found) return null;
+  const [key, conversation] = found;
+  memory.whatsappConversations.delete(key);
+  for (const [msgKey, msg] of memory.whatsappMessages.entries()) {
+    if (String(msg.companyId) === String(companyId) && String(msg.conversationId) === String(conversationId)) {
+      memory.whatsappMessages.delete(msgKey);
+    }
+  }
+  return clone(conversation);
+}
+
 export async function markConversationRead({ companyId, conversationId }) {
   if (isMongoConnected()) {
     return WhatsAppConversation.findOneAndUpdate(

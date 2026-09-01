@@ -7,7 +7,7 @@ import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
 import { verifyWebhookSignature } from "../webhooks/webhook.service.js";
 import { listWhatsAppChannels, deleteWhatsAppChannel } from "../../repositories/channel.repo.js";
-import { listConversations, getConversation, listMessagesForConversation, markConversationRead } from "../../repositories/whatsapp.repo.js";
+import { listConversations, getConversation, listMessagesForConversation, markConversationRead, deleteConversation } from "../../repositories/whatsapp.repo.js";
 import {
   connectWhatsAppChannel,
   buildWhatsAppSignupAuthorizeUrl,
@@ -314,6 +314,20 @@ whatsappRoutes.get(
     const messages = await listMessagesForConversation({ companyId: req.auth.companyId, conversationId: req.params.id });
     await markConversationRead({ companyId: req.auth.companyId, conversationId: req.params.id });
     res.json({ conversation, messages });
+  }),
+);
+
+// Fully clears a conversation and its messages from this app's own history
+// — Meta/the customer's own WhatsApp is untouched, this only removes the
+// panel's copy (e.g. clearing out test conversations).
+whatsappRoutes.delete(
+  "/conversations/:id",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const conversation = await deleteConversation({ companyId: req.auth.companyId, conversationId: req.params.id });
+    if (!conversation) throw new HttpError(404, "Conversation not found");
+    res.json({ ok: true });
   }),
 );
 

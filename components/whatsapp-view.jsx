@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X, Unlink, Paperclip } from "lucide-react";
+import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X, Unlink, Paperclip, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,6 +16,7 @@ import {
   sendWhatsAppMessage,
   startWhatsAppConversation,
   disconnectWhatsAppChannel,
+  deleteWhatsAppConversation,
   fixWhatsAppPermissions,
   whatsappMediaUrl,
 } from "@/lib/api";
@@ -306,15 +307,28 @@ function MessageMedia({ message }) {
   );
 }
 
-function MessageThread({ conversation, channelName }) {
+function MessageThread({ conversation, channelName, onDeleted }) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [text, setText] = useState("");
   const [attachment, setAttachment] = useState(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
+  const [deleting, setDeleting] = useState(false);
   const bottomRef = useRef(null);
   const pollRef = useRef(null);
+
+  async function handleDelete() {
+    if (!window.confirm(`Delete this conversation with ${conversation.customerName || `+${conversation.waId}`}? This removes it (and every message) from the panel — it doesn't touch WhatsApp itself.`)) return;
+    setDeleting(true);
+    try {
+      await deleteWhatsAppConversation(conversation._id);
+      onDeleted(conversation._id);
+    } catch (err) {
+      setError(err.message);
+      setDeleting(false);
+    }
+  }
 
   async function load(silent = false) {
     if (!silent) setIsLoading(true);
@@ -365,10 +379,18 @@ function MessageThread({ conversation, channelName }) {
         <div className="grid h-9 w-9 place-items-center rounded-full bg-emerald-100 text-emerald-700">
           <MessageCircle size={16} />
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold text-slate-900">{conversation.customerName || conversation.waId}</p>
           <p className="text-[11px] text-slate-400">+{conversation.waId} · {channelName}</p>
         </div>
+        <button
+          onClick={handleDelete}
+          disabled={deleting}
+          title="Delete conversation"
+          className="shrink-0 rounded-md p-1.5 text-slate-400 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-50"
+        >
+          <Trash2 size={15} />
+        </button>
       </div>
 
       <div className="flex-1 space-y-2 overflow-y-auto bg-slate-50/60 p-4">
@@ -770,7 +792,14 @@ export function WhatsAppView() {
             {/* Thread */}
             <div className="flex flex-col">
               {selected ? (
-                <MessageThread conversation={selected} channelName={channel.name} />
+                <MessageThread
+                  conversation={selected}
+                  channelName={channel.name}
+                  onDeleted={(id) => {
+                    setSelected(null);
+                    setConversations((prev) => prev.filter((c) => c._id !== id));
+                  }}
+                />
               ) : (
                 <div className="flex flex-1 flex-col items-center justify-center gap-2 text-slate-300">
                   <MessageCircle size={40} />
