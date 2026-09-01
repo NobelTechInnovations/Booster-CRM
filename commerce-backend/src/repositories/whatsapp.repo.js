@@ -1,7 +1,9 @@
 import mongoose from "mongoose";
+import crypto from "node:crypto";
 import { isMongoConnected } from "../config/database.js";
 import { WhatsAppConversation } from "../models/whatsapp-conversation.model.js";
 import { WhatsAppMessage } from "../models/whatsapp-message.model.js";
+import { WhatsAppPendingSignup } from "../models/whatsapp-pending-signup.model.js";
 import { SyncedCustomer } from "../models/synced-customer.model.js";
 import { memory, id, clone, now } from "./memory-store.js";
 
@@ -158,4 +160,42 @@ export async function updateMessageStatus({ companyId, waMessageId, status }) {
     }
   }
   return null;
+}
+
+// ─── Pending signup (multi-number picker bridge) ────────────────────────────
+
+export async function createPendingWhatsAppSignup({ companyId, userId, accessToken, candidates }) {
+  const selectionToken = crypto.randomBytes(24).toString("base64url");
+
+  if (isMongoConnected()) {
+    await WhatsAppPendingSignup.create({ selectionToken, companyId, userId, accessToken, candidates });
+    return selectionToken;
+  }
+
+  const expiresAt = Date.now() + 15 * 60 * 1000;
+  memory.whatsappPendingSignups.set(selectionToken, { companyId, userId, accessToken, candidates, expiresAt });
+  return selectionToken;
+}
+
+export async function getPendingWhatsAppSignup({ selectionToken, companyId }) {
+  if (isMongoConnected()) {
+    return WhatsAppPendingSignup.findOne({ selectionToken, companyId: mixedIdFilter(companyId) })
+      .select("+accessToken")
+      .lean();
+  }
+  const found = memory.whatsappPendingSignups.get(selectionToken);
+  if (!found || String(found.companyId) !== String(companyId)) return null;
+  if (found.expiresAt < Date.now()) {
+    memory.whatsappPendingSignups.delete(selectionToken);
+    return null;
+  }
+  return clone(found);
+}
+
+export async function deletePendingWhatsAppSignup(selectionToken) {
+  if (isMongoConnected()) {
+    await WhatsAppPendingSignup.deleteOne({ selectionToken });
+    return;
+  }
+  memory.whatsappPendingSignups.delete(selectionToken);
 }

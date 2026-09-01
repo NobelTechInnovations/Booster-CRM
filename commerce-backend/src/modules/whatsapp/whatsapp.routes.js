@@ -10,6 +10,7 @@ import {
   connectWhatsAppChannel,
   buildWhatsAppSignupAuthorizeUrl,
   completeWhatsAppSignupRedirect,
+  finalizeWhatsAppSignup,
   sendWhatsAppMessage,
   handleIncomingWebhook,
 } from "./whatsapp.service.js";
@@ -58,11 +59,38 @@ whatsappRoutes.get(
     // the panel carrying either the connected channel id or a readable
     // error, never leave the user staring at a raw JSON response.
     try {
-      const { channel } = await completeWhatsAppSignupRedirect(req.query);
-      res.redirect(`${env.frontendUrl}/panel/whatsapp?provider=meta&status=connected&channelId=${channel._id || channel.id}`);
+      const result = await completeWhatsAppSignupRedirect(req.query);
+      if (result.needsSelection) {
+        // Only the opaque selectionToken + the (non-sensitive) candidate
+        // list travel through the URL — the access token stays server-side
+        // in the pending-signup row this token points at. Candidates are
+        // small enough (a handful of phone numbers at most) to fit safely
+        // in a query string without needing a second round-trip endpoint.
+        const candidatesParam = encodeURIComponent(JSON.stringify(result.candidates));
+        res.redirect(`${env.frontendUrl}/panel/whatsapp?provider=meta&status=choose&selectionToken=${result.selectionToken}&candidates=${candidatesParam}`);
+        return;
+      }
+      res.redirect(`${env.frontendUrl}/panel/whatsapp?provider=meta&status=connected&channelId=${result.channel._id || result.channel.id}`);
     } catch (error) {
       res.redirect(`${env.frontendUrl}/panel/whatsapp?provider=meta&status=error&message=${encodeURIComponent(error.message)}`);
     }
+  }),
+);
+
+// Finishes signup after the company picks a number from the "choose"
+// screen (only reached when the callback above found more than one).
+whatsappRoutes.post(
+  "/meta/finalize",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await finalizeWhatsAppSignup({
+      companyId: req.auth.companyId,
+      userId: req.auth.sub,
+      selectionToken: req.body?.selectionToken,
+      phoneNumberId: req.body?.phoneNumberId,
+    });
+    res.json(result);
   }),
 );
 

@@ -12,6 +12,9 @@ import {
   upsertConversation,
   createMessage,
   updateMessageStatus,
+  createPendingWhatsAppSignup,
+  getPendingWhatsAppSignup,
+  deletePendingWhatsAppSignup,
 } from "../../repositories/whatsapp.repo.js";
 
 const GRAPH_BASE = () => `https://graph.facebook.com/${env.whatsapp.apiVersion}`;
@@ -165,13 +168,39 @@ async function findGrantedWabaIds(accessToken) {
   return wabaIds;
 }
 
-async function findFirstPhoneNumber(accessToken, wabaIds) {
+// Collects every phone number across every granted WABA, not just the
+// first — so the caller can show a real picker (with the WABA's own name
+// alongside each number, for "which one is which" clarity) whenever a
+// company has more than one, instead of silently guessing.
+async function findAllPhoneNumbers(accessToken, wabaIds) {
+  const candidates = [];
   for (const wabaId of wabaIds) {
-    const params = new URLSearchParams({ fields: "id,display_phone_number,verified_name", access_token: accessToken });
-    const numbers = await graphFetchAll(`${GRAPH_BASE()}/${wabaId}/phone_numbers?${params.toString()}`, { maxRows: 25 }).catch(() => []);
-    if (numbers[0]) return { ...numbers[0], whatsappBusinessAccountId: wabaId };
+    const wabaParams = new URLSearchParams({ fields: "name", access_token: accessToken });
+    const waba = await graphFetch(`${GRAPH_BASE()}/${wabaId}?${wabaParams.toString()}`).catch(() => ({}));
+
+    const numberParams = new URLSearchParams({ fields: "id,display_phone_number,verified_name", access_token: accessToken });
+    const numbers = await graphFetchAll(`${GRAPH_BASE()}/${wabaId}/phone_numbers?${numberParams.toString()}`, { maxRows: 25 }).catch(() => []);
+    for (const number of numbers) {
+      candidates.push({
+        phoneNumberId: number.id,
+        whatsappBusinessAccountId: wabaId,
+        displayPhoneNumber: number.display_phone_number || "",
+        verifiedName: number.verified_name || waba.name || "",
+      });
+    }
   }
-  return null;
+  return candidates;
+}
+
+async function connectFromCandidate({ companyId, userId, accessToken, candidate }) {
+  return upsertWhatsAppChannel({
+    companyId, userId,
+    phoneNumberId: candidate.phoneNumberId,
+    whatsappBusinessAccountId: candidate.whatsappBusinessAccountId,
+    accessToken,
+    whatsappDisplayName: candidate.verifiedName || "",
+    whatsappPhoneNumber: candidate.displayPhoneNumber || "",
+  });
 }
 
 export async function completeWhatsAppSignupRedirect(query) {
@@ -192,20 +221,34 @@ export async function completeWhatsAppSignupRedirect(query) {
     throw new HttpError(400, "Meta didn't grant access to any WhatsApp Business Account — make sure you picked or created one during signup.");
   }
 
-  const phoneNumber = await findFirstPhoneNumber(accessToken, wabaIds);
-  if (!phoneNumber) {
+  const candidates = await findAllPhoneNumbers(accessToken, wabaIds);
+  if (!candidates.length) {
     throw new HttpError(400, "No phone number was found on the WhatsApp Business Account you connected — add one in Meta first, then try again.");
   }
 
-  const channel = await upsertWhatsAppChannel({
-    companyId, userId,
-    phoneNumberId: phoneNumber.id,
-    whatsappBusinessAccountId: phoneNumber.whatsappBusinessAccountId,
-    accessToken,
-    whatsappDisplayName: phoneNumber.verified_name || "",
-    whatsappPhoneNumber: phoneNumber.display_phone_number || "",
-  });
+  // More than one number across every granted WABA — hand back a picker
+  // instead of silently guessing which one the company actually wants.
+  // The access token is kept server-side (never in the redirect URL) via
+  // a short-lived pending-signup row; only the opaque selectionToken
+  // travels through the browser.
+  if (candidates.length > 1) {
+    const selectionToken = await createPendingWhatsAppSignup({ companyId, userId, accessToken, candidates });
+    return { needsSelection: true, selectionToken, candidates };
+  }
 
+  const channel = await connectFromCandidate({ companyId, userId, accessToken, candidate: candidates[0] });
+  return { channel };
+}
+
+export async function finalizeWhatsAppSignup({ companyId, userId, selectionToken, phoneNumberId }) {
+  const pending = await getPendingWhatsAppSignup({ selectionToken, companyId });
+  if (!pending) throw new HttpError(400, "This signup has expired — click Continue with Facebook and try again.");
+
+  const candidate = pending.candidates.find((c) => c.phoneNumberId === phoneNumberId);
+  if (!candidate) throw new HttpError(400, "That number wasn't part of the original signup — click Continue with Facebook and try again.");
+
+  const channel = await connectFromCandidate({ companyId, userId, accessToken: pending.accessToken, candidate });
+  await deletePendingWhatsAppSignup(selectionToken);
   return { channel };
 }
 

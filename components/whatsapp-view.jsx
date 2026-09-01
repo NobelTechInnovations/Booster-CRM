@@ -9,6 +9,7 @@ import { ListRowsSkeleton } from "@/components/ui/skeleton";
 import {
   connectWhatsApp,
   connectWhatsAppEmbedded,
+  finalizeWhatsAppSignup,
   listWhatsAppChannels,
   listWhatsAppConversations,
   getWhatsAppMessages,
@@ -322,6 +323,12 @@ export function WhatsAppView() {
   const [showChangeNumber, setShowChangeNumber] = useState(false);
   const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+  // Set only when the redirect callback found more than one WhatsApp
+  // number across every WABA Meta granted access to — {selectionToken,
+  // candidates}. Nothing was connected yet at this point; the company
+  // picks one below and that's what actually finishes the connection.
+  const [pendingChoice, setPendingChoice] = useState(null);
 
   useEffect(() => {
     listWhatsAppChannels()
@@ -329,6 +336,52 @@ export function WhatsAppView() {
       .catch((err) => setError(err.message))
       .finally(() => setLoadingChannel(false));
   }, []);
+
+  // Reads the redirect callback's own query params — status=connected,
+  // status=error&message=..., or status=choose&selectionToken=...&
+  // candidates=... when Meta granted access to more than one number. This
+  // is the only place a company ever finds out what actually happened
+  // after clicking "Continue with Facebook"; without it the flow could
+  // silently succeed, silently fail, or need a choice made, and the UI
+  // would look identical either way.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const status = params.get("status");
+    if (!status) return;
+
+    if (status === "error") {
+      setError(params.get("message") || "Something went wrong connecting WhatsApp.");
+    } else if (status === "connected") {
+      setNotice("WhatsApp connected.");
+    } else if (status === "choose") {
+      const selectionToken = params.get("selectionToken");
+      let candidates = [];
+      try {
+        candidates = JSON.parse(params.get("candidates") || "[]");
+      } catch {
+        candidates = [];
+      }
+      if (selectionToken && candidates.length) {
+        setPendingChoice({ selectionToken, candidates });
+      } else {
+        setError("Meta's response was missing the phone number list — click Continue with Facebook and try again.");
+      }
+    }
+
+    window.history.replaceState(null, "", window.location.pathname);
+  }, []);
+
+  async function choosePhoneNumber(candidate) {
+    setError("");
+    try {
+      const res = await finalizeWhatsAppSignup(pendingChoice.selectionToken, candidate.phoneNumberId);
+      setPendingChoice(null);
+      setChannel(res.channel);
+      setNotice("WhatsApp connected.");
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function loadConversations() {
     setLoadingConversations(true);
@@ -411,14 +464,77 @@ export function WhatsAppView() {
         ) : null}
       </section>
 
-      {loadingChannel ? (
+      {notice ? (
+        <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{notice}</div>
+      ) : null}
+      {error ? (
+        <div className="mb-4 rounded-lg border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
+      ) : null}
+
+      {pendingChoice ? (
+        <Card>
+          <CardHeader>
+            <div>
+              <CardTitle>Which number do you want to connect?</CardTitle>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                Your Facebook login has access to {pendingChoice.candidates.length} WhatsApp numbers. Pick the one this panel should use.
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-2">
+            {pendingChoice.candidates.map((c) => (
+              <button
+                key={c.phoneNumberId}
+                onClick={() => choosePhoneNumber(c)}
+                className="flex w-full items-center justify-between rounded-lg border border-[var(--line)] bg-white px-4 py-3 text-left transition hover:border-indigo-400 hover:bg-indigo-50/50"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-slate-800">{c.verifiedName || "(no display name yet)"}</p>
+                  <p className="mt-0.5 text-xs text-slate-500">
+                    {c.displayPhoneNumber || "Unknown number"} · Phone Number ID {c.phoneNumberId} · WABA {c.whatsappBusinessAccountId}
+                  </p>
+                </div>
+                <span className="shrink-0 text-xs font-semibold text-indigo-600">Connect this number →</span>
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPendingChoice(null)}
+              className="mt-2 block text-xs font-medium text-slate-500 hover:underline"
+            >
+              Cancel
+            </button>
+          </CardContent>
+        </Card>
+      ) : loadingChannel ? (
         <Card><CardContent><ListRowsSkeleton rows={3} /></CardContent></Card>
       ) : !channel ? (
         <WhatsAppConnectForm onConnected={setChannel} />
       ) : showChangeNumber ? (
         <WhatsAppConnectForm onConnected={handleChanged} />
       ) : (
-        <Card className="overflow-hidden">
+        <>
+          <Card className="mb-4">
+            <CardContent className="grid grid-cols-1 gap-x-6 gap-y-2 py-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Connected number</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">{channel.external?.whatsappPhoneNumber || "—"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Display name</p>
+                <p className="mt-0.5 text-sm font-semibold text-slate-800">{channel.external?.whatsappDisplayName || channel.name}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Phone Number ID</p>
+                <p className="mt-0.5 font-mono text-xs text-slate-600">{channel.external?.phoneNumberId || "—"}</p>
+              </div>
+              <div>
+                <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">WhatsApp Business Account ID</p>
+                <p className="mt-0.5 font-mono text-xs text-slate-600">{channel.external?.whatsappBusinessAccountId || "—"}</p>
+              </div>
+            </CardContent>
+          </Card>
+          <Card className="overflow-hidden">
           <div className="grid h-[640px] grid-cols-1 md:grid-cols-[300px_1fr]">
             {/* Conversation list */}
             <div className="flex flex-col border-r border-[var(--line)]">
@@ -471,9 +587,9 @@ export function WhatsAppView() {
               )}
             </div>
           </div>
-        </Card>
+          </Card>
+        </>
       )}
-      {error ? <p className="mt-3 text-xs font-medium text-rose-700">{error}</p> : null}
     </div>
   );
 }

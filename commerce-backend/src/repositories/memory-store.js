@@ -29,6 +29,7 @@ export const memory = {
   socialComments: new Map(),
   whatsappConversations: new Map(),
   whatsappMessages: new Map(),
+  whatsappPendingSignups: new Map(),
 };
 
 export function id() {
