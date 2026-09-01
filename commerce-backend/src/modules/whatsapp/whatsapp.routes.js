@@ -6,7 +6,7 @@ import { env } from "../../config/env.js";
 import { verifyWebhookSignature } from "../webhooks/webhook.service.js";
 import { listWhatsAppChannels, deleteWhatsAppChannel } from "../../repositories/channel.repo.js";
 import { listConversations, getConversation, listMessagesForConversation, markConversationRead } from "../../repositories/whatsapp.repo.js";
-import { connectWhatsAppChannel, sendWhatsAppMessage, handleIncomingWebhook } from "./whatsapp.service.js";
+import { connectWhatsAppChannel, completeEmbeddedSignup, sendWhatsAppMessage, handleIncomingWebhook } from "./whatsapp.service.js";
 
 export const whatsappRoutes = Router();
 
@@ -23,6 +23,26 @@ whatsappRoutes.post(
       phoneNumberId: req.body?.phoneNumberId,
       whatsappBusinessAccountId: req.body?.whatsappBusinessAccountId,
       accessToken: req.body?.accessToken,
+    });
+    res.json({ channel });
+  }),
+);
+
+// ─── Connect (WhatsApp Embedded Signup — "Continue with Facebook") ─────────
+// The easy path: the frontend runs Meta's Embedded Signup popup (Facebook
+// JS SDK + config_id), which hands back an authorization code and the
+// phone_number_id/waba_id it just set up — no manual token/ID entry.
+whatsappRoutes.post(
+  "/embedded-signup",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const channel = await completeEmbeddedSignup({
+      companyId: req.auth.companyId,
+      userId: req.auth.sub,
+      code: req.body?.code,
+      phoneNumberId: req.body?.phoneNumberId,
+      whatsappBusinessAccountId: req.body?.whatsappBusinessAccountId,
     });
     res.json({ channel });
   }),

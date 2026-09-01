@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ListRowsSkeleton } from "@/components/ui/skeleton";
 import {
   connectWhatsApp,
+  completeWhatsAppEmbeddedSignup,
   listWhatsAppChannels,
   listWhatsAppConversations,
   getWhatsAppMessages,
@@ -15,6 +16,40 @@ import {
   startWhatsAppConversation,
   disconnectWhatsAppChannel,
 } from "@/lib/api";
+
+// App ID and this Configuration ID are both meant to be public — Meta's own
+// JS SDK docs pass them directly in client-side code, the same way a
+// Stripe or Google publishable key works. Neither grants access to
+// anything by itself.
+const META_APP_ID = "1000876402957904";
+const WHATSAPP_SIGNUP_CONFIG_ID = "28165972503056854";
+const GRAPH_API_VERSION = "v21.0";
+
+let fbSdkPromise = null;
+
+// Loads Meta's JS SDK exactly once per page, however many times this is
+// called — WhatsAppConnectForm can mount/unmount as the panel is opened
+// and closed.
+function loadFacebookSdk() {
+  if (fbSdkPromise) return fbSdkPromise;
+  fbSdkPromise = new Promise((resolve, reject) => {
+    if (typeof window === "undefined") return reject(new Error("No window"));
+    if (window.FB) return resolve(window.FB);
+
+    window.fbAsyncInit = () => {
+      window.FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: false, version: GRAPH_API_VERSION });
+      resolve(window.FB);
+    };
+
+    const script = document.createElement("script");
+    script.src = "https://connect.facebook.net/en_US/sdk.js";
+    script.async = true;
+    script.defer = true;
+    script.onerror = () => reject(new Error("Could not load Meta's login SDK — check your connection and try again."));
+    document.body.appendChild(script);
+  });
+  return fbSdkPromise;
+}
 
 function fmt(date) {
   if (!date) return "";
@@ -30,16 +65,94 @@ function statusIcon(status) {
 }
 
 // ─── Connect form ────────────────────────────────────────────────────────────
-// WhatsApp Cloud API has no simple OAuth screen for provisioning a business
-// phone number — the company admin pastes their own System User token +
-// Phone Number ID directly from their WhatsApp Business Account in Meta
-// Business Manager, same as the backend's connectWhatsAppChannel expects.
+// Leads with WhatsApp Embedded Signup — "Continue with Facebook" opens
+// Meta's own popup where the company logs in and picks/creates a WhatsApp
+// Business Account and phone number, and Meta hands back everything this
+// app needs. No Phone Number ID or access token for anyone to go hunting
+// for in Business Manager, which isn't reasonable to expect from a
+// non-technical shop owner. The old manual-entry path stays available
+// (collapsed under "Enter details manually instead") for anyone who
+// already has a System User token they'd rather paste in directly.
 function WhatsAppConnectForm({ onConnected }) {
+  const [showManual, setShowManual] = useState(false);
   const [form, setForm] = useState({ phoneNumberId: "", whatsappBusinessAccountId: "", accessToken: "" });
   const [connecting, setConnecting] = useState(false);
+  const [signingUp, setSigningUp] = useState(false);
   const [error, setError] = useState("");
+  const sessionInfoRef = useRef({});
 
-  async function connect(e) {
+  useEffect(() => {
+    loadFacebookSdk().catch((err) => setError(err.message));
+
+    // Meta posts the phone_number_id/waba_id it just set up via
+    // postMessage while the signup popup is still open — FB.login's own
+    // callback only ever returns the authorization code, not these ids,
+    // so they're captured here and combined with the code once login
+    // finishes.
+    function handleMessage(event) {
+      if (!event.origin?.endsWith("facebook.com")) return;
+      let data;
+      try {
+        data = JSON.parse(event.data);
+      } catch {
+        return;
+      }
+      if (data.type !== "WA_EMBEDDED_SIGNUP") return;
+      if (data.event === "FINISH" && data.data) {
+        sessionInfoRef.current = { phoneNumberId: data.data.phone_number_id, whatsappBusinessAccountId: data.data.waba_id };
+      } else if (data.event === "CANCEL") {
+        setError("Signup was closed before finishing — try again and complete every step in the popup.");
+      } else if (data.event === "ERROR") {
+        setError(data.data?.error_message || "Meta reported an error during signup.");
+      }
+    }
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, []);
+
+  async function startSignup() {
+    setSigningUp(true);
+    setError("");
+    sessionInfoRef.current = {};
+    try {
+      const FB = await loadFacebookSdk();
+      FB.login(
+        async (response) => {
+          const code = response?.authResponse?.code;
+          if (!code) {
+            setError(response?.status === "unknown" ? "Signup was closed before finishing." : "Meta didn't return an authorization code.");
+            setSigningUp(false);
+            return;
+          }
+          const { phoneNumberId, whatsappBusinessAccountId } = sessionInfoRef.current;
+          if (!phoneNumberId) {
+            setError("Meta didn't hand back a phone number — please try again and finish every step in the popup.");
+            setSigningUp(false);
+            return;
+          }
+          try {
+            const res = await completeWhatsAppEmbeddedSignup({ code, phoneNumberId, whatsappBusinessAccountId });
+            onConnected(res.channel);
+          } catch (err) {
+            setError(err.message);
+          } finally {
+            setSigningUp(false);
+          }
+        },
+        {
+          config_id: WHATSAPP_SIGNUP_CONFIG_ID,
+          response_type: "code",
+          override_default_response_type: true,
+          extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
+        },
+      );
+    } catch (err) {
+      setError(err.message);
+      setSigningUp(false);
+    }
+  }
+
+  async function connectManually(e) {
     e.preventDefault();
     setConnecting(true);
     setError("");
@@ -61,31 +174,53 @@ function WhatsAppConnectForm({ onConnected }) {
         <div>
           <CardTitle>Connect WhatsApp Business</CardTitle>
           <p className="mt-1 text-sm text-[var(--muted)]">
-            From Meta Business Manager → WhatsApp Business Account, get a Phone Number ID and a permanent
-            System User access token (not a temporary one), then paste them here.
+            Log in with Facebook and Meta walks you through picking or creating a WhatsApp Business number —
+            no IDs or tokens to go find yourself.
           </p>
         </div>
       </CardHeader>
       <CardContent>
-        <form onSubmit={connect} className="space-y-3">
-          <label className="block">
-            <span className="text-[11px] font-semibold uppercase text-slate-500">Phone Number ID</span>
-            <input required value={form.phoneNumberId} onChange={(e) => setForm((f) => ({ ...f, phoneNumberId: e.target.value }))} className={inputClass} placeholder="e.g. 109876543210987" />
-          </label>
-          <label className="block">
-            <span className="text-[11px] font-semibold uppercase text-slate-500">WhatsApp Business Account ID (optional)</span>
-            <input value={form.whatsappBusinessAccountId} onChange={(e) => setForm((f) => ({ ...f, whatsappBusinessAccountId: e.target.value }))} className={inputClass} placeholder="e.g. 123456789012345" />
-          </label>
-          <label className="block">
-            <span className="text-[11px] font-semibold uppercase text-slate-500">System User Access Token</span>
-            <input required type="password" value={form.accessToken} onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value }))} className={inputClass} placeholder="Permanent token, not a 24h one" />
-          </label>
-          {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
-          <Button type="submit" disabled={connecting}>
-            <MessageCircle size={16} />
-            {connecting ? "Verifying…" : "Connect WhatsApp"}
-          </Button>
-        </form>
+        {!showManual ? (
+          <>
+            <Button onClick={startSignup} disabled={signingUp}>
+              <MessageCircle size={16} />
+              {signingUp ? "Opening Facebook…" : "Continue with Facebook"}
+            </Button>
+            {error ? <p className="mt-3 text-sm font-medium text-rose-700">{error}</p> : null}
+            <button
+              type="button"
+              onClick={() => { setShowManual(true); setError(""); }}
+              className="mt-4 block text-xs font-medium text-indigo-600 hover:underline"
+            >
+              Already have a System User access token? Enter details manually instead.
+            </button>
+          </>
+        ) : (
+          <>
+            <form onSubmit={connectManually} className="space-y-3">
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase text-slate-500">Phone Number ID</span>
+                <input required value={form.phoneNumberId} onChange={(e) => setForm((f) => ({ ...f, phoneNumberId: e.target.value }))} className={inputClass} placeholder="e.g. 109876543210987" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase text-slate-500">WhatsApp Business Account ID (optional)</span>
+                <input value={form.whatsappBusinessAccountId} onChange={(e) => setForm((f) => ({ ...f, whatsappBusinessAccountId: e.target.value }))} className={inputClass} placeholder="e.g. 123456789012345" />
+              </label>
+              <label className="block">
+                <span className="text-[11px] font-semibold uppercase text-slate-500">System User Access Token</span>
+                <input required type="password" value={form.accessToken} onChange={(e) => setForm((f) => ({ ...f, accessToken: e.target.value }))} className={inputClass} placeholder="Permanent token, not a 24h one" />
+              </label>
+              {error ? <p className="text-sm font-medium text-rose-700">{error}</p> : null}
+              <Button type="submit" disabled={connecting}>
+                <MessageCircle size={16} />
+                {connecting ? "Verifying…" : "Connect WhatsApp"}
+              </Button>
+            </form>
+            <button type="button" onClick={() => { setShowManual(false); setError(""); }} className="mt-4 block text-xs font-medium text-indigo-600 hover:underline">
+              ← Back to Continue with Facebook
+            </button>
+          </>
+        )}
         <div className="mt-4 rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
           Also set the webhook URL in your Meta App's WhatsApp configuration to this backend's{" "}
           <code>/api/whatsapp/webhook</code> — one webhook per Meta App covers every company connected here,

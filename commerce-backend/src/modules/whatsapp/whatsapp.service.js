@@ -44,6 +44,62 @@ export async function connectWhatsAppChannel({ companyId, userId, phoneNumberId,
   });
 }
 
+// ─── Connect (WhatsApp Embedded Signup — the "Continue with Facebook" flow) ─
+// Same end result as connectWhatsAppChannel above, but the company admin
+// never sees a Phone Number ID or an access token — they log in with
+// Facebook, Meta walks them through picking/creating a WhatsApp Business
+// Account and phone number in its own popup, and hands back an
+// authorization code plus the phone_number_id/waba_id it just set up. This
+// is the standard replacement for manually hunting down a System User
+// token in Business Manager, which is genuinely not something a non-
+// technical shop owner can be expected to do.
+//
+// The code is exchanged the same two-step way Social's OAuth does
+// (exchangeCodeForToken -> fb_exchange_token), reusing env.meta.appId/
+// appSecret since Embedded Signup runs through the same Meta App as the
+// Social OAuth flow. The result is a long-lived (~60 day) token, not a
+// literal forever token the way a manually-generated System User token
+// can be — there's no way to mint a true permanent token from this flow
+// without the company also completing Business Manager's own System User
+// setup, which is exactly the friction this flow exists to avoid. In
+// practice that means: it works immediately with zero manual steps, and if
+// a connection ever goes stale after ~60 days, reconnecting is the same
+// one-click "Connect WhatsApp" flow, not a return trip to Business Manager.
+export async function completeEmbeddedSignup({ companyId, userId, code, phoneNumberId, whatsappBusinessAccountId }) {
+  if (!code?.trim()) throw new HttpError(400, "Missing authorization code from Meta");
+  if (!phoneNumberId?.trim()) {
+    throw new HttpError(400, "Meta didn't hand back a phone number — the signup popup may have been closed before finishing.");
+  }
+  if (!env.meta.appId || !env.meta.appSecret) {
+    throw new HttpError(500, "Meta app credentials are not configured. Add META_APP_ID and META_APP_SECRET, then restart the backend.");
+  }
+
+  const shortLivedParams = new URLSearchParams({ client_id: env.meta.appId, client_secret: env.meta.appSecret, code });
+  const shortLived = await graphFetch(`${GRAPH_BASE()}/oauth/access_token?${shortLivedParams.toString()}`).catch((err) => {
+    throw new HttpError(400, `Could not complete WhatsApp signup with Meta: ${err.message}`);
+  });
+
+  const longLivedParams = new URLSearchParams({
+    grant_type: "fb_exchange_token",
+    client_id: env.meta.appId,
+    client_secret: env.meta.appSecret,
+    fb_exchange_token: shortLived.access_token,
+  });
+  const longLived = await graphFetch(`${GRAPH_BASE()}/oauth/access_token?${longLivedParams.toString()}`).catch(() => shortLived);
+  const accessToken = longLived.access_token || shortLived.access_token;
+
+  const detailParams = new URLSearchParams({ fields: "verified_name,display_phone_number", access_token: accessToken });
+  const details = await graphFetch(`${GRAPH_BASE()}/${phoneNumberId}?${detailParams.toString()}`).catch(() => ({}));
+
+  return upsertWhatsAppChannel({
+    companyId, userId, phoneNumberId,
+    whatsappBusinessAccountId: whatsappBusinessAccountId || "",
+    accessToken,
+    whatsappDisplayName: details.verified_name || "",
+    whatsappPhoneNumber: details.display_phone_number || "",
+  });
+}
+
 // ─── Send ────────────────────────────────────────────────────────────────────
 // MVP scope: free-form text only, which covers every reply sent within
 // WhatsApp's 24-hour customer-service window (any conversation the customer
