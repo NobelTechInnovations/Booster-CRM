@@ -460,6 +460,23 @@ export async function listSocialChannels(companyId) {
   return listChannels(companyId, { channelType: "social" });
 }
 
+// Hard delete, not the generic disconnectChannel's soft status flip —
+// listSocialChannels/listChannels don't filter by status, so a soft
+// disconnect would leave the row in place and the frontend (which just
+// takes channels[0]) would keep showing it as connected. A full delete is
+// also what "remove and connect a different Instagram/Facebook account"
+// actually needs: reconnecting after this creates a fresh channel row
+// rather than reusing stale pageId/igUserId from the account being removed.
+export async function deleteSocialChannel({ channelId, companyId }) {
+  if (isMongoConnected()) {
+    return Channel.findOneAndDelete({ _id: channelId, companyId, channelType: "social" }).lean();
+  }
+  const channel = memory.channels.get(channelId);
+  if (!channel || String(channel.companyId) !== String(companyId) || channel.channelType !== "social") return null;
+  memory.channels.delete(channelId);
+  return withoutCredentials(channel);
+}
+
 // pageAccessToken is distinct from the user-level accessToken exchanged from
 // the OAuth code — Meta's "new Pages experience" rejects Page/Instagram
 // media, insights, comments, and reply calls made with a user token
@@ -536,6 +553,20 @@ export async function upsertSocialChannel({ companyId, userId, accessToken, page
 
 export async function listWhatsAppChannels(companyId) {
   return listChannels(companyId, { channelType: "whatsapp" });
+}
+
+// Same reasoning as deleteSocialChannel above — hard delete so the
+// frontend's channels[0]||null check naturally falls back to the connect
+// form, and so a re-connect with a different phone number starts clean
+// instead of upserting stale fields onto the removed number's row.
+export async function deleteWhatsAppChannel({ channelId, companyId }) {
+  if (isMongoConnected()) {
+    return Channel.findOneAndDelete({ _id: channelId, companyId, channelType: "whatsapp" }).lean();
+  }
+  const channel = memory.channels.get(channelId);
+  if (!channel || String(channel.companyId) !== String(companyId) || channel.channelType !== "whatsapp") return null;
+  memory.channels.delete(channelId);
+  return withoutCredentials(channel);
 }
 
 export async function upsertWhatsAppChannel({ companyId, userId, phoneNumberId, whatsappBusinessAccountId, accessToken, whatsappDisplayName, whatsappPhoneNumber }) {

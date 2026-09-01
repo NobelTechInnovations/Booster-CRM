@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { listSocialChannels } from "../../repositories/channel.repo.js";
+import { listSocialChannels, deleteSocialChannel } from "../../repositories/channel.repo.js";
 import { listSocialPosts, listCommentsForPost, getSocialPost } from "../../repositories/social.repo.js";
 import {
   buildSocialAuthorizeUrl,
@@ -49,6 +49,21 @@ socialRoutes.get(
   asyncHandler(async (req, res) => {
     const channels = await listSocialChannels(req.auth.companyId);
     res.json({ channels });
+  }),
+);
+
+// Fully removes the connection — the way to disconnect this account so a
+// company can connect an entirely different Instagram/Facebook account
+// (not just a different Page under the one already authorized, which
+// "Reconnect" above already covers via Meta's own account switcher).
+socialRoutes.delete(
+  "/channels/:channelId",
+  requireAuth,
+  requirePermission("social:manage"),
+  asyncHandler(async (req, res) => {
+    const channel = await deleteSocialChannel({ channelId: req.params.channelId, companyId: req.auth.companyId });
+    if (!channel) throw new HttpError(404, "Social channel not found");
+    res.json({ ok: true });
   }),
 );
 

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X } from "lucide-react";
+import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X, Unlink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,6 +13,7 @@ import {
   getWhatsAppMessages,
   sendWhatsAppMessage,
   startWhatsAppConversation,
+  disconnectWhatsAppChannel,
 } from "@/lib/api";
 
 function fmt(date) {
@@ -271,6 +272,8 @@ export function WhatsAppView() {
   const [loadingConversations, setLoadingConversations] = useState(true);
   const [selected, setSelected] = useState(null);
   const [showNewChat, setShowNewChat] = useState(false);
+  const [showChangeNumber, setShowChangeNumber] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -300,6 +303,36 @@ export function WhatsAppView() {
     loadConversations();
   }
 
+  // connectWhatsAppChannel upserts on {companyId, provider, shop:"whatsapp"}
+  // — a company only ever has one WhatsApp channel row — so submitting this
+  // form again with a different Phone Number ID/token replaces the number
+  // in place rather than creating a second connection.
+  function handleChanged(newChannel) {
+    setShowChangeNumber(false);
+    setChannel(newChannel);
+    setSelected(null);
+    setConversations([]);
+  }
+
+  // Fully removes the connection so the connect form comes back — for when
+  // a company wants to stop using this number entirely rather than replace
+  // it with another one.
+  async function disconnect() {
+    if (!window.confirm(`Disconnect ${channel.name}? Conversations already in the panel stay, but you'll need to reconnect to send or receive new messages.`)) return;
+    setDisconnecting(true);
+    setError("");
+    try {
+      await disconnectWhatsAppChannel(channel._id || channel.id);
+      setChannel(null);
+      setSelected(null);
+      setConversations([]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -320,6 +353,13 @@ export function WhatsAppView() {
               <RefreshCw size={13} className={loadingConversations ? "animate-spin" : ""} />
               Refresh
             </Button>
+            <Button variant="secondary" onClick={() => setShowChangeNumber((v) => !v)} className="h-9 text-xs">
+              {showChangeNumber ? "Cancel" : "Change number"}
+            </Button>
+            <Button variant="secondary" onClick={disconnect} disabled={disconnecting} className="h-9 text-xs text-rose-600 hover:bg-rose-50">
+              <Unlink size={13} />
+              {disconnecting ? "Disconnecting…" : "Disconnect"}
+            </Button>
           </div>
         ) : null}
       </section>
@@ -328,6 +368,8 @@ export function WhatsAppView() {
         <Card><CardContent><ListRowsSkeleton rows={3} /></CardContent></Card>
       ) : !channel ? (
         <WhatsAppConnectForm onConnected={setChannel} />
+      ) : showChangeNumber ? (
+        <WhatsAppConnectForm onConnected={handleChanged} />
       ) : (
         <Card className="overflow-hidden">
           <div className="grid h-[640px] grid-cols-1 md:grid-cols-[300px_1fr]">

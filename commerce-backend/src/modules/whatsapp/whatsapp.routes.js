@@ -4,7 +4,7 @@ import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
 import { verifyWebhookSignature } from "../webhooks/webhook.service.js";
-import { listWhatsAppChannels } from "../../repositories/channel.repo.js";
+import { listWhatsAppChannels, deleteWhatsAppChannel } from "../../repositories/channel.repo.js";
 import { listConversations, getConversation, listMessagesForConversation, markConversationRead } from "../../repositories/whatsapp.repo.js";
 import { connectWhatsAppChannel, sendWhatsAppMessage, handleIncomingWebhook } from "./whatsapp.service.js";
 
@@ -34,6 +34,22 @@ whatsappRoutes.get(
   asyncHandler(async (req, res) => {
     const channels = await listWhatsAppChannels(req.auth.companyId);
     res.json({ channels });
+  }),
+);
+
+// Fully removes the connection — lets a company disconnect this number and
+// connect a different one (connectWhatsAppChannel upserts on
+// {companyId, provider, shop:"whatsapp"}, i.e. there's only ever one
+// WhatsApp channel row per company, so "change number" is: delete this
+// one, then connect fresh with the new Phone Number ID + token).
+whatsappRoutes.delete(
+  "/channels/:channelId",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const channel = await deleteWhatsAppChannel({ channelId: req.params.channelId, companyId: req.auth.companyId });
+    if (!channel) throw new HttpError(404, "WhatsApp channel not found");
+    res.json({ ok: true });
   }),
 );
 

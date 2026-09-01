@@ -11,6 +11,7 @@ import {
   Send,
   ChevronDown,
   ChevronUp,
+  Unlink,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import {
   listSocialPosts,
   listPostComments,
   replyToSocialComment,
+  disconnectSocialChannel,
 } from "@/lib/api";
 
 function fmt(date) {
@@ -208,6 +210,7 @@ export function SocialView() {
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [reconnecting, setReconnecting] = useState(false);
+  const [disconnecting, setDisconnecting] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -271,6 +274,24 @@ export function SocialView() {
     }
   }
 
+  // Fully removes the connection so the connect card comes back, letting a
+  // company connect an entirely different Instagram/Facebook account —
+  // Reconnect above only lets you switch Page within the same Meta login.
+  async function disconnect() {
+    if (!window.confirm(`Disconnect ${channel.name}? You'll need to reconnect to see posts or reply to comments again.`)) return;
+    setDisconnecting(true);
+    setError("");
+    try {
+      await disconnectSocialChannel(channel._id || channel.id);
+      setChannel(null);
+      setPosts([]);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDisconnecting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -304,6 +325,10 @@ export function SocialView() {
                 <Button variant="secondary" onClick={sync} disabled={syncing} className="h-9 text-xs">
                   <RefreshCw size={13} className={syncing ? "animate-spin" : ""} />
                   {syncing ? "Syncing…" : "Sync Posts"}
+                </Button>
+                <Button variant="secondary" onClick={disconnect} disabled={disconnecting} className="h-9 text-xs text-rose-600 hover:bg-rose-50">
+                  <Unlink size={13} />
+                  {disconnecting ? "Disconnecting…" : "Disconnect"}
                 </Button>
               </div>
             </CardHeader>
