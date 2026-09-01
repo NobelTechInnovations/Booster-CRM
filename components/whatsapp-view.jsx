@@ -154,7 +154,14 @@ function WhatsAppConnectForm({ onConnected }) {
           config_id: WHATSAPP_SIGNUP_CONFIG_ID,
           response_type: "code",
           override_default_response_type: true,
-          extras: { setup: {}, featureType: "whatsapp_business_app_onboarding", sessionInfoVersion: "3" },
+          // featureType must be the empty string for the standard guided
+          // WhatsApp Cloud API onboarding wizard (business -> WABA/number
+          // picker -> confirm, all inside the popup). A made-up value here
+          // isn't a recognized Meta feature type, and Meta silently falls
+          // back to dropping the user into the full WhatsApp Manager
+          // console instead of the compact signup flow — no error, just a
+          // confusing "which number do I even pick" admin screen.
+          extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
         },
       );
     } catch (err) {
