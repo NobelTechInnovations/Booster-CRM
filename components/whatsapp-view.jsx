@@ -110,13 +110,24 @@ function WhatsAppConnectForm({ onConnected }) {
     return () => window.removeEventListener("message", handleMessage);
   }, []);
 
-  async function startSignup() {
-    setSigningUp(true);
+  // Deliberately not async, and calls FB.login synchronously with no await
+  // in between — Chrome's popup blocker only allows window.open (which
+  // FB.login opens internally) when it happens inside the same call stack
+  // as the click that triggered it. Awaiting loadFacebookSdk() here first
+  // — even though it's usually already resolved from the useEffect preload
+  // above — was enough of a gap for Chrome to stop treating the resulting
+  // window.open as user-initiated and silently block it, with FB.login's
+  // callback then never firing at all (no error, just a stuck button).
+  function startSignup() {
     setError("");
+    if (!window.FB) {
+      setError("Still loading — give it a second and click Continue with Facebook again.");
+      return;
+    }
+    setSigningUp(true);
     sessionInfoRef.current = {};
     try {
-      const FB = await loadFacebookSdk();
-      FB.login(
+      window.FB.login(
         async (response) => {
           const code = response?.authResponse?.code;
           if (!code) {
