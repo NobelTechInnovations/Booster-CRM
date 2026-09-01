@@ -11,6 +11,7 @@ import {
   buildWhatsAppSignupAuthorizeUrl,
   completeWhatsAppSignupRedirect,
   finalizeWhatsAppSignup,
+  fixWhatsAppPermissions,
   sendWhatsAppMessage,
   handleIncomingWebhook,
 } from "./whatsapp.service.js";
@@ -90,6 +91,19 @@ whatsappRoutes.post(
       selectionToken: req.body?.selectionToken,
       phoneNumberId: req.body?.phoneNumberId,
     });
+    res.json(result);
+  }),
+);
+
+// Retries the "subscribe app to WABA" step that's required before sending
+// works, without a full disconnect/reconnect — covers a connection made
+// before this step existed, or a transient failure on it during signup.
+whatsappRoutes.post(
+  "/meta/fix-permissions",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await fixWhatsAppPermissions({ companyId: req.auth.companyId });
     res.json(result);
   }),
 );

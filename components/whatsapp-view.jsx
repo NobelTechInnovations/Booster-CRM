@@ -16,7 +16,49 @@ import {
   sendWhatsAppMessage,
   startWhatsAppConversation,
   disconnectWhatsAppChannel,
+  fixWhatsAppPermissions,
 } from "@/lib/api";
+
+// Meta's own error text for the missing "subscribe app to WABA" step (see
+// fixWhatsAppPermissions in whatsapp.service.js) — matched so the UI can
+// offer the one-click fix right where the error actually shows up, instead
+// of making the company go hunting for what "(#200) ... necessary
+// permissions ..." means.
+function isPermissionError(message) {
+  return /necessary permissions|\(#200\)/i.test(message || "");
+}
+
+function FixPermissionsHint() {
+  const [fixing, setFixing] = useState(false);
+  const [result, setResult] = useState("");
+
+  async function fix() {
+    setFixing(true);
+    setResult("");
+    try {
+      await fixWhatsAppPermissions();
+      setResult("Fixed — try sending again.");
+    } catch (err) {
+      setResult(err.message);
+    } finally {
+      setFixing(false);
+    }
+  }
+
+  return (
+    <div className="mt-1 flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        onClick={fix}
+        disabled={fixing}
+        className="rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700 disabled:opacity-50"
+      >
+        {fixing ? "Fixing…" : "Fix sending permissions"}
+      </button>
+      {result ? <span className="text-[11px] text-slate-500">{result}</span> : null}
+    </div>
+  );
+}
 
 function fmt(date) {
   if (!date) return "";
@@ -193,7 +235,12 @@ function NewChatForm({ onStarted, onCancel }) {
         rows={2}
         className="w-full resize-none rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
       />
-      {error ? <p className="text-xs font-medium text-rose-700">{error}</p> : null}
+      {error ? (
+        <div>
+          <p className="text-xs font-medium text-rose-700">{error}</p>
+          {isPermissionError(error) ? <FixPermissionsHint /> : null}
+        </div>
+      ) : null}
       <p className="text-[10px] leading-4 text-slate-400">
         Only works if this number has messaged your WhatsApp before, or within the last 24 hours — Meta blocks
         cold outreach without an approved message template.
@@ -293,7 +340,12 @@ function MessageThread({ conversation, channelName }) {
         <div ref={bottomRef} />
       </div>
 
-      {error ? <p className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
+      {error ? (
+        <div className="border-t border-rose-100 bg-rose-50 px-4 py-2">
+          <p className="text-xs font-medium text-rose-700">{error}</p>
+          {isPermissionError(error) ? <FixPermissionsHint /> : null}
+        </div>
+      ) : null}
 
       <div className="flex items-center gap-2 border-t border-[var(--line)] p-3">
         <input
@@ -307,6 +359,33 @@ function MessageThread({ conversation, channelName }) {
           <Send size={15} />
         </Button>
       </div>
+    </div>
+  );
+}
+
+function FixPermissionsButton() {
+  const [fixing, setFixing] = useState(false);
+  const [result, setResult] = useState("");
+
+  async function fix() {
+    setFixing(true);
+    setResult("");
+    try {
+      await fixWhatsAppPermissions();
+      setResult("Done — sending should work now.");
+    } catch (err) {
+      setResult(err.message);
+    } finally {
+      setFixing(false);
+    }
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {result ? <span className="text-xs font-medium text-amber-900">{result}</span> : null}
+      <Button onClick={fix} disabled={fixing} className="h-8 text-xs">
+        {fixing ? "Fixing…" : "Fix permissions"}
+      </Button>
     </div>
   );
 }
@@ -532,6 +611,20 @@ export function WhatsAppView() {
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">WhatsApp Business Account ID</p>
                 <p className="mt-0.5 font-mono text-xs text-slate-600">{channel.external?.whatsappBusinessAccountId || "—"}</p>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Getting "(#200) You do not have the necessary permissions to
+              send messages..." means Meta never registered this app as a
+              subscribed app on the WABA — a one-time step, separate from
+              connecting itself, that a connection made before this fix
+              existed can be missing. */}
+          <Card className="mb-4 border-amber-200 bg-amber-50">
+            <CardContent className="flex flex-wrap items-center justify-between gap-2 py-3">
+              <p className="text-xs text-amber-800">
+                Getting a "necessary permissions" error when sending? Click this once to fix it.
+              </p>
+              <FixPermissionsButton />
             </CardContent>
           </Card>
           <Card className="overflow-hidden">

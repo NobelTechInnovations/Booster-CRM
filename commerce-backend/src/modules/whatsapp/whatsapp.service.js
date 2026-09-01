@@ -7,6 +7,7 @@ import {
   upsertWhatsAppChannel,
   getWhatsAppChannelByPhoneNumberId,
   getChannelForSync,
+  listWhatsAppChannels,
 } from "../../repositories/channel.repo.js";
 import {
   upsertConversation,
@@ -40,13 +41,19 @@ export async function connectWhatsAppChannel({ companyId, userId, phoneNumberId,
     throw new HttpError(400, `Could not verify these WhatsApp credentials: ${err.message}`);
   });
 
-  return upsertWhatsAppChannel({
+  const channel = await upsertWhatsAppChannel({
     companyId, userId, phoneNumberId,
     whatsappBusinessAccountId: whatsappBusinessAccountId || "",
     accessToken,
     whatsappDisplayName: details.verified_name || "",
     whatsappPhoneNumber: details.display_phone_number || "",
   });
+  if (whatsappBusinessAccountId) {
+    await subscribeAppToWaba(accessToken, whatsappBusinessAccountId).catch((err) => {
+      console.warn(`[WhatsApp] Could not subscribe app to WABA ${whatsappBusinessAccountId}: ${err.message}`);
+    });
+  }
+  return channel;
 }
 
 // ─── Connect (WhatsApp Embedded Signup — the "Continue with Facebook" flow) ─
@@ -192,8 +199,31 @@ async function findAllPhoneNumbers(accessToken, wabaIds) {
   return candidates;
 }
 
+// Meta requires the app to be explicitly registered as a "subscribed app"
+// on a WhatsApp Business Account before it's allowed to send messages (or
+// receive webhook events) on that WABA's behalf — this is a separate step
+// from the OAuth grant itself, and skipping it is exactly what produces
+// "(#200) You do not have the necessary permissions to send messages on
+// behalf of this WhatsApp Business Account" even though the token has
+// whatsapp_business_management/whatsapp_business_messaging scope. Embedded
+// Signup's postMessage-based popup flow used to fire this automatically as
+// part of its own wizard; the plain redirect this app switched to doesn't,
+// so it has to be called explicitly here. Best-effort: a failure here
+// shouldn't block the connection itself (receiving still needs the channel
+// row to exist), but it's logged loudly since sending will be broken until
+// this succeeds — connectFromCandidate/connectWhatsAppChannel below retry
+// it on every (re)connect, and fixWhatsAppPermissions lets an already-
+// connected company retry it without a full reconnect.
+async function subscribeAppToWaba(accessToken, wabaId) {
+  if (!wabaId) return;
+  await graphFetch(`${GRAPH_BASE()}/${wabaId}/subscribed_apps`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+}
+
 async function connectFromCandidate({ companyId, userId, accessToken, candidate }) {
-  return upsertWhatsAppChannel({
+  const channel = await upsertWhatsAppChannel({
     companyId, userId,
     phoneNumberId: candidate.phoneNumberId,
     whatsappBusinessAccountId: candidate.whatsappBusinessAccountId,
@@ -201,6 +231,28 @@ async function connectFromCandidate({ companyId, userId, accessToken, candidate 
     whatsappDisplayName: candidate.verifiedName || "",
     whatsappPhoneNumber: candidate.displayPhoneNumber || "",
   });
+  await subscribeAppToWaba(accessToken, candidate.whatsappBusinessAccountId).catch((err) => {
+    console.warn(`[WhatsApp] Could not subscribe app to WABA ${candidate.whatsappBusinessAccountId}: ${err.message}`);
+  });
+  return channel;
+}
+
+// Lets a company that's already connected retry the subscribe-app-to-WABA
+// step above without going through the full "Change number" reconnect —
+// covers exactly the case where a connection was made before this step
+// existed, or Meta's subscribe call itself failed transiently.
+export async function fixWhatsAppPermissions({ companyId }) {
+  const [summary] = await listWhatsAppChannels(companyId);
+  if (!summary) throw new HttpError(400, "Connect a WhatsApp number first");
+
+  const channel = await getChannelForSync({ channelId: summary._id || summary.id, companyId });
+  const accessToken = channel?.credentials?.accessToken;
+  const wabaId = channel?.external?.whatsappBusinessAccountId;
+  if (!accessToken) throw new HttpError(400, "Missing access token for this connection — click Change number and reconnect.");
+  if (!wabaId) throw new HttpError(400, "Missing WhatsApp Business Account ID for this connection — click Change number and reconnect.");
+
+  await subscribeAppToWaba(accessToken, wabaId);
+  return { ok: true };
 }
 
 export async function completeWhatsAppSignupRedirect(query) {
