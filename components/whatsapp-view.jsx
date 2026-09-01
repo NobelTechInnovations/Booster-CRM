@@ -496,16 +496,27 @@ function useAvailableHeight(deps) {
   useEffect(() => {
     function measure() {
       if (!ref.current) return;
-      setHeight(window.innerHeight - ref.current.getBoundingClientRect().top);
+      // A couple of px of slack, not the exact number — web fonts finishing
+      // their swap-in after first paint, or a scrollbar appearing, can
+      // nudge real layout by a pixel or two after this runs; better to be
+      // very slightly short than to reintroduce page-level scroll.
+      setHeight(Math.max(0, window.innerHeight - ref.current.getBoundingClientRect().top - 2));
     }
     measure();
+    // Re-checks shortly after mount to catch exactly that kind of
+    // post-paint reflow (font swap, image/icon load) that a single
+    // synchronous measurement on mount would otherwise miss.
+    const raf = requestAnimationFrame(measure);
+    const timer = setTimeout(measure, 300);
     window.addEventListener("resize", measure);
-    // Catches anything above this element changing height (a banner
+    // Catches anything above this element changing height later (a banner
     // appearing/disappearing, content reflow) without needing every such
     // change threaded through as an explicit dependency.
     const observer = new ResizeObserver(measure);
     observer.observe(document.body);
     return () => {
+      cancelAnimationFrame(raf);
+      clearTimeout(timer);
       window.removeEventListener("resize", measure);
       observer.disconnect();
     };
@@ -516,7 +527,6 @@ function useAvailableHeight(deps) {
 }
 
 export function WhatsAppView() {
-  const { ref: pageRef, height: pageHeight } = useAvailableHeight([]);
   const [channel, setChannel] = useState(null);
   const [loadingChannel, setLoadingChannel] = useState(true);
   const [conversations, setConversations] = useState([]);
@@ -532,6 +542,11 @@ export function WhatsAppView() {
   // candidates}. Nothing was connected yet at this point; the company
   // picks one below and that's what actually finishes the connection.
   const [pendingChoice, setPendingChoice] = useState(null);
+  // Re-measures whenever anything that changes the height of what's above
+  // the chat card changes (a banner appearing, the connect form swapping
+  // for the connected view, etc.) — the mount-time-only version of this
+  // missed exactly these transitions.
+  const { ref: pageRef, height: pageHeight } = useAvailableHeight([loadingChannel, channel, showChangeNumber, error, notice, pendingChoice]);
 
   useEffect(() => {
     listWhatsAppChannels()
