@@ -207,6 +207,7 @@ export function SocialView() {
   const [hasMore, setHasMore] = useState(false);
   const [loadingPosts, setLoadingPosts] = useState(false);
   const [syncing, setSyncing] = useState(false);
+  const [reconnecting, setReconnecting] = useState(false);
   const [syncNotice, setSyncNotice] = useState("");
   const [error, setError] = useState("");
 
@@ -252,6 +253,24 @@ export function SocialView() {
     }
   }
 
+  // Re-runs OAuth against the same Facebook Page/Instagram account — the
+  // connect flow upserts the existing channel row rather than creating a
+  // new one, so this is the way to refresh a token Meta has started
+  // rejecting (e.g. after Meta rolled the account onto the "new Pages
+  // experience", which needs a fresh Page-scoped token, not just the
+  // original user token this channel may have been connected with).
+  async function reconnect() {
+    setReconnecting(true);
+    setError("");
+    try {
+      const result = await connectMetaSocial();
+      window.location.href = result.installUrl;
+    } catch (err) {
+      setError(err.message);
+      setReconnecting(false);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
@@ -278,10 +297,15 @@ export function SocialView() {
                   Last synced {channel.sync?.lastSyncAt ? fmt(channel.sync.lastSyncAt) : "never"}
                 </p>
               </div>
-              <Button variant="secondary" onClick={sync} disabled={syncing} className="h-9 text-xs">
-                <RefreshCw size={13} className={syncing ? "animate-spin" : ""} />
-                {syncing ? "Syncing…" : "Sync Posts"}
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button variant="secondary" onClick={reconnect} disabled={reconnecting} className="h-9 text-xs">
+                  {reconnecting ? "Opening Meta…" : "Reconnect"}
+                </Button>
+                <Button variant="secondary" onClick={sync} disabled={syncing} className="h-9 text-xs">
+                  <RefreshCw size={13} className={syncing ? "animate-spin" : ""} />
+                  {syncing ? "Syncing…" : "Sync Posts"}
+                </Button>
+              </div>
             </CardHeader>
             {syncNotice ? <div className="border-t border-emerald-100 bg-emerald-50 px-4 py-2 text-xs font-medium text-emerald-800">{syncNotice}</div> : null}
             {error ? <div className="border-t border-rose-100 bg-rose-50 px-4 py-2 text-xs font-medium text-rose-700">{error}</div> : null}
