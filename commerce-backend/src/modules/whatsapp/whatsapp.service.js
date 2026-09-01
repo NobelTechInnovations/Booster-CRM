@@ -1,6 +1,8 @@
+import { URLSearchParams } from "node:url";
 import { env } from "../../config/env.js";
-import { graphFetch } from "../../utils/graph-api.js";
+import { graphFetch, graphFetchAll } from "../../utils/graph-api.js";
 import { HttpError } from "../../utils/http-error.js";
+import { createOauthState, readOauthState } from "../../utils/oauth-state.js";
 import {
   upsertWhatsAppChannel,
   getWhatsAppChannelByPhoneNumberId,
@@ -65,39 +67,131 @@ export async function connectWhatsAppChannel({ companyId, userId, phoneNumberId,
 // practice that means: it works immediately with zero manual steps, and if
 // a connection ever goes stale after ~60 days, reconnecting is the same
 // one-click "Connect WhatsApp" flow, not a return trip to Business Manager.
-export async function completeEmbeddedSignup({ companyId, userId, code, phoneNumberId, whatsappBusinessAccountId }) {
-  if (!code?.trim()) throw new HttpError(400, "Missing authorization code from Meta");
-  if (!phoneNumberId?.trim()) {
-    throw new HttpError(400, "Meta didn't hand back a phone number — the signup popup may have been closed before finishing.");
-  }
-  if (!env.meta.appId || !env.meta.appSecret) {
-    throw new HttpError(500, "Meta app credentials are not configured. Add META_APP_ID and META_APP_SECRET, then restart the backend.");
-  }
+// Full-page redirect, not the JS SDK popup Embedded Signup normally uses —
+// switched after the popup proved unreliable in practice: Chrome's newer
+// FedCM identity flow (which Meta's SDK tries before falling back to a
+// classic popup) kept either getting blocked outright or flashing open and
+// closing within about a second, and a stray bug on top of that (passing
+// an async function where the SDK's own internal call expected a plain
+// one — "Expression is of type asyncfunction, not function") made it worse
+// still. A plain OAuth redirect has none of that: it's the exact same
+// mechanism Social's connect flow already uses reliably in production.
+//
+// The one thing the popup flow got "for free" that a redirect doesn't is
+// Meta pushing back the exact phone_number_id/waba_id it just set up via
+// postMessage mid-flow. Redirect-only code exchange doesn't carry that, so
+// it's recovered here instead: debug_token on the resulting access token
+// exposes exactly which WhatsApp Business Account(s) the
+// whatsapp_business_management grant covers (its granular_scopes.target_ids),
+// then each of those WABAs' phone numbers is listed directly. If there's
+// more than one number across every granted WABA, the first is connected
+// and the company can switch via the existing "Change number" control —
+// simpler than building a second, separate in-app picker UI for what
+// should be a rare case (most companies have exactly one).
+function redirectUri() {
+  return `${env.meta.appUrl}/api/whatsapp/meta/callback`;
+}
 
-  const shortLivedParams = new URLSearchParams({ client_id: env.meta.appId, client_secret: env.meta.appSecret, code });
-  const shortLived = await graphFetch(`${GRAPH_BASE()}/oauth/access_token?${shortLivedParams.toString()}`).catch((err) => {
-    throw new HttpError(400, `Could not complete WhatsApp signup with Meta: ${err.message}`);
+function requireMetaConfig() {
+  if (!env.meta.appId || !env.meta.appSecret) {
+    throw new HttpError(
+      500,
+      "Meta app credentials are not configured. Add META_APP_ID and META_APP_SECRET in commerce-backend/.env, then restart the backend.",
+    );
+  }
+}
+
+export function buildWhatsAppSignupAuthorizeUrl({ companyId, userId }) {
+  requireMetaConfig();
+
+  const state = createOauthState({ companyId, userId });
+  const params = new URLSearchParams({
+    client_id: env.meta.appId,
+    redirect_uri: redirectUri(),
+    state,
+    config_id: env.meta.whatsappSignupConfigId,
+    response_type: "code",
   });
 
-  const longLivedParams = new URLSearchParams({
+  return `https://www.facebook.com/${env.meta.apiVersion}/dialog/oauth?${params.toString()}`;
+}
+
+async function exchangeCodeForToken(code) {
+  const params = new URLSearchParams({
+    client_id: env.meta.appId,
+    client_secret: env.meta.appSecret,
+    redirect_uri: redirectUri(),
+    code,
+  });
+  return graphFetch(`${GRAPH_BASE()}/oauth/access_token?${params.toString()}`);
+}
+
+async function exchangeForLongLivedToken(shortLivedToken) {
+  const params = new URLSearchParams({
     grant_type: "fb_exchange_token",
     client_id: env.meta.appId,
     client_secret: env.meta.appSecret,
-    fb_exchange_token: shortLived.access_token,
+    fb_exchange_token: shortLivedToken,
   });
-  const longLived = await graphFetch(`${GRAPH_BASE()}/oauth/access_token?${longLivedParams.toString()}`).catch(() => shortLived);
+  return graphFetch(`${GRAPH_BASE()}/oauth/access_token?${params.toString()}`);
+}
+
+// Reads back which WhatsApp Business Account(s) this specific grant
+// actually covers, straight from the token itself — no need for the
+// popup's postMessage session info.
+async function findGrantedWabaIds(accessToken) {
+  const params = new URLSearchParams({
+    input_token: accessToken,
+    access_token: `${env.meta.appId}|${env.meta.appSecret}`,
+  });
+  const body = await graphFetch(`${GRAPH_BASE()}/debug_token?${params.toString()}`).catch(() => ({}));
+  const scopes = body?.data?.granular_scopes || [];
+  const whatsappScope = scopes.find((s) => s.scope === "whatsapp_business_management");
+  return whatsappScope?.target_ids || [];
+}
+
+async function findFirstPhoneNumber(accessToken, wabaIds) {
+  for (const wabaId of wabaIds) {
+    const params = new URLSearchParams({ fields: "id,display_phone_number,verified_name", access_token: accessToken });
+    const numbers = await graphFetchAll(`${GRAPH_BASE()}/${wabaId}/phone_numbers?${params.toString()}`, { maxRows: 25 }).catch(() => []);
+    if (numbers[0]) return { ...numbers[0], whatsappBusinessAccountId: wabaId };
+  }
+  return null;
+}
+
+export async function completeWhatsAppSignupRedirect(query) {
+  requireMetaConfig();
+
+  const { code, error, error_description: errorDescription } = query || {};
+  if (error) throw new HttpError(400, errorDescription || `Meta authorization failed: ${error}`);
+  if (!code) throw new HttpError(400, "Missing Meta authorization code");
+
+  const { companyId, userId } = readOauthState(query.state);
+
+  const shortLived = await exchangeCodeForToken(code);
+  const longLived = await exchangeForLongLivedToken(shortLived.access_token).catch(() => shortLived);
   const accessToken = longLived.access_token || shortLived.access_token;
 
-  const detailParams = new URLSearchParams({ fields: "verified_name,display_phone_number", access_token: accessToken });
-  const details = await graphFetch(`${GRAPH_BASE()}/${phoneNumberId}?${detailParams.toString()}`).catch(() => ({}));
+  const wabaIds = await findGrantedWabaIds(accessToken);
+  if (!wabaIds.length) {
+    throw new HttpError(400, "Meta didn't grant access to any WhatsApp Business Account — make sure you picked or created one during signup.");
+  }
 
-  return upsertWhatsAppChannel({
-    companyId, userId, phoneNumberId,
-    whatsappBusinessAccountId: whatsappBusinessAccountId || "",
+  const phoneNumber = await findFirstPhoneNumber(accessToken, wabaIds);
+  if (!phoneNumber) {
+    throw new HttpError(400, "No phone number was found on the WhatsApp Business Account you connected — add one in Meta first, then try again.");
+  }
+
+  const channel = await upsertWhatsAppChannel({
+    companyId, userId,
+    phoneNumberId: phoneNumber.id,
+    whatsappBusinessAccountId: phoneNumber.whatsappBusinessAccountId,
     accessToken,
-    whatsappDisplayName: details.verified_name || "",
-    whatsappPhoneNumber: details.display_phone_number || "",
+    whatsappDisplayName: phoneNumber.verified_name || "",
+    whatsappPhoneNumber: phoneNumber.display_phone_number || "",
   });
+
+  return { channel };
 }
 
 // ─── Send ────────────────────────────────────────────────────────────────────

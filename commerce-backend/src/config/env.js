@@ -42,6 +42,12 @@ export const env = {
     apiVersion: process.env.META_API_VERSION || "v21.0",
     appUrl: process.env.META_APP_URL || process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
     scopes: process.env.META_SCOPES || "ads_read,business_management",
+    // Facebook Login for Business configuration for WhatsApp Embedded
+    // Signup (not a secret — Meta's own JS SDK docs pass config ids
+    // directly in client-side code). Defaults to the "WhatsApp Embedded
+    // Signup" configuration already created under the Booster Connect
+    // Suite Meta App; override via env if a different one is ever needed.
+    whatsappSignupConfigId: process.env.META_WHATSAPP_SIGNUP_CONFIG_ID || "28165972503056854",
   },
   // WhatsApp Cloud API. Per-company phone number + access token are NOT
   // here — each company connects their own WhatsApp Business Account via

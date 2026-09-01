@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { ListRowsSkeleton } from "@/components/ui/skeleton";
 import {
   connectWhatsApp,
-  completeWhatsAppEmbeddedSignup,
+  connectWhatsAppEmbedded,
   listWhatsAppChannels,
   listWhatsAppConversations,
   getWhatsAppMessages,
@@ -16,40 +16,6 @@ import {
   startWhatsAppConversation,
   disconnectWhatsAppChannel,
 } from "@/lib/api";
-
-// App ID and this Configuration ID are both meant to be public — Meta's own
-// JS SDK docs pass them directly in client-side code, the same way a
-// Stripe or Google publishable key works. Neither grants access to
-// anything by itself.
-const META_APP_ID = "1000876402957904";
-const WHATSAPP_SIGNUP_CONFIG_ID = "28165972503056854";
-const GRAPH_API_VERSION = "v21.0";
-
-let fbSdkPromise = null;
-
-// Loads Meta's JS SDK exactly once per page, however many times this is
-// called — WhatsAppConnectForm can mount/unmount as the panel is opened
-// and closed.
-function loadFacebookSdk() {
-  if (fbSdkPromise) return fbSdkPromise;
-  fbSdkPromise = new Promise((resolve, reject) => {
-    if (typeof window === "undefined") return reject(new Error("No window"));
-    if (window.FB) return resolve(window.FB);
-
-    window.fbAsyncInit = () => {
-      window.FB.init({ appId: META_APP_ID, autoLogAppEvents: true, xfbml: false, version: GRAPH_API_VERSION });
-      resolve(window.FB);
-    };
-
-    const script = document.createElement("script");
-    script.src = "https://connect.facebook.net/en_US/sdk.js";
-    script.async = true;
-    script.defer = true;
-    script.onerror = () => reject(new Error("Could not load Meta's login SDK — check your connection and try again."));
-    document.body.appendChild(script);
-  });
-  return fbSdkPromise;
-}
 
 function fmt(date) {
   if (!date) return "";
@@ -79,115 +45,19 @@ function WhatsAppConnectForm({ onConnected }) {
   const [connecting, setConnecting] = useState(false);
   const [signingUp, setSigningUp] = useState(false);
   const [error, setError] = useState("");
-  const sessionInfoRef = useRef({});
 
-  useEffect(() => {
-    loadFacebookSdk().catch((err) => setError(err.message));
-
-    // Meta posts the phone_number_id/waba_id it just set up via
-    // postMessage while the signup popup is still open — FB.login's own
-    // callback only ever returns the authorization code, not these ids,
-    // so they're captured here and combined with the code once login
-    // finishes.
-    function handleMessage(event) {
-      if (!event.origin?.endsWith("facebook.com")) return;
-      let data;
-      try {
-        data = JSON.parse(event.data);
-      } catch {
-        return;
-      }
-      if (data.type !== "WA_EMBEDDED_SIGNUP") return;
-      if (data.event === "FINISH" && data.data) {
-        sessionInfoRef.current = { phoneNumberId: data.data.phone_number_id, whatsappBusinessAccountId: data.data.waba_id };
-      } else if (data.event === "CANCEL") {
-        setError("Signup was closed before finishing — try again and complete every step in the popup.");
-      } else if (data.event === "ERROR") {
-        setError(data.data?.error_message || "Meta reported an error during signup.");
-      }
-    }
-    window.addEventListener("message", handleMessage);
-    return () => window.removeEventListener("message", handleMessage);
-  }, []);
-
-  // Deliberately not async, and calls FB.login synchronously with no await
-  // in between — Chrome's popup blocker only allows window.open (which
-  // FB.login opens internally) when it happens inside the same call stack
-  // as the click that triggered it. Awaiting loadFacebookSdk() here first
-  // — even though it's usually already resolved from the useEffect preload
-  // above — was enough of a gap for Chrome to stop treating the resulting
-  // window.open as user-initiated and silently block it, with FB.login's
-  // callback then never firing at all (no error, just a stuck button).
-  function startSignup() {
-    setError("");
-    if (!window.FB) {
-      setError("Still loading — give it a second and click Continue with Facebook again.");
-      return;
-    }
-
-    // A blind timeout here was wrong — it fired and claimed "blocked" even
-    // once pop-ups were explicitly allowed for this site, because a real
-    // human clicking through Facebook's multi-step signup wizard (login,
-    // pick a business, pick a number, confirm) can easily take longer than
-    // any short timeout, and there's no reliable way to tell "still
-    // blocked" apart from "still on step 2 of the wizard" from the
-    // outside. Instead, open+immediately close a throwaway test popup
-    // ourselves, synchronously, in this same click handler — if Chrome
-    // returns null it's a real, definitive, current block; if it opens,
-    // pop-ups are genuinely allowed and FB.login's own popup is trusted
-    // for as long as the user takes.
-    const testPopup = window.open("", "_blank", "width=1,height=1");
-    if (!testPopup) {
-      setError(
-        "Your browser is blocking pop-ups for this site. Look for a blocked-popup icon in the address bar " +
-        "(usually on the right side), choose \"Always allow pop-ups from wokbook.kalevafoods.in\", then click " +
-        "Continue with Facebook again.",
-      );
-      return;
-    }
-    testPopup.close();
-
+  // Full-page redirect through Meta's own signup — same mechanism the
+  // Social tab's "Connect Instagram / Facebook" already uses reliably.
+  // Replaced an earlier JS-SDK-popup version that kept getting interfered
+  // with by Chrome's newer FedCM identity flow (silently blocked, or
+  // flashing open and closing within about a second) — a plain redirect
+  // has none of that.
+  async function startSignup() {
     setSigningUp(true);
-    sessionInfoRef.current = {};
-
+    setError("");
     try {
-      window.FB.login(
-        async (response) => {
-          const code = response?.authResponse?.code;
-          if (!code) {
-            setError(response?.status === "unknown" ? "Signup was closed before finishing." : "Meta didn't return an authorization code.");
-            setSigningUp(false);
-            return;
-          }
-          const { phoneNumberId, whatsappBusinessAccountId } = sessionInfoRef.current;
-          if (!phoneNumberId) {
-            setError("Meta didn't hand back a phone number — please try again and finish every step in the popup.");
-            setSigningUp(false);
-            return;
-          }
-          try {
-            const res = await completeWhatsAppEmbeddedSignup({ code, phoneNumberId, whatsappBusinessAccountId });
-            onConnected(res.channel);
-          } catch (err) {
-            setError(err.message);
-          } finally {
-            setSigningUp(false);
-          }
-        },
-        {
-          config_id: WHATSAPP_SIGNUP_CONFIG_ID,
-          response_type: "code",
-          override_default_response_type: true,
-          // featureType must be the empty string for the standard guided
-          // WhatsApp Cloud API onboarding wizard (business -> WABA/number
-          // picker -> confirm, all inside the popup). A made-up value here
-          // isn't a recognized Meta feature type, and Meta silently falls
-          // back to dropping the user into the full WhatsApp Manager
-          // console instead of the compact signup flow — no error, just a
-          // confusing "which number do I even pick" admin screen.
-          extras: { setup: {}, featureType: "", sessionInfoVersion: "3" },
-        },
-      );
+      const result = await connectWhatsAppEmbedded();
+      window.location.href = result.installUrl;
     } catch (err) {
       setError(err.message);
       setSigningUp(false);

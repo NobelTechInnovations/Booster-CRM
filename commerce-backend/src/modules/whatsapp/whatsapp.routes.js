@@ -6,7 +6,13 @@ import { env } from "../../config/env.js";
 import { verifyWebhookSignature } from "../webhooks/webhook.service.js";
 import { listWhatsAppChannels, deleteWhatsAppChannel } from "../../repositories/channel.repo.js";
 import { listConversations, getConversation, listMessagesForConversation, markConversationRead } from "../../repositories/whatsapp.repo.js";
-import { connectWhatsAppChannel, completeEmbeddedSignup, sendWhatsAppMessage, handleIncomingWebhook } from "./whatsapp.service.js";
+import {
+  connectWhatsAppChannel,
+  buildWhatsAppSignupAuthorizeUrl,
+  completeWhatsAppSignupRedirect,
+  sendWhatsAppMessage,
+  handleIncomingWebhook,
+} from "./whatsapp.service.js";
 
 export const whatsappRoutes = Router();
 
@@ -29,22 +35,34 @@ whatsappRoutes.post(
 );
 
 // ─── Connect (WhatsApp Embedded Signup — "Continue with Facebook") ─────────
-// The easy path: the frontend runs Meta's Embedded Signup popup (Facebook
-// JS SDK + config_id), which hands back an authorization code and the
-// phone_number_id/waba_id it just set up — no manual token/ID entry.
+// The easy path: a full-page redirect through Meta's own WhatsApp signup
+// (login -> pick/create a WhatsApp Business Account and number -> confirm),
+// the same mechanism Social's connect flow already uses reliably — no
+// manual token/ID entry, and none of the JS-SDK-popup flakiness (FedCM
+// interference, Chrome's popup blocker) that flow ran into in practice.
 whatsappRoutes.post(
-  "/embedded-signup",
+  "/meta/connect",
   requireAuth,
   requirePermission("whatsapp:manage"),
   asyncHandler(async (req, res) => {
-    const channel = await completeEmbeddedSignup({
-      companyId: req.auth.companyId,
-      userId: req.auth.sub,
-      code: req.body?.code,
-      phoneNumberId: req.body?.phoneNumberId,
-      whatsappBusinessAccountId: req.body?.whatsappBusinessAccountId,
-    });
-    res.json({ channel });
+    const installUrl = buildWhatsAppSignupAuthorizeUrl({ companyId: req.auth.companyId, userId: req.auth.sub });
+    res.json({ provider: "meta", installUrl });
+  }),
+);
+
+whatsappRoutes.get(
+  "/meta/callback",
+  asyncHandler(async (req, res) => {
+    // Full-page browser redirect from Meta, not a fetch() call — same
+    // convention as social.routes.js's callback: always redirect back into
+    // the panel carrying either the connected channel id or a readable
+    // error, never leave the user staring at a raw JSON response.
+    try {
+      const { channel } = await completeWhatsAppSignupRedirect(req.query);
+      res.redirect(`${env.frontendUrl}/panel/whatsapp?provider=meta&status=connected&channelId=${channel._id || channel.id}`);
+    } catch (error) {
+      res.redirect(`${env.frontendUrl}/panel/whatsapp?provider=meta&status=error&message=${encodeURIComponent(error.message)}`);
+    }
   }),
 );
 
