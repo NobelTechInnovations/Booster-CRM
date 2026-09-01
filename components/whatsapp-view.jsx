@@ -20,6 +20,7 @@ import {
   whatsappMediaUrl,
 } from "@/lib/api";
 import { TemplateSendForm } from "@/components/whatsapp-template-picker";
+import { AttachmentPicker } from "@/components/whatsapp-attachment-picker";
 
 // Meta's own error text for the missing "subscribe app to WABA" step (see
 // fixWhatsAppPermissions in whatsapp.service.js) — matched so the UI can
@@ -198,8 +199,7 @@ function WhatsAppConnectForm({ onConnected }) {
 function NewChatForm({ onStarted, onCancel, conversations }) {
   const [to, setTo] = useState("");
   const [text, setText] = useState("");
-  const [mediaUrl, setMediaUrl] = useState("");
-  const [showAttach, setShowAttach] = useState(false);
+  const [attachment, setAttachment] = useState(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
 
@@ -212,11 +212,11 @@ function NewChatForm({ onStarted, onCancel, conversations }) {
 
   async function send(e) {
     e.preventDefault();
-    if (!to.trim() || (!text.trim() && !mediaUrl.trim())) return;
+    if (!to.trim() || (!text.trim() && !attachment)) return;
     setSending(true);
     setError("");
     try {
-      const res = await startWhatsAppConversation(to.trim(), text.trim(), { mediaUrl: mediaUrl.trim() || undefined });
+      const res = await startWhatsAppConversation(to.trim(), text.trim(), attachment ? { mediaId: attachment.mediaId, mediaType: attachment.mediaType } : {});
       onStarted(res.conversation);
     } catch (err) {
       setError(err.message);
@@ -251,22 +251,7 @@ function NewChatForm({ onStarted, onCancel, conversations }) {
             rows={2}
             className="w-full resize-none rounded-lg border border-[var(--line)] bg-white px-3 py-2 text-xs outline-none focus:border-indigo-500"
           />
-          <button
-            type="button"
-            onClick={() => setShowAttach((v) => !v)}
-            className="flex items-center gap-1 text-[11px] font-medium text-indigo-600 hover:underline"
-          >
-            <Paperclip size={11} />
-            {showAttach ? "Remove attachment" : "Attach image/file"}
-          </button>
-          {showAttach ? (
-            <input
-              value={mediaUrl}
-              onChange={(e) => setMediaUrl(e.target.value)}
-              placeholder="Image/file/video URL"
-              className="h-8 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-xs outline-none focus:border-indigo-500"
-            />
-          ) : null}
+          <AttachmentPicker attachment={attachment} onChange={setAttachment} />
           {error ? (
             <div>
               <p className="text-xs font-medium text-rose-700">{error}</p>
@@ -276,7 +261,7 @@ function NewChatForm({ onStarted, onCancel, conversations }) {
           <p className="text-[10px] leading-4 text-slate-400">
             Only works if this number has messaged your WhatsApp before, or within the last 24 hours.
           </p>
-          <Button type="submit" disabled={sending || !to.trim() || (!text.trim() && !mediaUrl.trim())} className="h-8 w-full text-xs">
+          <Button type="submit" disabled={sending || !to.trim() || (!text.trim() && !attachment)} className="h-8 w-full text-xs">
             {sending ? "Sending…" : "Start chat"}
           </Button>
         </form>
@@ -289,12 +274,14 @@ function NewChatForm({ onStarted, onCancel, conversations }) {
 
 const MEDIA_TYPES = new Set(["image", "video", "audio", "document", "sticker"]);
 
-// Outbound attachments carry the real link that was sent (mediaUrl).
-// Inbound ones only ever have Meta's opaque mediaId — never a directly
-// loadable URL — so those route through the backend's media proxy instead.
+// A file uploaded through AttachmentPicker (outbound) or received on a
+// webhook (inbound) both end up as Meta's own opaque mediaId — routed
+// through the backend's media proxy either way. mediaUrl only exists for
+// the handful of older messages sent before file upload replaced the
+// paste-a-link flow.
 function MessageMedia({ message }) {
   if (!MEDIA_TYPES.has(message.type)) return null;
-  const src = message.direction === "outbound" ? message.mediaUrl : (message.mediaId ? whatsappMediaUrl(message.mediaId) : "");
+  const src = message.mediaId ? whatsappMediaUrl(message.mediaId) : message.mediaUrl;
   if (!src) return <p className="text-xs italic text-slate-400">[{message.type} unavailable]</p>;
 
   if (message.type === "image" || message.type === "sticker") {
@@ -323,8 +310,7 @@ function MessageThread({ conversation, channelName }) {
   const [messages, setMessages] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [text, setText] = useState("");
-  const [mediaUrl, setMediaUrl] = useState("");
-  const [showAttach, setShowAttach] = useState(false);
+  const [attachment, setAttachment] = useState(null);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const bottomRef = useRef(null);
@@ -354,21 +340,20 @@ function MessageThread({ conversation, channelName }) {
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [messages.length]);
 
   async function send() {
-    if (!text.trim() && !mediaUrl.trim()) return;
+    if (!text.trim() && !attachment) return;
     setSending(true);
     setError("");
     const draftText = text;
-    const draftMedia = mediaUrl;
+    const draftAttachment = attachment;
     setText("");
-    setMediaUrl("");
-    setShowAttach(false);
+    setAttachment(null);
     try {
-      await sendWhatsAppMessage(conversation._id, draftText, { mediaUrl: draftMedia.trim() || undefined });
+      await sendWhatsAppMessage(conversation._id, draftText, draftAttachment ? { mediaId: draftAttachment.mediaId, mediaType: draftAttachment.mediaType } : {});
       await load();
     } catch (err) {
       setError(err.message);
       setText(draftText);
-      setMediaUrl(draftMedia);
+      setAttachment(draftAttachment);
     } finally {
       setSending(false);
     }
@@ -419,27 +404,10 @@ function MessageThread({ conversation, channelName }) {
         </div>
       ) : null}
 
-      {showAttach ? (
-        <div className="border-t border-[var(--line)] px-3 pt-2">
-          <input
-            value={mediaUrl}
-            onChange={(e) => setMediaUrl(e.target.value)}
-            placeholder="Image/file/video URL to attach"
-            className="h-9 w-full rounded-lg border border-[var(--line)] bg-white px-3 text-xs outline-none focus:border-indigo-500"
-          />
-        </div>
-      ) : null}
+      <div className="border-t border-[var(--line)] px-3 pt-2">
+        <AttachmentPicker attachment={attachment} onChange={setAttachment} />
+      </div>
       <div className="flex items-center gap-2 border-t border-[var(--line)] p-3">
-        <button
-          type="button"
-          onClick={() => setShowAttach((v) => !v)}
-          title="Attach a file/image URL"
-          className={`grid h-10 w-10 shrink-0 place-items-center rounded-full transition ${
-            showAttach ? "bg-indigo-100 text-indigo-700" : "text-slate-400 hover:bg-slate-100"
-          }`}
-        >
-          <Paperclip size={16} />
-        </button>
         <input
           value={text}
           onChange={(e) => setText(e.target.value)}
@@ -447,7 +415,7 @@ function MessageThread({ conversation, channelName }) {
           placeholder="Type a message…"
           className="h-10 flex-1 rounded-full border border-[var(--line)] bg-white px-4 text-sm outline-none focus:border-indigo-500"
         />
-        <Button onClick={send} disabled={sending || (!text.trim() && !mediaUrl.trim())} className="h-10 w-10 shrink-0 rounded-full p-0">
+        <Button onClick={send} disabled={sending || (!text.trim() && !attachment)} className="h-10 w-10 shrink-0 rounded-full p-0">
           <Send size={15} />
         </Button>
       </div>
@@ -605,8 +573,8 @@ export function WhatsAppView() {
   }
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
-      <section className="mb-6 flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto flex h-[calc(100vh-95px)] max-w-[1920px] flex-col overflow-hidden px-4 py-4 lg:px-8">
+      <section className="mb-4 shrink-0 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="teal">WhatsApp Business</Badge>
           <h1 className="mt-3 text-2xl tracking-tight text-slate-950 md:text-[24px]">WhatsApp Inbox</h1>
@@ -636,12 +604,13 @@ export function WhatsAppView() {
       </section>
 
       {notice ? (
-        <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{notice}</div>
+        <div className="mb-4 shrink-0 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{notice}</div>
       ) : null}
       {error ? (
-        <div className="mb-4 rounded-lg border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
+        <div className="mb-4 shrink-0 rounded-lg border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
       ) : null}
 
+      <div className="min-h-0 flex-1 overflow-y-auto">
       {pendingChoice ? (
         <Card>
           <CardHeader>
@@ -684,8 +653,8 @@ export function WhatsAppView() {
       ) : showChangeNumber ? (
         <WhatsAppConnectForm onConnected={handleChanged} />
       ) : (
-        <>
-          <Card className="mb-4">
+        <div className="flex h-full flex-col">
+          <Card className="mb-4 shrink-0">
             <CardContent className="grid grid-cols-1 gap-x-6 gap-y-2 py-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Connected number</p>
@@ -711,7 +680,7 @@ export function WhatsAppView() {
               subscribed app on the WABA — a one-time step, separate from
               connecting itself, that a connection made before this fix
               existed can be missing. */}
-          <Card className="mb-4 border-amber-200 bg-amber-50">
+          <Card className="mb-4 shrink-0 border-amber-200 bg-amber-50">
             <CardContent className="flex flex-wrap items-center justify-between gap-2 py-3">
               <p className="text-xs text-amber-800">
                 Getting a "necessary permissions" error when sending? Click this once to fix it.
@@ -719,8 +688,8 @@ export function WhatsAppView() {
               <FixPermissionsButton />
             </CardContent>
           </Card>
-          <Card className="overflow-hidden">
-          <div className="grid h-[640px] grid-cols-1 md:grid-cols-[300px_1fr]">
+          <Card className="min-h-0 flex-1 overflow-hidden">
+          <div className="grid h-full grid-cols-1 md:grid-cols-[300px_1fr]">
             {/* Conversation list */}
             <div className="flex flex-col border-r border-[var(--line)]">
               <div className="border-b border-[var(--line)] px-4 py-3">
@@ -773,8 +742,9 @@ export function WhatsAppView() {
             </div>
           </div>
           </Card>
-        </>
+        </div>
       )}
+      </div>
     </div>
   );
 }

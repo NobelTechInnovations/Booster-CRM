@@ -12,6 +12,7 @@ import {
   ShoppingCart,
   PhoneCall,
   MessageCircle,
+  UserPlus,
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -166,6 +167,8 @@ export function CustomersView() {
   const [followUpTarget, setFollowUpTarget] = useState(null);
   const [whatsappTarget, setWhatsappTarget] = useState(null);
   const [sortBy, setSortBy] = useState("latest");
+  const [savingLeadPhone, setSavingLeadPhone] = useState("");
+  const [leadSaveError, setLeadSaveError] = useState("");
 
   async function loadCustomers() {
     setIsLoading(true);
@@ -221,6 +224,37 @@ export function CustomersView() {
     });
     return sorted;
   }, [customers, search, sortBy]);
+
+  // Leads that never made it into Shopify as a real customer — a phone-based
+  // webhook lead (abandoned cart, form fill, etc.) with no matching
+  // SyncedCustomer record. Shown separately since they don't have orders/
+  // spend/a Shopify id the rest of this page's actions assume.
+  const pureLeads = useMemo(() => {
+    const customerPhones = new Set(customers.map((c) => c.phone).filter(Boolean));
+    return [...leadByPhone.values()]
+      .filter((l) => l.customerPhone && !customerPhones.has(l.customerPhone))
+      .sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0));
+  }, [leadByPhone, customers]);
+
+  async function saveLeadAsCustomer(lead) {
+    setSavingLeadPhone(lead.customerPhone);
+    setLeadSaveError("");
+    try {
+      const [firstName, ...rest] = (lead.customerName || "").trim().split(/\s+/);
+      await createCustomer({
+        firstName: firstName || "",
+        lastName: rest.join(" "),
+        email: lead.customerEmail || "",
+        phone: lead.customerPhone,
+        note: lead.productInterest ? `From ${lead.provider} lead: interested in ${lead.productInterest}` : `From ${lead.provider} lead`,
+      });
+      await loadCustomers();
+    } catch (err) {
+      setLeadSaveError(err.message);
+    } finally {
+      setSavingLeadPhone("");
+    }
+  }
 
   return (
     <div className="mx-auto  px-4 py-4 lg:px-8">
@@ -336,6 +370,71 @@ export function CustomersView() {
           )}
         </CardContent>
       </Card>
+
+      {pureLeads.length ? (
+        <Card className="mt-5">
+          <CardHeader>
+            <div>
+              <CardTitle>Leads not yet customers</CardTitle>
+              <p className="mt-1 text-sm text-[var(--muted)]">
+                Came in from a webhook (abandoned cart, form, etc.) with a phone number but no matching Shopify customer yet.
+              </p>
+            </div>
+          </CardHeader>
+          <CardContent className={leadSaveError ? "space-y-3 p-0" : "p-0"}>
+            {leadSaveError ? <p className="px-4 pt-3 text-sm font-medium text-rose-700">{leadSaveError}</p> : null}
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[640px] border-collapse text-sm">
+                <thead>
+                  <tr className="border-b border-[var(--line)] text-left text-xs uppercase text-slate-500">
+                    <th className="px-4 py-3 font-semibold">Lead</th>
+                    <th className="px-4 py-3 font-semibold">Phone</th>
+                    <th className="px-4 py-3 font-semibold">Source</th>
+                    <th className="px-4 py-3 font-semibold">Status</th>
+                    <th className="px-4 py-3 text-right font-semibold">Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {pureLeads.map((lead) => (
+                    <tr key={lead._id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
+                      <td className="px-4 py-3">
+                        <p className="font-semibold text-slate-900">{lead.customerName || "Unnamed lead"}</p>
+                        {lead.productInterest ? <p className="mt-0.5 text-xs text-slate-500">{lead.productInterest}</p> : null}
+                      </td>
+                      <td className="px-4 py-3 text-xs text-slate-600">
+                        <p className="flex items-center gap-1"><Phone size={11} />{lead.customerPhone}</p>
+                        {lead.customerEmail ? <p className="mt-0.5 flex items-center gap-1"><Mail size={11} />{lead.customerEmail}</p> : null}
+                      </td>
+                      <td className="px-4 py-3 text-xs font-medium text-slate-600">{lead.provider}</td>
+                      <td className="px-4 py-3">
+                        <Badge tone={lead.followUpStatus === "converted" ? "green" : lead.followUpStatus === "follow_up_scheduled" ? "amber" : "slate"}>
+                          {(lead.followUpStatus || "new").replace(/_/g, " ")}
+                        </Badge>
+                      </td>
+                      <td className="px-4 py-3 text-right">
+                        <div className="flex justify-end gap-1.5">
+                          <button onClick={() => setWhatsappTarget({ phone: lead.customerPhone, name: lead.customerName })} className="rounded-md p-1.5 text-slate-500 hover:bg-emerald-50 hover:text-emerald-700" title="Send WhatsApp">
+                            <MessageCircle size={15} />
+                          </button>
+                          <button
+                            onClick={() => saveLeadAsCustomer(lead)}
+                            disabled={savingLeadPhone === lead.customerPhone}
+                            className="flex items-center gap-1 rounded-md px-2 py-1.5 text-xs font-semibold text-indigo-600 hover:bg-indigo-50 disabled:opacity-50"
+                            title="Save as customer"
+                          >
+                            <UserPlus size={14} />
+                            {savingLeadPhone === lead.customerPhone ? "Saving…" : "Save as customer"}
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
 
       {showNew ? (
         <NewCustomerModal

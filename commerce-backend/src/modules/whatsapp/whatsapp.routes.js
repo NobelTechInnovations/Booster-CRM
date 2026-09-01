@@ -1,4 +1,5 @@
 import { Router } from "express";
+import multer from "multer";
 import { Readable } from "node:stream";
 import { requireAuth, requirePermission, requireAuthHeaderOrQuery } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
@@ -17,10 +18,18 @@ import {
   sendWhatsAppTemplateMessage,
   listMessageTemplates,
   fetchWhatsAppMedia,
+  uploadWhatsAppMedia,
   handleIncomingWebhook,
 } from "./whatsapp.service.js";
 
 export const whatsappRoutes = Router();
+
+// WhatsApp's own per-message caps go up to 100MB (documents), but this
+// backend runs as a Vercel serverless function, whose own request-body
+// limit is well below that (a few MB) regardless of what's set here — capped
+// conservatively so a too-large file fails with this app's own clear error
+// instead of an opaque platform-level one.
+const mediaUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 4 * 1024 * 1024 } });
 
 // ─── Connect (credential entry) ─────────────────────────────────────────────
 
@@ -220,6 +229,7 @@ whatsappRoutes.post(
       to,
       text: req.body?.text,
       mediaUrl: req.body?.mediaUrl,
+      mediaId: req.body?.mediaId,
       mediaType: req.body?.mediaType,
       sentByUserName: req.auth.displayName || req.auth.email || "",
     });
@@ -248,6 +258,25 @@ whatsappRoutes.post(
       templateName: req.body?.templateName,
       language: req.body?.language,
       bodyParams: Array.isArray(req.body?.bodyParams) ? req.body.bodyParams : [],
+    });
+    res.json(result);
+  }),
+);
+
+// Uploads an actual file (not just a URL) straight to Meta's WhatsApp media
+// store — the returned mediaId is what sendWhatsAppMessage/start attach.
+whatsappRoutes.post(
+  "/media/upload",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  mediaUpload.single("file"),
+  asyncHandler(async (req, res) => {
+    if (!req.file) throw new HttpError(400, "No file uploaded");
+    const result = await uploadWhatsAppMedia({
+      companyId: req.auth.companyId,
+      fileBuffer: req.file.buffer,
+      filename: req.file.originalname,
+      mimeType: req.file.mimetype,
     });
     res.json(result);
   }),
@@ -308,6 +337,7 @@ whatsappRoutes.post(
       to: conversation.waId,
       text: req.body?.text,
       mediaUrl: req.body?.mediaUrl,
+      mediaId: req.body?.mediaId,
       mediaType: req.body?.mediaType,
       sentByUserName: req.auth.displayName || req.auth.email || "",
     });

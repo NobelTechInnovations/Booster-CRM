@@ -53,6 +53,9 @@ export async function connectWhatsAppChannel({ companyId, userId, phoneNumberId,
       console.warn(`[WhatsApp] Could not subscribe app to WABA ${whatsappBusinessAccountId}: ${err.message}`);
     });
   }
+  await registerWhatsAppNumber(accessToken, phoneNumberId).catch((err) => {
+    console.warn(`[WhatsApp] Could not register phone number ${phoneNumberId}: ${err.message}`);
+  });
   return channel;
 }
 
@@ -222,6 +225,27 @@ async function subscribeAppToWaba(accessToken, wabaId) {
   });
 }
 
+// A phone number connected to the Cloud API (rather than set up through
+// WhatsApp Manager's own guided UI, which does this step invisibly) also
+// has to explicitly complete Cloud API "registration" before it's allowed
+// to send/receive at all — a separate step from subscribing the app above,
+// and from Meta's own display-name/number review. Skipping it produces
+// "(#133010) Account not registered", distinct from the "(#200) necessary
+// permissions" subscribe-app error. A random 6-digit PIN is fine here: it
+// only sets up WhatsApp's optional two-step verification, which the
+// business can view/change any time in WhatsApp Manager → this number →
+// Two-step verification — nothing about it needs to be remembered or
+// stored by this app.
+async function registerWhatsAppNumber(accessToken, phoneNumberId) {
+  if (!phoneNumberId) return;
+  const pin = String(Math.floor(100000 + Math.random() * 900000));
+  await graphFetch(`${GRAPH_BASE()}/${phoneNumberId}/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+    body: JSON.stringify({ messaging_product: "whatsapp", pin }),
+  });
+}
+
 async function connectFromCandidate({ companyId, userId, accessToken, candidate }) {
   const channel = await upsertWhatsAppChannel({
     companyId, userId,
@@ -234,13 +258,21 @@ async function connectFromCandidate({ companyId, userId, accessToken, candidate 
   await subscribeAppToWaba(accessToken, candidate.whatsappBusinessAccountId).catch((err) => {
     console.warn(`[WhatsApp] Could not subscribe app to WABA ${candidate.whatsappBusinessAccountId}: ${err.message}`);
   });
+  // Best-effort, same as above — a number that's already registered
+  // errors here (harmlessly; it's already in the state we want), and one
+  // that genuinely needs it gets activated automatically instead of
+  // failing every send with "(#133010) Account not registered" until
+  // someone happens to run Fix permissions.
+  await registerWhatsAppNumber(accessToken, candidate.phoneNumberId).catch((err) => {
+    console.warn(`[WhatsApp] Could not register phone number ${candidate.phoneNumberId}: ${err.message}`);
+  });
   return channel;
 }
 
 // Lets a company that's already connected retry the subscribe-app-to-WABA
-// step above without going through the full "Change number" reconnect —
-// covers exactly the case where a connection was made before this step
-// existed, or Meta's subscribe call itself failed transiently.
+// and register-phone-number steps above without going through the full
+// "Change number" reconnect — covers a connection made before these steps
+// existed, or either Meta call failing transiently the first time.
 export async function fixWhatsAppPermissions({ companyId }) {
   const [summary] = await listWhatsAppChannels(companyId);
   if (!summary) throw new HttpError(400, "Connect a WhatsApp number first");
@@ -248,10 +280,18 @@ export async function fixWhatsAppPermissions({ companyId }) {
   const channel = await getChannelForSync({ channelId: summary._id || summary.id, companyId });
   const accessToken = channel?.credentials?.accessToken;
   const wabaId = channel?.external?.whatsappBusinessAccountId;
+  const phoneNumberId = channel?.external?.phoneNumberId;
   if (!accessToken) throw new HttpError(400, "Missing access token for this connection — click Change number and reconnect.");
   if (!wabaId) throw new HttpError(400, "Missing WhatsApp Business Account ID for this connection — click Change number and reconnect.");
 
   await subscribeAppToWaba(accessToken, wabaId);
+  // Best-effort: an already-registered number throws here, which is fine
+  // (nothing to fix) — only a genuine registration failure should surface,
+  // and even then the subscribe step above already succeeded, so this
+  // isn't a reason to fail the whole "fix" action.
+  await registerWhatsAppNumber(accessToken, phoneNumberId).catch((err) => {
+    console.warn(`[WhatsApp] Could not register phone number ${phoneNumberId}: ${err.message}`);
+  });
   return { ok: true };
 }
 
@@ -318,23 +358,28 @@ function guessMediaType(url) {
   return "document"; // pdf, docx, xlsx, etc. — WhatsApp's catch-all attachment type
 }
 
-export async function sendWhatsAppMessage({ companyId, channelId, to, text, mediaUrl, mediaType, sentByUserName }) {
+export async function sendWhatsAppMessage({ companyId, channelId, to, text, mediaUrl, mediaId, mediaType, sentByUserName }) {
   const channel = await getChannelForSync({ channelId, companyId });
   if (!channel || channel.channelType !== "whatsapp") throw new HttpError(404, "WhatsApp channel not found");
   if (!to) throw new HttpError(400, "Recipient phone number is required");
-  if (!text?.trim() && !mediaUrl?.trim()) throw new HttpError(400, "Message text or attachment is required");
+  const hasMedia = Boolean(mediaId || mediaUrl?.trim());
+  if (!text?.trim() && !hasMedia) throw new HttpError(400, "Message text or attachment is required");
 
   const waId = String(to).replace(/\D/g, "");
-  const type = mediaUrl?.trim() ? (mediaType || guessMediaType(mediaUrl)) : "text";
+  const type = hasMedia ? (mediaType || guessMediaType(mediaUrl || "")) : "text";
 
-  const payload = mediaUrl?.trim()
+  const payload = hasMedia
     ? {
         messaging_product: "whatsapp", to: waId, type,
         [type]: {
-          link: mediaUrl.trim(),
+          // An uploaded file (mediaId, from POST /media/upload) is preferred
+          // — Meta hosts it directly, no external URL needs to stay reachable.
+          // mediaUrl (a plain link) is kept as a fallback for anything still
+          // using it.
+          ...(mediaId ? { id: mediaId } : { link: mediaUrl.trim() }),
           // Only image/video/document support a caption; audio doesn't.
           ...(text?.trim() && type !== "audio" ? { caption: text.trim() } : {}),
-          ...(type === "document" ? { filename: mediaUrl.split("/").pop()?.split("?")[0] || "file" } : {}),
+          ...(type === "document" && !mediaId ? { filename: mediaUrl.split("/").pop()?.split("?")[0] || "file" } : {}),
         },
       }
     : { messaging_product: "whatsapp", to: waId, type: "text", text: { body: text } };
@@ -346,7 +391,7 @@ export async function sendWhatsAppMessage({ companyId, channelId, to, text, medi
   });
 
   const waMessageId = body.messages?.[0]?.id;
-  const preview = mediaUrl?.trim() ? (text?.trim() || `[${type}]`) : text;
+  const preview = hasMedia ? (text?.trim() || `[${type}]`) : text;
   const conversation = await upsertConversation({
     companyId, waId, lastMessageAt: new Date(), lastMessagePreview: preview, incrementUnread: false,
   });
@@ -358,13 +403,49 @@ export async function sendWhatsAppMessage({ companyId, channelId, to, text, medi
     direction: "outbound",
     type,
     text: text || "",
-    mediaUrl: mediaUrl?.trim() || "",
+    // Same convention inbound media already uses: mediaId (Meta's own,
+    // proxied through GET /media/:mediaId) takes priority over a raw link,
+    // so the message-thread renderer doesn't need to care about direction.
+    mediaUrl: !mediaId && mediaUrl?.trim() ? mediaUrl.trim() : "",
+    mediaId: mediaId || "",
     status: "sent",
     timestamp: new Date(),
     sentByUserName: sentByUserName || "",
   });
 
   return { conversation, message };
+}
+
+// ─── Upload (attach a real file, not just a URL) ────────────────────────────
+// Uploads straight to Meta's own WhatsApp media store and hands back the
+// resulting media id — sendWhatsAppMessage then references that id directly
+// (no file ever needs to live on, or be re-hosted by, this app's own
+// servers). Mirrors fetchWhatsAppMedia's read side.
+export async function uploadWhatsAppMedia({ companyId, fileBuffer, filename, mimeType }) {
+  const [summary] = await listWhatsAppChannels(companyId);
+  if (!summary) throw new HttpError(400, "Connect a WhatsApp number first");
+  const channel = await getChannelForSync({ channelId: summary._id || summary.id, companyId });
+  const accessToken = channel?.credentials?.accessToken;
+  const phoneNumberId = channel?.external?.phoneNumberId;
+  if (!accessToken || !phoneNumberId) throw new HttpError(400, "Missing WhatsApp credentials — click Change number and reconnect.");
+
+  const form = new FormData();
+  form.append("messaging_product", "whatsapp");
+  form.append("file", new Blob([fileBuffer], { type: mimeType || "application/octet-stream" }), filename || "file");
+
+  const response = await fetch(`${GRAPH_BASE()}/${phoneNumberId}/media`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${accessToken}` },
+    body: form,
+  });
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok || body.error) {
+    throw new HttpError(response.status >= 400 ? response.status : 502, body?.error?.message || "Upload to WhatsApp failed", body);
+  }
+
+  const category = (mimeType || "").split("/")[0];
+  const mediaType = category === "image" || category === "video" || category === "audio" ? category : "document";
+  return { mediaId: body.id, mediaType };
 }
 
 // ─── Send (message template — for a number that has never messaged first) ──
