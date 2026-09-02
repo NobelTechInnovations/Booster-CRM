@@ -28,6 +28,8 @@ import {
   Workflow,
   X,
   Ban,
+  Clock,
+  Wallet,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -2616,6 +2618,59 @@ function AdditionalInsights({ items }) {
   );
 }
 
+// Plan/trial/wallet state, set entirely by platform admins (app/admin) —
+// never editable here. Reads straight off session.company, which already
+// carries subscription/wallet since neither field is select:false on the
+// Company schema. Only reflects what was true at the last login/company
+// switch (the session isn't re-fetched on every dashboard load), same
+// staleness every other session.company field already has.
+function PlanStatusBadges({ company }) {
+  if (!company) return null;
+  const sub = company.subscription;
+  const wallet = company.wallet;
+
+  // planId, not just sub's presence — Mongoose auto-defaults the nested
+  // subscription object (field defaults like status:"trialing") on every
+  // newly-created company even when no admin ever assigned a real plan, so
+  // a plain truthiness check would mislabel a fresh signup as "on trial".
+  const hasPlan = Boolean(sub?.planId);
+
+  let planBadge = null;
+  if (!hasPlan) {
+    planBadge = <span className="ml-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-500">No plan</span>;
+  } else if (sub.status === "trialing") {
+    const left = sub.trialEndsAt ? Math.ceil((new Date(sub.trialEndsAt).getTime() - Date.now()) / (24 * 60 * 60 * 1000)) : null;
+    const expired = left !== null && left < 0;
+    planBadge = (
+      <span className={cn(
+        "ml-1 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10.5px] font-semibold",
+        expired ? "bg-rose-50 text-rose-700" : "bg-amber-50 text-amber-700",
+      )}>
+        <Clock size={11} />
+        {left === null ? "On trial" : expired ? "Trial expired" : `Trial · ${left}d left`}
+      </span>
+    );
+  } else {
+    planBadge = (
+      <span className="ml-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[10.5px] font-semibold capitalize text-indigo-700">
+        {sub.planSlug || sub.status} plan
+      </span>
+    );
+  }
+
+  return (
+    <>
+      {planBadge}
+      {wallet ? (
+        <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10.5px] font-semibold text-slate-600">
+          <Wallet size={11} />
+          ₹{wallet.balance ?? 0}
+        </span>
+      ) : null}
+    </>
+  );
+}
+
 export function DashboardView() {
   const { dashboardData, connectedChannels, setConnectedChannels, channelsError, setChannelsError, isLoadingChannels, session } = useCommerceStore();
 
@@ -2634,7 +2689,7 @@ export function DashboardView() {
       {/* Which brand/company is live on this dashboard — the topbar brand
           switcher shows this too, but small and easy to miss; this makes it
           unambiguous which workspace's numbers are on screen. */}
-      <div className="mb-4 flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px] font-bold text-white">
           {activeCompanyName[0]?.toUpperCase() || "W"}
         </div>
@@ -2643,6 +2698,7 @@ export function DashboardView() {
           <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
           Live
         </span>
+        <PlanStatusBadges company={session?.company} />
       </div>
 
       {/* Business metric strip — plain command-bar row, no card */}

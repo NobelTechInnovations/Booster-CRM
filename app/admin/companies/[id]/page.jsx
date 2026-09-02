@@ -127,7 +127,11 @@ export default function AdminCompanyDetailPage() {
 
   const { company, users, orderCount, walletTransactions = [] } = data;
   const sub = company.subscription;
-  const trialDaysLeft = sub?.status === "trialing" ? daysLeft(sub.trialEndsAt) : null;
+  // planId, not just sub's presence — see feature-gate.js's own comment on
+  // why (Mongoose auto-defaults the nested subscription object on new
+  // companies even when no admin ever assigned a real plan).
+  const hasPlan = Boolean(sub?.planId);
+  const trialDaysLeft = hasPlan && sub?.status === "trialing" ? daysLeft(sub.trialEndsAt) : null;
 
   return (
     <div>
@@ -155,7 +159,7 @@ export default function AdminCompanyDetailPage() {
 
       {/* Trial / subscription status, front and center — the whole point of this page. */}
       <div className="mb-6 flex flex-wrap items-center gap-4 rounded-xl border border-slate-800 bg-slate-900 px-5 py-4">
-        {!sub ? (
+        {!hasPlan ? (
           <span className="text-sm font-semibold text-slate-300">No plan assigned — full access, unmetered</span>
         ) : sub.status === "trialing" ? (
           <span className="flex items-center gap-1.5 text-sm font-semibold text-amber-400">

@@ -26,7 +26,11 @@ function daysLeft(dateStr) {
 // trial countdown, since both used to render as a plain "trialing" badge.
 function statusLabel(c) {
   if (c.status === "disabled") return { key: "disabled", text: "disabled" };
-  if (!c.subscription) return { key: "no_plan", text: "no plan" };
+  // planId specifically, not just subscription's presence — Mongoose
+  // auto-instantiates the nested subscription object (with its field
+  // defaults) on every newly-created company, so a plain truthiness check
+  // would call a never-touched new company "trialing" instead of "no plan".
+  if (!c.subscription?.planId) return { key: "no_plan", text: "no plan" };
   if (c.subscription.status === "trialing") {
     const left = daysLeft(c.subscription.trialEndsAt);
     if (left === null) return { key: "trialing", text: "trial" };
@@ -81,13 +85,16 @@ export default function AdminCompaniesPage() {
   }, [filtered]);
 
   const stats = useMemo(() => {
+    // planId, not just subscription's presence/status — see statusLabel's
+    // own comment on why (Mongoose auto-defaults the nested object).
+    const hasPlan = (c) => Boolean(c.subscription?.planId);
     const subStatus = (c) => c.subscription?.status;
     return {
       total: companies.length,
-      active: companies.filter((c) => subStatus(c) === "active").length,
-      trialing: companies.filter((c) => subStatus(c) === "trialing").length,
-      noPlan: companies.filter((c) => !c.subscription).length,
-      suspended: companies.filter((c) => c.status === "disabled" || subStatus(c) === "suspended").length,
+      active: companies.filter((c) => hasPlan(c) && subStatus(c) === "active").length,
+      trialing: companies.filter((c) => hasPlan(c) && subStatus(c) === "trialing").length,
+      noPlan: companies.filter((c) => !hasPlan(c)).length,
+      suspended: companies.filter((c) => c.status === "disabled" || (hasPlan(c) && subStatus(c) === "suspended")).length,
     };
   }, [companies]);
 
