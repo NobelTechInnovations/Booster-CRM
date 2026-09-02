@@ -14,6 +14,17 @@ const planSchema = new mongoose.Schema(
     priceMonthly: { type: Number, default: 0 },
     priceYearly: { type: Number, default: 0 },
     currency: { type: String, default: "INR" },
+    // Whether this tier is a time-boxed trial rather than a paid plan —
+    // drives the "Trial (N days left)" framing on the admin dashboard
+    // instead of a plain "trialing" status label.
+    isTrial: { type: Boolean, default: false },
+    trialDays: { type: Number, default: 0 },
+    // Usage-based charge on top of priceMonthly — e.g. the ₹2-per-order
+    // fulfillment fee on the Premium tier. Company.wallet is debited by
+    // this amount whenever an order is marked fulfilled (metering/
+    // deduction logic itself is a separate follow-up — this field is
+    // just the rate an admin sets per plan).
+    perOrderFulfillmentFee: { type: Number, default: 0 },
     features: [String],
     limits: {
       maxUsers: Number,

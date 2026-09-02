@@ -5,7 +5,7 @@ import { Plus, Save, X } from "lucide-react";
 import { listPlans, createPlan, updatePlan } from "@/lib/admin-api";
 
 const inputClass = "h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-white outline-none focus:border-amber-500";
-const EMPTY_FORM = { name: "", priceMonthly: "", priceYearly: "", features: "", isActive: true };
+const EMPTY_FORM = { name: "", priceMonthly: "", priceYearly: "", features: "", isActive: true, isTrial: false, trialDays: "", perOrderFulfillmentFee: "" };
 
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState([]);
@@ -39,6 +39,9 @@ export default function AdminPlansPage() {
       priceYearly: String(plan.priceYearly ?? ""),
       features: (plan.features || []).join(", "),
       isActive: plan.isActive,
+      isTrial: Boolean(plan.isTrial),
+      trialDays: String(plan.trialDays ?? ""),
+      perOrderFulfillmentFee: String(plan.perOrderFulfillmentFee ?? ""),
     });
   }
 
@@ -63,6 +66,9 @@ export default function AdminPlansPage() {
       priceYearly: Number(form.priceYearly) || 0,
       features: form.features.split(",").map((f) => f.trim()).filter(Boolean),
       isActive: form.isActive,
+      isTrial: form.isTrial,
+      trialDays: Number(form.trialDays) || 0,
+      perOrderFulfillmentFee: Number(form.perOrderFulfillmentFee) || 0,
     };
     try {
       if (editingId) {
@@ -119,11 +125,25 @@ export default function AdminPlansPage() {
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Price / year (₹)</span>
               <input type="number" value={form.priceYearly} onChange={(e) => setForm((f) => ({ ...f, priceYearly: e.target.value }))} className={inputClass} />
             </label>
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Per-order fulfillment fee (₹)</span>
+              <input type="number" value={form.perOrderFulfillmentFee} onChange={(e) => setForm((f) => ({ ...f, perOrderFulfillmentFee: e.target.value }))} className={inputClass} placeholder="e.g. 2 — debited from wallet per order fulfilled" />
+            </label>
             <label className="flex items-center gap-2 pt-6">
               <input type="checkbox" checked={form.isActive} onChange={(e) => setForm((f) => ({ ...f, isActive: e.target.checked }))} className="h-4 w-4 rounded border-slate-600 bg-slate-800" />
               <span className="text-sm text-slate-300">Offerable to companies</span>
             </label>
-            <label className="col-span-2 block">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" checked={form.isTrial} onChange={(e) => setForm((f) => ({ ...f, isTrial: e.target.checked }))} className="h-4 w-4 rounded border-slate-600 bg-slate-800" />
+              <span className="text-sm text-slate-300">This is a time-boxed trial tier</span>
+            </label>
+            {form.isTrial ? (
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Trial length (days)</span>
+                <input type="number" value={form.trialDays} onChange={(e) => setForm((f) => ({ ...f, trialDays: e.target.value }))} className={inputClass} placeholder="7" />
+              </label>
+            ) : null}
+            <label className="col-span-full block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Features (comma-separated keys)</span>
               <input value={form.features} onChange={(e) => setForm((f) => ({ ...f, features: e.target.value }))} className={inputClass} placeholder="whatsapp, smart_whatsapp, automation, advanced_reports" />
             </label>
@@ -158,8 +178,14 @@ export default function AdminPlansPage() {
             <tbody>
               {plans.map((p) => (
                 <tr key={p._id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
-                  <td className="px-4 py-3 font-semibold text-white">{p.name}</td>
-                  <td className="px-4 py-3 text-slate-300">₹{p.priceMonthly}/mo</td>
+                  <td className="px-4 py-3 font-semibold text-white">
+                    {p.name}
+                    {p.isTrial ? <span className="ml-1.5 rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold uppercase text-amber-400 ring-1 ring-amber-500/20">{p.trialDays}d trial</span> : null}
+                  </td>
+                  <td className="px-4 py-3 text-slate-300">
+                    ₹{p.priceMonthly}/mo
+                    {p.perOrderFulfillmentFee > 0 ? <span className="block text-[11px] text-slate-500">+₹{p.perOrderFulfillmentFee}/order</span> : null}
+                  </td>
                   <td className="px-4 py-3 text-slate-400">{(p.features || []).join(", ") || "—"}</td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${p.isActive ? "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20" : "bg-slate-500/10 text-slate-400 ring-1 ring-slate-500/20"}`}>

@@ -90,6 +90,15 @@ const companySchema = new mongoose.Schema(
       // shown to the company itself anywhere.
       notes: String,
     },
+    // Prepaid balance an admin manually tops up (no payment gateway is
+    // wired yet — see feature-gate.js's own note on that) and that usage
+    // charges like a plan's perOrderFulfillmentFee are meant to debit
+    // against. Every entry is logged (see WalletTransaction model) so the
+    // balance is always reconstructable, not just a bare number.
+    wallet: {
+      balance: { type: Number, default: 0 },
+      currency: { type: String, default: "INR" },
+    },
   },
   { timestamps: true },
 );

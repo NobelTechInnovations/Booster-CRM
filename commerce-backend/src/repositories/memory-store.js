@@ -35,6 +35,7 @@ export const memory = {
   smartWhatsappMessages: new Map(),
   platformAdmins: new Map(),
   plans: new Map(),
+  walletTransactions: new Map(),
 };
 
 export function id() {

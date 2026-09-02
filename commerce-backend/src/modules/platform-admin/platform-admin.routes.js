@@ -15,6 +15,7 @@ import {
   getCompanyForAdmin,
   updateCompanyStatus,
   updateCompanySubscription,
+  adjustCompanyWallet,
 } from "../../repositories/platform-admin.repo.js";
 
 export const platformAdminRoutes = Router();
@@ -134,6 +135,22 @@ platformAdminRoutes.patch(
     });
     if (result.error) throw new HttpError(400, result.error);
     res.json({ company: result.company });
+  }),
+);
+
+platformAdminRoutes.patch(
+  "/companies/:id/wallet",
+  requirePlatformAdmin,
+  asyncHandler(async (req, res) => {
+    const result = await adjustCompanyWallet({
+      companyId: req.params.id,
+      amount: req.body?.amount,
+      note: req.body?.note,
+      type: req.body?.type,
+      adminEmail: req.platformAdmin.email,
+    });
+    if (result.error) throw new HttpError(400, result.error);
+    res.json({ company: result.company, balanceAfter: result.balanceAfter });
   }),
 );
 
