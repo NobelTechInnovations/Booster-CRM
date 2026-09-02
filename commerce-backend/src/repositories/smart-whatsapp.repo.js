@@ -55,6 +55,16 @@ export async function getSmartWhatsAppSession(companyId) {
 // ─── Conversations ───────────────────────────────────────────────────────────
 
 export async function upsertSmartConversation({ companyId, waId, customerName, lastMessageAt, lastMessagePreview, incrementUnread }) {
+  // History-sync backfill (see smart-whatsapp-service's messaging-history.set
+  // handler) can call this many times for one conversation in whatever order
+  // WhatsApp delivers them, not necessarily newest-last — never let an older
+  // message's preview clobber a newer one that's already stored.
+  function isNewer(existingAt) {
+    if (!lastMessageAt) return false;
+    if (!existingAt) return true;
+    return new Date(lastMessageAt) >= new Date(existingAt);
+  }
+
   if (isMongoConnected()) {
     const existing = await SmartWhatsAppConversation.findOne({ companyId: mixedIdFilter(companyId), waId }).lean();
     let linkedCustomerId = existing?.linkedCustomerId;
@@ -62,6 +72,7 @@ export async function upsertSmartConversation({ companyId, waId, customerName, l
       const customer = await findCustomerByWaId({ companyId, waId });
       if (customer) linkedCustomerId = customer._id;
     }
+    const updateLastMessage = isNewer(existing?.lastMessageAt);
 
     return SmartWhatsAppConversation.findOneAndUpdate(
       { companyId: mixedIdFilter(companyId), waId },
@@ -69,8 +80,8 @@ export async function upsertSmartConversation({ companyId, waId, customerName, l
         $set: {
           companyId, waId,
           ...(customerName ? { customerName } : {}),
-          ...(lastMessageAt ? { lastMessageAt } : {}),
-          ...(lastMessagePreview !== undefined ? { lastMessagePreview } : {}),
+          ...(updateLastMessage && lastMessageAt ? { lastMessageAt } : {}),
+          ...(updateLastMessage && lastMessagePreview !== undefined ? { lastMessagePreview } : {}),
           ...(linkedCustomerId ? { linkedCustomerId } : {}),
         },
         ...(incrementUnread ? { $inc: { unreadCount: 1 } } : {}),
@@ -86,13 +97,14 @@ export async function upsertSmartConversation({ companyId, waId, customerName, l
     const customer = await findCustomerByWaId({ companyId, waId });
     if (customer) linkedCustomerId = customer._id;
   }
+  const updateLastMessage = isNewer(existing?.lastMessageAt);
 
   const conversation = {
     _id: existing?._id || id(),
     companyId, waId,
     customerName: customerName || existing?.customerName || "",
-    lastMessageAt: lastMessageAt || existing?.lastMessageAt,
-    lastMessagePreview: lastMessagePreview !== undefined ? lastMessagePreview : (existing?.lastMessagePreview || ""),
+    lastMessageAt: updateLastMessage ? lastMessageAt : (existing?.lastMessageAt || lastMessageAt),
+    lastMessagePreview: updateLastMessage && lastMessagePreview !== undefined ? lastMessagePreview : (existing?.lastMessagePreview || ""),
     unreadCount: (existing?.unreadCount || 0) + (incrementUnread ? 1 : 0),
     linkedCustomerId,
     createdAt: existing?.createdAt || now(),

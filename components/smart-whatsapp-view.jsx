@@ -319,19 +319,29 @@ export function SmartWhatsAppView() {
     }
   }, [status?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function loadConversations() {
-    setLoadingConversations(true);
+  async function loadConversations(silent = false) {
+    if (!silent) setLoadingConversations(true);
     try {
       const res = await listSmartWhatsAppConversations();
       setConversations(res.conversations || []);
     } catch (err) {
-      setError(err.message);
+      if (!silent) setError(err.message);
     } finally {
-      setLoadingConversations(false);
+      if (!silent) setLoadingConversations(false);
     }
   }
 
   useEffect(() => { if (status?.status === "open") loadConversations(); }, [status?.status]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Keeps the conversation list itself live — a new inbound conversation, an
+  // updated preview/unread badge on an existing one — without the user
+  // having to hit Refresh by hand. The open thread (MessageThread below)
+  // already polls its own messages separately; this is the sidebar's turn.
+  useEffect(() => {
+    if (status?.status !== "open") return;
+    const t = setInterval(() => loadConversations(true), 10000);
+    return () => clearInterval(t);
+  }, [status?.status]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function handleConnect() {
     setConnecting(true);

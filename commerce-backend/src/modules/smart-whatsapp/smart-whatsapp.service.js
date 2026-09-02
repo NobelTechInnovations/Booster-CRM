@@ -116,20 +116,30 @@ export async function handleWebhook(payload) {
     const { waId, text, type, mediaId, mediaMimeType, senderName, waMessageId, timestamp } = payload;
     if (!waId || !waMessageId) return;
     const ts = timestamp ? new Date(timestamp) : new Date();
+    // "outbound" here means a message sent from the phone itself, before or
+    // outside this bridge (only ever comes from history-sync backfill on
+    // first pairing — a live send always goes through sendSmartMessage,
+    // which records itself). Defaults to "inbound" so nothing about a
+    // normal live incoming message changes.
+    const direction = payload.direction === "outbound" ? "outbound" : "inbound";
 
     const conversation = await upsertSmartConversation({
-      companyId, waId, customerName: senderName, lastMessageAt: ts, lastMessagePreview: text || `[${type}]`, incrementUnread: true,
+      companyId, waId, customerName: senderName,
+      lastMessageAt: ts, lastMessagePreview: text || `[${type}]`,
+      // Our own historical outbound messages shouldn't bump the unread
+      // counter — that's for what the customer sent us.
+      incrementUnread: direction === "inbound",
     });
     await createSmartMessage({
       companyId,
       conversationId: conversation._id,
       waMessageId,
-      direction: "inbound",
+      direction,
       type: type || "text",
       text: text || "",
       mediaId: mediaId || "",
       mediaMimeType: mediaMimeType || "",
-      status: "received",
+      status: direction === "outbound" ? "sent" : "received",
       timestamp: ts,
     });
   }

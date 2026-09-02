@@ -22,10 +22,15 @@ async function postToBackend(path, body) {
   }
 }
 
-export function notifyInboundMessage({ companyId, waId, text, type, mediaId, mediaMimeType, senderName, waMessageId, timestamp }) {
+// direction defaults to "inbound" (every call site before history sync
+// existed only ever pushed inbound messages) — history sync is the one
+// caller that passes "outbound" too, for messages sent from the phone
+// itself before this bridge ever connected.
+export function notifyInboundMessage({ companyId, waId, text, type, mediaId, mediaMimeType, senderName, waMessageId, timestamp, direction }) {
   return postToBackend(config.backendWebhookPath, {
     kind: "message",
     companyId, waId, text, type, mediaId, mediaMimeType, senderName, waMessageId,
+    direction: direction || "inbound",
     timestamp: timestamp || new Date().toISOString(),
   });
 }

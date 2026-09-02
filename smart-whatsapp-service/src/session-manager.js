@@ -106,43 +106,71 @@ export async function startSession(companyId) {
     }
   });
 
+  // Shared by both live messages and history-sync backfill below — same
+  // extraction, same media download, same push to commerce-backend, the
+  // only real difference being which direction to record it as.
+  function processMessage(m, direction) {
+    if (!m.message) return;
+    // Group messages are out of scope — this bridges a business's own
+    // customer conversations, not a general WhatsApp client.
+    if (m.key.remoteJid?.endsWith("@g.us")) return;
+
+    const waId = (m.key.remoteJid || "").split("@")[0];
+    if (!waId) return;
+
+    const msg = m.message;
+    const text = msg.conversation || msg.extendedTextMessage?.text || "";
+    const media = extractMedia(msg);
+
+    if (media) {
+      downloadMediaMessage(m, "buffer", {}, { logger, reuploadRequest: sock.updateMediaMessage })
+        .then((buffer) => {
+          const dirPath = mediaDir(companyId);
+          fs.mkdirSync(dirPath, { recursive: true });
+          const ext = (media.node.mimetype || "application/octet-stream").split("/")[1] || "bin";
+          fs.writeFileSync(path.join(dirPath, `${m.key.id}.${ext}`), buffer);
+        })
+        // Historical media in particular often isn't re-fetchable from
+        // WhatsApp's servers by the time sync happens — this is expected to
+        // fail sometimes, so it's a warning, never fatal to the message
+        // itself (the text/caption still gets recorded either way).
+        .catch((err) => console.warn(`[smart-whatsapp] media download failed for ${m.key.id}: ${err.message}`));
+    }
+
+    notifyInboundMessage({
+      companyId,
+      waId,
+      text: text || media?.node?.caption || "",
+      type: media?.type || "text",
+      mediaId: media ? m.key.id : undefined,
+      mediaMimeType: media?.node?.mimetype || "",
+      senderName: m.pushName || "",
+      waMessageId: m.key.id,
+      direction,
+      timestamp: m.messageTimestamp ? new Date(Number(m.messageTimestamp) * 1000).toISOString() : undefined,
+    });
+  }
+
   sock.ev.on("messages.upsert", ({ messages, type }) => {
     if (type !== "notify") return;
     for (const m of messages) {
-      if (!m.message || m.key.fromMe) continue;
-      // Group messages are out of scope — this bridges a business's own
-      // customer conversations, not a general WhatsApp client.
-      if (m.key.remoteJid?.endsWith("@g.us")) continue;
+      if (m.key.fromMe) continue; // our own live sends are recorded by sendMessage() itself — this is only for what arrives
+      processMessage(m, "inbound");
+    }
+  });
 
-      const waId = (m.key.remoteJid || "").split("@")[0];
-      if (!waId) continue;
-
-      const msg = m.message;
-      const text = msg.conversation || msg.extendedTextMessage?.text || "";
-      const media = extractMedia(msg);
-
-      if (media) {
-        downloadMediaMessage(m, "buffer", {}, { logger, reuploadRequest: sock.updateMediaMessage })
-          .then((buffer) => {
-            const dirPath = mediaDir(companyId);
-            fs.mkdirSync(dirPath, { recursive: true });
-            const ext = (media.node.mimetype || "application/octet-stream").split("/")[1] || "bin";
-            fs.writeFileSync(path.join(dirPath, `${m.key.id}.${ext}`), buffer);
-          })
-          .catch((err) => console.warn(`[smart-whatsapp] media download failed for ${m.key.id}: ${err.message}`));
-      }
-
-      notifyInboundMessage({
-        companyId,
-        waId,
-        text: text || media?.node?.caption || "",
-        type: media?.type || "text",
-        mediaId: media ? m.key.id : undefined,
-        mediaMimeType: media?.node?.mimetype || "",
-        senderName: m.pushName || "",
-        waMessageId: m.key.id,
-        timestamp: m.messageTimestamp ? new Date(Number(m.messageTimestamp) * 1000).toISOString() : undefined,
-      });
+  // WhatsApp pushes each chat's recent message history the first time a
+  // device links (this is what makes a freshly-scanned WhatsApp Web show
+  // your existing conversations instead of a blank slate) — without this
+  // handler, that history arrived and was silently discarded, so nothing
+  // ever showed up here except messages sent AFTER connecting. Only fires
+  // around first pairing; an already-linked session reconnecting normally
+  // doesn't get it again (WhatsApp knows this device already has it).
+  sock.ev.on("messaging-history.set", ({ messages }) => {
+    if (!Array.isArray(messages) || !messages.length) return;
+    console.log(`[smart-whatsapp] syncing ${messages.length} historical messages for company ${companyId}`);
+    for (const m of messages) {
+      processMessage(m, m.key.fromMe ? "outbound" : "inbound");
     }
   });
 
