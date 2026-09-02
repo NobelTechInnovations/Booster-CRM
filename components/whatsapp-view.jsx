@@ -481,50 +481,16 @@ function FixPermissionsButton() {
 }
 
 // ─── Main view ───────────────────────────────────────────────────────────────
-
-// Measures exactly how much viewport height is left below this element's
-// own top edge, and keeps it updated — instead of guessing the surrounding
-// chrome's height (topbar/sub-nav/banners) as a hardcoded pixel value,
-// which silently breaks the moment that chrome's height changes (a longer
-// banner, a different zoom level, a narrower/mobile viewport, browser
-// devtools open, etc.) and lets the whole page scroll instead of just the
-// chat pane inside it.
-function useAvailableHeight(deps) {
-  const ref = useRef(null);
-  const [height, setHeight] = useState(null);
-
-  useEffect(() => {
-    function measure() {
-      if (!ref.current) return;
-      // A couple of px of slack, not the exact number — web fonts finishing
-      // their swap-in after first paint, or a scrollbar appearing, can
-      // nudge real layout by a pixel or two after this runs; better to be
-      // very slightly short than to reintroduce page-level scroll.
-      setHeight(Math.max(0, window.innerHeight - ref.current.getBoundingClientRect().top - 2));
-    }
-    measure();
-    // Re-checks shortly after mount to catch exactly that kind of
-    // post-paint reflow (font swap, image/icon load) that a single
-    // synchronous measurement on mount would otherwise miss.
-    const raf = requestAnimationFrame(measure);
-    const timer = setTimeout(measure, 300);
-    window.addEventListener("resize", measure);
-    // Catches anything above this element changing height later (a banner
-    // appearing/disappearing, content reflow) without needing every such
-    // change threaded through as an explicit dependency.
-    const observer = new ResizeObserver(measure);
-    observer.observe(document.body);
-    return () => {
-      cancelAnimationFrame(raf);
-      clearTimeout(timer);
-      window.removeEventListener("resize", measure);
-      observer.disconnect();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, deps);
-
-  return { ref, height };
-}
+//
+// The page itself scrolls normally, same as every other page in this app —
+// no more measuring "available viewport height" and pinning the whole
+// section to it, which was fragile (a few px off in either direction either
+// re-introduced page scroll or clipped the composer) and fought the rest of
+// the app's own layout. Instead only the chat card below the header gets a
+// fixed height (CHAT_HEIGHT), and *within* it the conversation list and the
+// message thread each get their own independent scroll region — a normal
+// two-pane chat layout, just one that can also sit inside a scrollable page.
+const CHAT_HEIGHT = "min(700px, 75vh)";
 
 export function WhatsAppView() {
   const [channel, setChannel] = useState(null);
@@ -542,11 +508,6 @@ export function WhatsAppView() {
   // candidates}. Nothing was connected yet at this point; the company
   // picks one below and that's what actually finishes the connection.
   const [pendingChoice, setPendingChoice] = useState(null);
-  // Re-measures whenever anything that changes the height of what's above
-  // the chat card changes (a banner appearing, the connect form swapping
-  // for the connected view, etc.) — the mount-time-only version of this
-  // missed exactly these transitions.
-  const { ref: pageRef, height: pageHeight } = useAvailableHeight([loadingChannel, channel, showChangeNumber, error, notice, pendingChoice]);
 
   useEffect(() => {
     listWhatsAppChannels()
@@ -652,12 +613,8 @@ export function WhatsAppView() {
   }
 
   return (
-    <div
-      ref={pageRef}
-      className="mx-auto flex max-w-[1920px] flex-col overflow-hidden px-4 py-4 lg:px-8"
-      style={{ height: pageHeight ? `${pageHeight}px` : "100vh" }}
-    >
-      <section className="mb-4 shrink-0 flex flex-wrap items-end justify-between gap-4">
+    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
+      <section className="mb-4 flex flex-wrap items-end justify-between gap-4">
         <div>
           <Badge tone="teal">WhatsApp Business</Badge>
           <h1 className="mt-3 text-2xl tracking-tight text-slate-950 md:text-[24px]">WhatsApp Inbox</h1>
@@ -687,14 +644,12 @@ export function WhatsAppView() {
       </section>
 
       {notice ? (
-        <div className="mb-4 shrink-0 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{notice}</div>
+        <div className="mb-4 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-2.5 text-sm font-medium text-emerald-800">{notice}</div>
       ) : null}
       {error ? (
-        <div className="mb-4 shrink-0 rounded-lg border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
+        <div className="mb-4 rounded-lg border border-rose-100 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
       ) : null}
 
-      {pendingChoice || loadingChannel || !channel || showChangeNumber ? (
-      <div className="min-h-0 flex-1 overflow-y-auto">
       {pendingChoice ? (
         <Card>
           <CardHeader>
@@ -734,21 +689,11 @@ export function WhatsAppView() {
         <Card><CardContent><ListRowsSkeleton rows={3} /></CardContent></Card>
       ) : !channel ? (
         <WhatsAppConnectForm onConnected={setChannel} />
-      ) : (
+      ) : showChangeNumber ? (
         <WhatsAppConnectForm onConnected={handleChanged} />
-      )}
-      </div>
       ) : (
-        // Deliberately NOT nested inside the overflow-y-auto wrapper above —
-        // that extra scrollable layer was the actual bug: with it, a long
-        // message list's own auto-scroll-to-latest (see MessageThread's
-        // bottomRef) would scroll *this* outer wrapper instead of (or as
-        // well as) the message list's own inner scroll area, dragging the
-        // connection-details strip, banner, and conversation list out of
-        // view along with it. Now there's exactly one scrollable thing in
-        // this state: the message list itself.
-        <div className="flex min-h-0 flex-1 flex-col">
-          <Card className="mb-4 shrink-0">
+        <div className="flex flex-col">
+          <Card className="mb-4">
             <CardContent className="grid grid-cols-1 gap-x-6 gap-y-2 py-4 sm:grid-cols-2 lg:grid-cols-4">
               <div>
                 <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Connected number</p>
@@ -782,7 +727,13 @@ export function WhatsAppView() {
               <FixPermissionsButton />
             </CardContent>
           </Card>
-          <Card className="min-h-0 flex-1 overflow-hidden">
+          {/* A fixed height (not "fill whatever's left of the viewport")
+              is what makes the two panes below able to scroll on their
+              own — the page around this card scrolls completely normally
+              like every other page in this app; only *inside* this fixed
+              box do the conversation list and the message thread each get
+              their own independent overflow-y-auto region. */}
+          <Card className="overflow-hidden" style={{ height: CHAT_HEIGHT }}>
           <div className="grid h-full grid-cols-1 md:grid-cols-[300px_1fr]">
             {/* Conversation list */}
             <div className="flex flex-col border-r border-[var(--line)]">
