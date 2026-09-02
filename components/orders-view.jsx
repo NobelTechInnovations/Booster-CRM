@@ -254,10 +254,14 @@ function InvoiceModal({ order, company, onClose }) {
               </table>
             </div>
 
-            {/* Tax summary + total */}
+            {/* Tax summary + total — deliberately split into two blocks so
+                it can't read as one long addition chain: block 1 is what was
+                charged (adds up to the Total line); block 2 is that SAME
+                Total decomposed into its taxable-value + GST components,
+                clearly labelled as a breakup rather than more line items. */}
             <div className="mt-3 flex justify-end">
-              <div className="w-64 overflow-hidden rounded-md border border-slate-200">
-                <div className="space-y-1 bg-slate-50 px-3 py-2 text-[11px]">
+              <div className="w-72 overflow-hidden rounded-md border border-slate-200">
+                <div className="space-y-1 px-3 py-2 text-[11px]">
                   <div className="flex justify-between text-slate-500">
                     <span>Items Total</span><span className="font-medium text-slate-700">₹{itemsTotal.toFixed(2)}</span>
                   </div>
@@ -273,16 +277,29 @@ function InvoiceModal({ order, company, onClose }) {
                   ) : null}
                   {extraCharge > 0 ? (
                     <div className="flex justify-between text-slate-500">
-                      <span>{order.manualAdjustmentNote || "Shipping / Extra Charge"}</span><span className="font-medium text-slate-700">+₹{extraCharge.toFixed(2)}</span>
+                      <span>{order.manualAdjustmentNote || "Extra Charge"}</span><span className="font-medium text-slate-700">+₹{extraCharge.toFixed(2)}</span>
                     </div>
                   ) : null}
+                  <div className="flex justify-between border-t border-dashed border-slate-200 pt-1 font-semibold text-slate-800">
+                    <span>Total Amount</span><span>₹{total.toFixed(2)}</span>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-200 bg-slate-50 px-3 py-2 text-[11px]">
+                  <p className="mb-1 text-[9.5px] font-semibold uppercase tracking-wide text-slate-400">
+                    GST breakup — already included in Total Amount above
+                  </p>
                   <div className="flex justify-between text-slate-500">
                     <span>Taxable Value</span><span className="font-medium text-slate-700">₹{taxableValue.toFixed(2)}</span>
                   </div>
                   <div className="flex justify-between text-slate-500">
-                    <span>GST @ {gstRate}% (inclusive)</span><span className="font-medium text-slate-700">₹{taxAmount.toFixed(2)}</span>
+                    <span>+ GST @ {gstRate}%</span><span className="font-medium text-slate-700">₹{taxAmount.toFixed(2)}</span>
+                  </div>
+                  <div className="mt-1 flex justify-between border-t border-slate-200 pt-1 text-slate-500">
+                    <span>= Total Amount</span><span className="font-medium text-slate-700">₹{total.toFixed(2)}</span>
                   </div>
                 </div>
+
                 <div className="flex items-baseline justify-between border-t border-slate-200 bg-slate-900 px-3 py-2">
                   <span className="text-[11px]  uppercase tracking-wide text-white">Grand Total</span>
                   <span className="text-base font-bold text-white">₹{total.toFixed(2)}</span>
@@ -291,8 +308,8 @@ function InvoiceModal({ order, company, onClose }) {
             </div>
 
             <p className="mt-2.5 text-[9.5px] leading-4 text-slate-400">
-              GST is calculated as inclusive within the item price, per standard Indian D2C pricing — the taxable value and GST
-              amount above are the components within the total, not added on top of it.
+              Prices are GST-inclusive, per standard Indian D2C pricing — GST is not charged on top of the Total Amount.
+              The GST breakup above only shows how much of that same Total Amount is taxable value vs. tax, for your records.
             </p>
           </div>
 
