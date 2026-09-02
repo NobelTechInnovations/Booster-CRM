@@ -786,11 +786,16 @@ export function WhatsAppView() {
           <div className="grid h-full grid-cols-1 md:grid-cols-[300px_1fr]">
             {/* Conversation list */}
             <div className="flex flex-col border-r border-[var(--line)]">
-              <div className="border-b border-[var(--line)] px-4 py-3">
+              <div className="shrink-0 border-b border-[var(--line)] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Conversations</p>
               </div>
+              {/* New chat (however tall — the template picker's preview +
+                  error text can run long for a cold number) scrolls as part
+                  of this same list rather than as a fixed sibling above it,
+                  so its content can never spill past the column's own
+                  bottom edge with nothing able to scroll to reach it. */}
+              <div className="min-h-0 flex-1 overflow-y-auto">
               {showNewChat ? <NewChatForm onStarted={handleStarted} onCancel={() => setShowNewChat(false)} conversations={conversations} /> : null}
-              <div className="flex-1 overflow-y-auto">
                 {loadingConversations ? (
                   <div className="p-4"><ListRowsSkeleton rows={5} /></div>
                 ) : conversations.length === 0 ? (
