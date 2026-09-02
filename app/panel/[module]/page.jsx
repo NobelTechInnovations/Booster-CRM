@@ -18,6 +18,7 @@ import { AutomationView } from "@/components/automation-view";
 import { SettingsView } from "@/components/settings-view";
 import { SocialView } from "@/components/social-view";
 import { WhatsAppView } from "@/components/whatsapp-view";
+import { SmartWhatsAppView } from "@/components/smart-whatsapp-view";
 import { listChannels, getChannelDashboard, syncChannel } from "@/lib/api";
 
 export default function ModulePage({ params }) {
@@ -95,6 +96,7 @@ export default function ModulePage({ params }) {
     "ads": "Ads",
     "social": "Social",
     "whatsapp": "WhatsApp",
+    "smart-whatsapp": "SmartWhatsApp",
     "automation": "Automation",
     "reports": "Reports",
     "settings": "Settings"
@@ -181,6 +183,10 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "WhatsApp") {
     return <WhatsAppView />;
+  }
+
+  if (activeViewName === "SmartWhatsApp") {
+    return <SmartWhatsAppView />;
   }
 
   // Fallback to ModuleView for unimplemented modules

@@ -88,6 +88,7 @@ const NAV_GROUPS = [
     label: "Marketing", icon: Camera, href: "/panel/social", children: [
       { label: "Social", icon: Camera, href: "/panel/social" },
       { label: "WhatsApp", icon: MessageCircle, href: "/panel/whatsapp" },
+      { label: "Smart WhatsApp", icon: MessageCircle, href: "/panel/smart-whatsapp" },
     ]
   },
   {

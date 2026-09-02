@@ -1,0 +1,6 @@
+node_modules/
+.env
+# Every company's WhatsApp login credentials + downloaded attachments live
+# here. Never commit this — it's equivalent to a password, and it's also
+# just runtime state that belongs on the server's own disk, not in git.
+sessions/

@@ -64,4 +64,15 @@ export const env = {
     appSecret: process.env.WHATSAPP_APP_SECRET || process.env.META_APP_SECRET || "",
     apiVersion: process.env.META_API_VERSION || "v21.0",
   },
+  // "Smart WhatsApp" — a completely separate, unofficial integration (see
+  // smart-whatsapp-service/README.md) that connects a real WhatsApp number
+  // via WhatsApp Web-style pairing instead of Meta's Cloud API. That's a
+  // standalone, always-on Node process (can't run as a Vercel serverless
+  // function — it holds a live connection open 24/7), so this backend only
+  // ever talks to it over this private HTTP API, authenticated with a
+  // shared secret since there's no per-user identity on that side.
+  smartWhatsapp: {
+    serviceUrl: process.env.SMART_WHATSAPP_SERVICE_URL || "",
+    sharedSecret: process.env.SMART_WHATSAPP_SHARED_SECRET || "",
+  },
 };

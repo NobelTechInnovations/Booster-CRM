@@ -1,0 +1,21 @@
+{
+  "name": "smart-whatsapp-service",
+  "version": "0.1.0",
+  "description": "Standalone, always-on Node service that connects a real WhatsApp Business App number via WhatsApp Web pairing (unofficial — see README) and bridges it to the main Wokbook backend. Deploy this separately (VPS/Node hosting, e.g. Hostinger) — it cannot run as a Vercel serverless function because it has to hold a live connection open 24/7.",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "check": "node --check src/server.js && node --check src/routes.js && node --check src/session-manager.js && node --check src/backend-client.js && node --check src/config.js"
+  },
+  "license": "ISC",
+  "dependencies": {
+    "@whiskeysockets/baileys": "^6.7.16",
+    "cors": "^2.8.6",
+    "dotenv": "^17.4.2",
+    "express": "^5.2.1",
+    "pino": "^9.5.0",
+    "qrcode": "^1.5.4"
+  }
+}
