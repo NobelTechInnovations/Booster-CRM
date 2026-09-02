@@ -99,6 +99,12 @@ export function normalizeOrder({ companyId, channelId, provider, shop, order }) 
     totalDiscounts: order.total_discounts !== undefined
       ? toNumber(order.total_discounts)
       : (order.line_items || []).reduce((sum, item) => sum + (toNumber(item.total_discount) || 0), 0),
+    // What the customer paid for shipping — see totalShipping's schema
+    // comment. Prefer the modern money-set field; fall back to summing
+    // shipping_lines for older orders/API versions that only carry that.
+    totalShipping: order.total_shipping_price_set?.shop_money?.amount !== undefined
+      ? toNumber(order.total_shipping_price_set.shop_money.amount)
+      : (order.shipping_lines || []).reduce((sum, line) => sum + (toNumber(line.price) || 0), 0),
     paymentGatewayNames,
     isCOD:     cod,
     codAmount:  cod ? totalPrice : 0,
@@ -687,6 +693,23 @@ function publicSyncedRecord(record, channels = []) {
     copy.utmCampaign = utm.campaign || "";
     copy.utmContent = utm.content || "";
     copy.landingSite = copy.raw?.landing_site || "";
+  }
+
+  // What the CUSTOMER was actually charged for shipping at Shopify checkout
+  // — never captured into its own field on sync (see totalShipping's schema
+  // comment), so it silently disappeared into totalPrice with nothing to
+  // show it on the order or its invoice. Same fix as the UTM block above:
+  // derive it from the raw payload already stored on every order, at read
+  // time, so it appears immediately for existing orders too — no resync or
+  // backfill needed. Shopify's modern orders carry total_shipping_price_set;
+  // older ones only have shipping_lines, so fall back to summing those.
+  if (copy.raw && copy.totalShipping === undefined) {
+    const raw = copy.raw;
+    const fromSet = Number(raw.total_shipping_price_set?.shop_money?.amount);
+    const fromLines = Array.isArray(raw.shipping_lines)
+      ? raw.shipping_lines.reduce((sum, line) => sum + (Number(line.price) || 0), 0)
+      : 0;
+    copy.totalShipping = Number.isFinite(fromSet) && fromSet > 0 ? fromSet : fromLines;
   }
 
   delete copy.raw;

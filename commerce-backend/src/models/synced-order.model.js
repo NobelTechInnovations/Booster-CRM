@@ -39,6 +39,14 @@ const syncedOrderSchema = new mongoose.Schema(
     subtotalPrice:       { type: Number, default: 0 },
     totalTax:            { type: Number, default: 0 },
     totalDiscounts:      { type: Number, default: 0 },
+    // What the CUSTOMER paid for shipping at checkout (Shopify's
+    // total_shipping_price_set / shipping_lines) — distinct from
+    // shippingCost below, which is what WE pay the courier. Left
+    // unset (undefined) rather than defaulted to 0 so order.repo.js's
+    // publicSyncedRecord() knows to derive it from `raw` for orders
+    // synced before this field existed, instead of treating a real ₹0
+    // the same as "never captured".
+    totalShipping:       Number,
     paymentGatewayNames: [String],
 
     // Manual post-sync adjustments (extra discount given, or an extra

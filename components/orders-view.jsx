@@ -107,6 +107,12 @@ function InvoiceModal({ order, company, onClose }) {
   // — layered on top at read time, so they show up in totalPrice but were
   // never surfaced as their own invoice line. Show both kinds here.
   const discount = Number(order.totalDiscounts || 0) + Number(order.manualDiscount || 0);
+  // totalShipping is what Shopify charged the customer at checkout (derived
+  // from the order's raw payload — see publicSyncedRecord in order.repo.js);
+  // manualExtraCharge is a separate CRM-side adjustment added after the
+  // fact. Both are already inside `total` — shown as their own lines so
+  // they're not silently invisible, same reasoning as the discount above.
+  const shipping = Number(order.totalShipping || 0);
   const extraCharge = Number(order.manualExtraCharge || 0);
 
   // Printing via the page's own CSS ("hide everything except the invoice")
@@ -258,6 +264,11 @@ function InvoiceModal({ order, company, onClose }) {
                   {discount > 0 ? (
                     <div className="flex justify-between text-slate-500">
                       <span>Discount</span><span className="font-medium text-rose-600">−₹{discount.toFixed(2)}</span>
+                    </div>
+                  ) : null}
+                  {shipping > 0 ? (
+                    <div className="flex justify-between text-slate-500">
+                      <span>Shipping</span><span className="font-medium text-slate-700">+₹{shipping.toFixed(2)}</span>
                     </div>
                   ) : null}
                   {extraCharge > 0 ? (
@@ -655,6 +666,18 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                   <div className="flex justify-between text-slate-600">
                     <span>Subtotal</span>
                     <span>{formatMoney(order.subtotalPrice)}</span>
+                  </div>
+                )}
+                {Number(order.totalDiscounts || 0) > 0 && (
+                  <div className="flex justify-between text-rose-600">
+                    <span>Discount</span>
+                    <span>−{formatMoney(order.totalDiscounts)}</span>
+                  </div>
+                )}
+                {Number(order.totalShipping || 0) > 0 && (
+                  <div className="flex justify-between text-slate-600">
+                    <span>Shipping</span>
+                    <span>+{formatMoney(order.totalShipping)}</span>
                   </div>
                 )}
                 {order.totalTax > 0 && (
