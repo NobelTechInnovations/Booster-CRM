@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { Readable } from "node:stream";
 import { requireAuth, requirePermission, requireAuthHeaderOrQuery } from "../../middleware/auth.js";
+import { requireFeature } from "../../middleware/feature-gate.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
@@ -26,6 +27,7 @@ export const smartWhatsappRoutes = Router();
 smartWhatsappRoutes.post(
   "/connect",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   requirePermission("whatsapp:manage"),
   asyncHandler(async (req, res) => {
     const status = await startConnection({ companyId: req.auth.companyId });
@@ -36,6 +38,7 @@ smartWhatsappRoutes.post(
 smartWhatsappRoutes.get(
   "/status",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   asyncHandler(async (req, res) => {
     const status = await getConnectionStatus({ companyId: req.auth.companyId });
     res.json(status);
@@ -45,6 +48,7 @@ smartWhatsappRoutes.get(
 smartWhatsappRoutes.post(
   "/disconnect",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   requirePermission("whatsapp:manage"),
   asyncHandler(async (req, res) => {
     const result = await disconnect({ companyId: req.auth.companyId });
@@ -73,6 +77,7 @@ smartWhatsappRoutes.post(
 smartWhatsappRoutes.get(
   "/conversations",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   asyncHandler(async (req, res) => {
     const conversations = await listSmartConversations({ companyId: req.auth.companyId });
     res.json({ conversations });
@@ -82,6 +87,7 @@ smartWhatsappRoutes.get(
 smartWhatsappRoutes.delete(
   "/conversations/:id",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   requirePermission("whatsapp:manage"),
   asyncHandler(async (req, res) => {
     const conversation = await deleteSmartConversation({ companyId: req.auth.companyId, conversationId: req.params.id });
@@ -93,6 +99,7 @@ smartWhatsappRoutes.delete(
 smartWhatsappRoutes.post(
   "/conversations/start",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   requirePermission("whatsapp:manage"),
   asyncHandler(async (req, res) => {
     const to = String(req.body?.to || "").trim();
@@ -112,6 +119,7 @@ smartWhatsappRoutes.post(
 smartWhatsappRoutes.get(
   "/conversations/:id/messages",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   asyncHandler(async (req, res) => {
     const conversation = await getSmartConversation({ companyId: req.auth.companyId, conversationId: req.params.id });
     if (!conversation) throw new HttpError(404, "Conversation not found");
@@ -124,6 +132,7 @@ smartWhatsappRoutes.get(
 smartWhatsappRoutes.post(
   "/conversations/:id/messages",
   requireAuth,
+  requireFeature("smart_whatsapp"),
   requirePermission("whatsapp:manage"),
   asyncHandler(async (req, res) => {
     const conversation = await getSmartConversation({ companyId: req.auth.companyId, conversationId: req.params.id });
@@ -153,6 +162,7 @@ smartWhatsappRoutes.post(
 smartWhatsappRoutes.get(
   "/media/:messageId",
   requireAuthHeaderOrQuery,
+  requireFeature("smart_whatsapp"),
   asyncHandler(async (req, res) => {
     const { body, contentType } = await fetchSmartMedia({ companyId: req.auth.companyId, messageId: req.params.messageId });
     res.setHeader("Content-Type", contentType);

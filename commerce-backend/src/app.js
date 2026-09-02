@@ -19,6 +19,7 @@ import { socialRoutes } from "./modules/social/social.routes.js";
 import { whatsappRoutes } from "./modules/whatsapp/whatsapp.routes.js";
 import { smartWhatsappRoutes } from "./modules/smart-whatsapp/smart-whatsapp.routes.js";
 import { platformAdminRoutes } from "./modules/platform-admin/platform-admin.routes.js";
+import { billingRoutes } from "./modules/billing/billing.routes.js";
 import { inventoryRoutes } from "./modules/inventory/inventory.routes.js";
 import { reportsRoutes } from "./modules/reports/reports.routes.js";
 import { automationRoutes } from "./modules/automation/automation.routes.js";
@@ -79,6 +80,7 @@ export function createApp() {
   app.use("/api/whatsapp", whatsappRoutes);
   app.use("/api/smart-whatsapp", smartWhatsappRoutes);
   app.use("/api/platform-admin", platformAdminRoutes);
+  app.use("/api/billing", billingRoutes);
   app.use("/api/inventory", inventoryRoutes);
   app.use("/api/reports", reportsRoutes);
   app.use("/api/automation", automationRoutes);

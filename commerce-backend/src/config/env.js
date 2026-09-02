@@ -82,4 +82,23 @@ export const env = {
   platformAdmin: {
     jwtSecret: process.env.PLATFORM_ADMIN_JWT_SECRET || "dev-only-platform-admin-secret",
   },
+  // Razorpay — collects wallet recharges and plan upgrades FOR the platform
+  // itself (Booster charging its own companies), a single shared account,
+  // not a per-company merchant setup. keyId/keySecret from Razorpay's API
+  // Keys dashboard section; webhookSecret is set separately when adding the
+  // webhook URL there (Settings -> Webhooks), and is deliberately a
+  // different value from keySecret.
+  razorpay: {
+    keyId: process.env.RAZORPAY_KEY_ID || "",
+    keySecret: process.env.RAZORPAY_KEY_SECRET || "",
+    webhookSecret: process.env.RAZORPAY_WEBHOOK_SECRET || "",
+  },
+  // Resend — transactional email (trial-ending reminders, payment receipts).
+  // No email provider existed in this codebase before this; Resend's plain
+  // REST API matches the fetch-wrapper convention every other external
+  // service here already uses, no SMTP setup needed.
+  resend: {
+    apiKey: process.env.RESEND_API_KEY || "",
+    fromEmail: process.env.RESEND_FROM_EMAIL || "onboarding@resend.dev",
+  },
 };

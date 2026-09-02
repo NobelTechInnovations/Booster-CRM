@@ -5,6 +5,7 @@ import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
 import { updateShipmentsByAwb, updateShipmentById, getShipmentByAwb, listShipmentsByIds, markLabelsDownloaded } from "../../repositories/shipment.repo.js";
 import { PDFDocument } from "pdf-lib";
 import { deductAssetsForOrder } from "../../repositories/asset.repo.js";
+import { chargeWalletForFulfillment } from "../../repositories/wallet.repo.js";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
 
@@ -172,6 +173,14 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
     await deductAssetsForOrder({ companyId, order: updatedOrder });
   } catch (err) {
     console.warn(`[Fulfillment] Asset deduction failed for ${order.name}:`, err.message);
+  }
+
+  // Per-order plan fee (e.g. ₹2 on Premium) — same best-effort contract as
+  // asset deduction right above: never allowed to fail the real shipment.
+  try {
+    await chargeWalletForFulfillment({ companyId, order: updatedOrder });
+  } catch (err) {
+    console.warn(`[Fulfillment] Wallet charge failed for ${order.name}:`, err.message);
   }
 
   return { shipment, order: updatedOrder, shopifyPushError };

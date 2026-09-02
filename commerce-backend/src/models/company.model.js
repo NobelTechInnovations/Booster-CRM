@@ -89,6 +89,10 @@ const companySchema = new mongoose.Schema(
       // Admin's own internal notes about this company's billing — not
       // shown to the company itself anywhere.
       notes: String,
+      // Set by the daily upgrade-reminder cron job (jobs/upgrade-reminder
+      // .job.js) so a trial ending in 3 days doesn't get emailed 3 times —
+      // once per calendar day is enough.
+      lastUpgradeReminderSentAt: Date,
     },
     // Prepaid balance an admin manually tops up (no payment gateway is
     // wired yet — see feature-gate.js's own note on that) and that usage

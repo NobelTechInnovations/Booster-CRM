@@ -3,6 +3,7 @@ import { Router } from "express";
 import { env } from "../../config/env.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
 import { upsertSingleOrder, updateOrderOmsStatus } from "../../repositories/order.repo.js";
+import { chargeWalletForFulfillment } from "../../repositories/wallet.repo.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 
 export const shopifyWebhookRoutes = Router();
@@ -110,7 +111,7 @@ shopifyWebhookRoutes.post(
     const fulfillment = req.body;
 
     if (fulfillment.order_id) {
-      await updateOrderOmsStatus({
+      const updatedOrder = await updateOrderOmsStatus({
         companyId,
         shopifyOrderId: String(fulfillment.order_id),
         update: {
@@ -118,6 +119,18 @@ shopifyWebhookRoutes.post(
           omsStatus: "shipped",
         },
       });
+
+      // Orders fulfilled straight in Shopify never go through shipOrder(),
+      // so this is the only place to charge the per-order plan fee for
+      // them — same best-effort contract, and idempotent by order id, so a
+      // webhook redelivery (Shopify retries aggressively) can't double-charge.
+      if (updatedOrder) {
+        try {
+          await chargeWalletForFulfillment({ companyId, order: updatedOrder });
+        } catch (err) {
+          console.warn(`[Shopify Webhook] Wallet charge failed for order ${fulfillment.order_id}:`, err.message);
+        }
+      }
     }
 
     res.status(200).json({ status: "received" });

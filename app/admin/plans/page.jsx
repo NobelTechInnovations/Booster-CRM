@@ -5,7 +5,20 @@ import { Plus, Save, X } from "lucide-react";
 import { listPlans, createPlan, updatePlan } from "@/lib/admin-api";
 
 const inputClass = "h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-white outline-none focus:border-amber-500";
-const EMPTY_FORM = { name: "", priceMonthly: "", priceYearly: "", features: "", isActive: true, isTrial: false, trialDays: "", perOrderFulfillmentFee: "" };
+const EMPTY_FORM = { name: "", priceMonthly: "", priceYearly: "", features: [], isActive: true, isTrial: false, trialDays: "", perOrderFulfillmentFee: "" };
+
+// The feature keys real routes actually check (requireFeature() in
+// commerce-backend) — whatsapp (Cloud API) isn't gated by any route yet
+// (real pre-existing usage — see feature-gate.js's own note), but is
+// offered here too so a plan can still declare it for the company-facing
+// plan comparison / future gating.
+const FEATURE_KEYS = [
+  { key: "whatsapp", label: "WhatsApp (Cloud API)" },
+  { key: "smart_whatsapp", label: "Smart WhatsApp" },
+  { key: "social", label: "Social (Instagram/Facebook)" },
+  { key: "automation", label: "Automation" },
+  { key: "advanced_reports", label: "Advanced Reports" },
+];
 
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState([]);
@@ -37,7 +50,7 @@ export default function AdminPlansPage() {
       name: plan.name,
       priceMonthly: String(plan.priceMonthly ?? ""),
       priceYearly: String(plan.priceYearly ?? ""),
-      features: (plan.features || []).join(", "),
+      features: plan.features || [],
       isActive: plan.isActive,
       isTrial: Boolean(plan.isTrial),
       trialDays: String(plan.trialDays ?? ""),
@@ -64,7 +77,7 @@ export default function AdminPlansPage() {
       name: form.name,
       priceMonthly: Number(form.priceMonthly) || 0,
       priceYearly: Number(form.priceYearly) || 0,
-      features: form.features.split(",").map((f) => f.trim()).filter(Boolean),
+      features: form.features,
       isActive: form.isActive,
       isTrial: form.isTrial,
       trialDays: Number(form.trialDays) || 0,
@@ -143,10 +156,25 @@ export default function AdminPlansPage() {
                 <input type="number" value={form.trialDays} onChange={(e) => setForm((f) => ({ ...f, trialDays: e.target.value }))} className={inputClass} placeholder="7" />
               </label>
             ) : null}
-            <label className="col-span-full block">
-              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Features (comma-separated keys)</span>
-              <input value={form.features} onChange={(e) => setForm((f) => ({ ...f, features: e.target.value }))} className={inputClass} placeholder="whatsapp, smart_whatsapp, automation, advanced_reports" />
-            </label>
+            <div className="col-span-full">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Features included</span>
+              <div className="grid grid-cols-2 gap-2 rounded-lg border border-slate-700 bg-slate-800 p-3 sm:grid-cols-3">
+                {FEATURE_KEYS.map(({ key, label }) => (
+                  <label key={key} className="flex items-center gap-2">
+                    <input
+                      type="checkbox"
+                      checked={form.features.includes(key)}
+                      onChange={(e) => setForm((f) => ({
+                        ...f,
+                        features: e.target.checked ? [...f.features, key] : f.features.filter((x) => x !== key),
+                      }))}
+                      className="h-4 w-4 rounded border-slate-600 bg-slate-900"
+                    />
+                    <span className="text-xs text-slate-300">{label}</span>
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
           <button
             onClick={save}

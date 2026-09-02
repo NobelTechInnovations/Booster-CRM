@@ -6,6 +6,7 @@ import { runWarehouseSyncJob } from "../../jobs/warehouse-sync.job.js";
 import { runTrackingUpdateJob } from "../../jobs/tracking-update.job.js";
 import { runShopifySyncJob } from "../../jobs/shopify-sync.job.js";
 import { runMetaAdsSyncJob } from "../../jobs/meta-ads-sync.job.js";
+import { runUpgradeReminderJob } from "../../jobs/upgrade-reminder.job.js";
 
 // Vercel serverless functions don't stay alive between requests, so the
 // in-process node-cron scheduler (jobs/scheduler.js, still used in local
@@ -65,3 +66,4 @@ cronRoutes.get("/sync-shopify", wrapJob("sync-shopify", runShopifySyncJob));
 // /api/ads/:channelId/spend-today) for the separate live on-demand check
 // that never writes anywhere.
 cronRoutes.get("/sync-meta-ads", wrapJob("sync-meta-ads", runMetaAdsSyncJob));
+cronRoutes.get("/upgrade-reminders", wrapJob("upgrade-reminders", runUpgradeReminderJob));

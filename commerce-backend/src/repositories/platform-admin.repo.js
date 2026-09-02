@@ -5,8 +5,10 @@ import { Plan } from "../models/plan.model.js";
 import { Company } from "../models/company.model.js";
 import { User } from "../models/user.model.js";
 import { SyncedOrder } from "../models/synced-order.model.js";
-import { WalletTransaction } from "../models/wallet-transaction.model.js";
 import { memory, id, clone, now, slugify } from "./memory-store.js";
+import { adjustCompanyWallet, listWalletTransactions } from "./wallet.repo.js";
+
+export { adjustCompanyWallet, listWalletTransactions };
 
 // ─── Platform admins ─────────────────────────────────────────────────────────
 
@@ -213,44 +215,4 @@ export async function updateCompanySubscription({ companyId, planId, status, tri
   if (!company) return { error: "Company not found" };
   company.subscription = { ...(company.subscription || {}), ...subscription };
   return { company: clone(company) };
-}
-
-// ─── Wallet ──────────────────────────────────────────────────────────────────
-// Manual admin-operated balance — see Company.wallet's own schema comment
-// for why (no payment gateway wired yet). `amount` is signed: positive for
-// a top-up, negative for a manual debit/correction.
-
-export async function adjustCompanyWallet({ companyId, amount, note, type, adminEmail }) {
-  const delta = Number(amount);
-  if (!Number.isFinite(delta) || delta === 0) return { error: "Enter a non-zero amount" };
-
-  if (isMongoConnected()) {
-    const existing = await Company.findById(companyId).lean();
-    if (!existing) return { error: "Company not found" };
-    const balanceAfter = Number(existing.wallet?.balance || 0) + delta;
-    const company = await Company.findByIdAndUpdate(
-      companyId,
-      { $set: { "wallet.balance": balanceAfter, "wallet.currency": existing.wallet?.currency || "INR" } },
-      { new: true },
-    ).lean();
-    await WalletTransaction.create({ companyId, amount: delta, balanceAfter, type: type || (delta > 0 ? "topup" : "debit"), note, createdByAdminEmail: adminEmail });
-    return { company, balanceAfter };
-  }
-
-  const company = memory.companies.get(String(companyId));
-  if (!company) return { error: "Company not found" };
-  const balanceAfter = Number(company.wallet?.balance || 0) + delta;
-  company.wallet = { balance: balanceAfter, currency: company.wallet?.currency || "INR" };
-  const tx = { _id: id(), companyId, amount: delta, balanceAfter, type: type || (delta > 0 ? "topup" : "debit"), note, createdByAdminEmail: adminEmail, createdAt: now() };
-  memory.walletTransactions.set(tx._id, tx);
-  return { company: clone(company), balanceAfter };
-}
-
-export async function listWalletTransactions(companyId) {
-  if (isMongoConnected()) return WalletTransaction.find({ companyId }).sort({ createdAt: -1 }).limit(50).lean();
-  return [...memory.walletTransactions.values()]
-    .map(clone)
-    .filter((t) => String(t.companyId) === String(companyId))
-    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-    .slice(0, 50);
 }

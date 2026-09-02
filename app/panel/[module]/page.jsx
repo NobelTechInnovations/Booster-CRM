@@ -19,6 +19,7 @@ import { SettingsView } from "@/components/settings-view";
 import { SocialView } from "@/components/social-view";
 import { WhatsAppView } from "@/components/whatsapp-view";
 import { SmartWhatsAppView } from "@/components/smart-whatsapp-view";
+import { FeatureGate } from "@/components/feature-gate";
 import { listChannels, getChannelDashboard, syncChannel } from "@/lib/api";
 
 export default function ModulePage({ params }) {
@@ -161,7 +162,7 @@ export default function ModulePage({ params }) {
   }
 
   if (activeViewName === "Automation") {
-    return <AutomationView />;
+    return <FeatureGate session={session} feature="automation" label="Automation"><AutomationView /></FeatureGate>;
   }
 
   if (activeViewName === "Settings") {
@@ -178,7 +179,7 @@ export default function ModulePage({ params }) {
   }
 
   if (activeViewName === "Social") {
-    return <SocialView />;
+    return <FeatureGate session={session} feature="social" label="Social"><SocialView /></FeatureGate>;
   }
 
   if (activeViewName === "WhatsApp") {
@@ -186,7 +187,7 @@ export default function ModulePage({ params }) {
   }
 
   if (activeViewName === "SmartWhatsApp") {
-    return <SmartWhatsAppView />;
+    return <FeatureGate session={session} feature="smart_whatsapp" label="Smart WhatsApp"><SmartWhatsAppView /></FeatureGate>;
   }
 
   // Fallback to ModuleView for unimplemented modules

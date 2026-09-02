@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
-import { LayoutGrid, LogOut, ShieldAlert, Tag } from "lucide-react";
+import { LayoutGrid, LogOut, ShieldAlert, Tag, CircleDollarSign } from "lucide-react";
 import { getAdminSession, clearAdminSession } from "@/lib/admin-api";
 
 // Own gate, own session key (admin_session), own visual theme — completely
@@ -47,6 +47,7 @@ export default function AdminLayout({ children }) {
   const navLinks = [
     { label: "Companies", href: "/admin", icon: LayoutGrid },
     { label: "Plans", href: "/admin/plans", icon: Tag },
+    { label: "Payments", href: "/admin/payments", icon: CircleDollarSign },
   ];
 
   return (

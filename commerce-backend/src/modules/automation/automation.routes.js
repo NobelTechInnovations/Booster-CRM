@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
+import { requireFeature } from "../../middleware/feature-gate.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import {
@@ -14,6 +15,7 @@ import {
 export const automationRoutes = Router();
 
 automationRoutes.use(requireAuth);
+automationRoutes.use(requireFeature("automation"));
 
 automationRoutes.get(
   "/rules",

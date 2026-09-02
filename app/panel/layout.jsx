@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import Link from "next/link";
 import { FollowUpReminderBanner } from "@/components/followup-reminder-banner";
+import { UpgradeBanner } from "@/components/upgrade-banner";
 import { CustomerFollowUpModal } from "@/components/customer-followup-modal";
 import { CreateOrderModal } from "@/components/create-order-modal";
 import {
@@ -496,6 +497,7 @@ export default function PanelLayout({ children }) {
       <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-white">
         <Topbar setOpen={setOpen} onSyncAll={syncAllChannels} canSync={canSync} period={period} setPeriod={setPeriod} session={session} />
         <SubNavBar pathname={pathname} />
+        <UpgradeBanner session={session} />
         <FollowUpReminderBanner onOpenCustomer={(c) => setFollowUpCustomer(c)} />
         <div className="flex-1">{children}</div>
       </main>

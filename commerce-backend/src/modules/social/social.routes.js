@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
+import { requireFeature } from "../../middleware/feature-gate.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { listSocialChannels, deleteSocialChannel } from "../../repositories/channel.repo.js";
@@ -21,6 +22,7 @@ export const socialRoutes = Router();
 socialRoutes.post(
   "/meta/connect",
   requireAuth,
+  requireFeature("social"),
   requirePermission("social:manage"),
   asyncHandler(async (req, res) => {
     const installUrl = buildSocialAuthorizeUrl({ companyId: req.auth.companyId, userId: req.auth.sub });
@@ -47,6 +49,7 @@ socialRoutes.get(
 socialRoutes.get(
   "/channels",
   requireAuth,
+  requireFeature("social"),
   asyncHandler(async (req, res) => {
     const channels = await listSocialChannels(req.auth.companyId);
     res.json({ channels });
@@ -60,6 +63,7 @@ socialRoutes.get(
 socialRoutes.delete(
   "/channels/:channelId",
   requireAuth,
+  requireFeature("social"),
   requirePermission("social:manage"),
   asyncHandler(async (req, res) => {
     const channel = await deleteSocialChannel({ channelId: req.params.channelId, companyId: req.auth.companyId });
@@ -73,6 +77,7 @@ socialRoutes.delete(
 socialRoutes.post(
   "/:channelId/sync",
   requireAuth,
+  requireFeature("social"),
   requirePermission("social:manage"),
   asyncHandler(async (req, res) => {
     const result = await syncSocialPosts({ companyId: req.auth.companyId, channelId: req.params.channelId });
@@ -83,6 +88,7 @@ socialRoutes.post(
 socialRoutes.get(
   "/:channelId/posts",
   requireAuth,
+  requireFeature("social"),
   asyncHandler(async (req, res) => {
     const result = await listSocialPosts({
       companyId: req.auth.companyId,
@@ -97,6 +103,7 @@ socialRoutes.get(
 socialRoutes.post(
   "/:channelId/posts",
   requireAuth,
+  requireFeature("social"),
   requirePermission("social:manage"),
   asyncHandler(async (req, res) => {
     const result = await createSocialPost({
@@ -115,6 +122,7 @@ socialRoutes.post(
 socialRoutes.get(
   "/posts/:postId/comments",
   requireAuth,
+  requireFeature("social"),
   asyncHandler(async (req, res) => {
     const post = await getSocialPost({ companyId: req.auth.companyId, postId: req.params.postId });
     if (!post) throw new HttpError(404, "Post not found");
@@ -133,6 +141,7 @@ socialRoutes.get(
 socialRoutes.post(
   "/comments/:commentId/reply",
   requireAuth,
+  requireFeature("social"),
   requirePermission("social:manage"),
   asyncHandler(async (req, res) => {
     const result = await replyToComment({

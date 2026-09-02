@@ -4,6 +4,7 @@ import { runTrackingUpdateJob } from "./tracking-update.job.js";
 import { runTokenRefreshJob } from "./token-refresh.job.js";
 import { runShopifySyncJob } from "./shopify-sync.job.js";
 import { runMetaAdsSyncJob } from "./meta-ads-sync.job.js";
+import { runUpgradeReminderJob } from "./upgrade-reminder.job.js";
 
 /**
  * Initializes and schedules all OMS background automation jobs.
@@ -35,6 +36,11 @@ export function startScheduler() {
   // 02:30 UTC = 08:00 AM IST
   cron.schedule("30 2 * * *", () => {
     runMetaAdsSyncJob().catch(console.error);
+  });
+
+  // 6. Trial-upgrade reminder emails once daily at 9:30 AM IST (04:00 UTC)
+  cron.schedule("0 4 * * *", () => {
+    runUpgradeReminderJob().catch(console.error);
   });
 
   // Run immediate initial checks on startup (non-blocking)

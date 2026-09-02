@@ -17,6 +17,7 @@ import {
   updateCompanySubscription,
   adjustCompanyWallet,
 } from "../../repositories/platform-admin.repo.js";
+import { listAllPaymentTransactions, getFulfillmentEarnings } from "../../repositories/billing.repo.js";
 
 export const platformAdminRoutes = Router();
 
@@ -182,5 +183,25 @@ platformAdminRoutes.patch(
     const plan = await updatePlan(req.params.id, req.body || {});
     if (!plan) throw new HttpError(404, "Plan not found");
     res.json({ plan });
+  }),
+);
+
+// ─── Payments & earnings ─────────────────────────────────────────────────────
+
+platformAdminRoutes.get(
+  "/payments",
+  requirePlatformAdmin,
+  asyncHandler(async (_req, res) => {
+    const payments = await listAllPaymentTransactions();
+    res.json({ payments });
+  }),
+);
+
+platformAdminRoutes.get(
+  "/earnings",
+  requirePlatformAdmin,
+  asyncHandler(async (_req, res) => {
+    const earnings = await getFulfillmentEarnings();
+    res.json(earnings);
   }),
 );

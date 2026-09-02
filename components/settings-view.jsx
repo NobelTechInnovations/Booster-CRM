@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useSearchParams } from "next/navigation";
 import {
   Bell,
   Building2,
@@ -35,6 +36,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatMoney } from "@/lib/utils";
 import { SendWhatsAppModal } from "@/components/send-whatsapp-modal";
+import { BillingSettingsTab } from "@/components/billing-settings-tab";
 import {
   getCompanyProfile,
   updateTaxSettings,
@@ -969,11 +971,13 @@ function WebhooksTab() {
 
 const SETTINGS_TABS = [
   { key: "general", label: "General", icon: Building2 },
+  { key: "billing", label: "Plan & Billing", icon: CreditCard },
   { key: "webhooks", label: "Webhooks", icon: Webhook },
 ];
 
 export function SettingsView() {
-  const [activeTab, setActiveTab] = useState("general");
+  const searchParams = useSearchParams();
+  const [activeTab, setActiveTab] = useState(searchParams.get("tab") === "billing" ? "billing" : "general");
   const [company, setCompany] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
 
@@ -1083,6 +1087,7 @@ export function SettingsView() {
       </div>
 
       {activeTab === "webhooks" ? <WebhooksTab /> : null}
+      {activeTab === "billing" ? <BillingSettingsTab /> : null}
 
       {activeTab !== "general" ? null : isLoading ? (
         <div className="rounded-xl border border-[var(--line)] bg-white p-10 text-center text-sm text-[var(--muted)]">Loading settings…</div>

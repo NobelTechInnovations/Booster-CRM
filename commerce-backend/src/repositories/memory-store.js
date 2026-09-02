@@ -36,6 +36,7 @@ export const memory = {
   platformAdmins: new Map(),
   plans: new Map(),
   walletTransactions: new Map(),
+  paymentTransactions: new Map(),
 };
 
 export function id() {
