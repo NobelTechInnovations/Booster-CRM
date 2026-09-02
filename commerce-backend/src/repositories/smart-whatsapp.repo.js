@@ -54,7 +54,7 @@ export async function getSmartWhatsAppSession(companyId) {
 
 // ─── Conversations ───────────────────────────────────────────────────────────
 
-export async function upsertSmartConversation({ companyId, waId, customerName, lastMessageAt, lastMessagePreview, incrementUnread }) {
+export async function upsertSmartConversation({ companyId, waId, customerName, lastMessageAt, lastMessagePreview, incrementUnread, jidServer }) {
   // History-sync backfill (see smart-whatsapp-service's messaging-history.set
   // handler) can call this many times for one conversation in whatever order
   // WhatsApp delivers them, not necessarily newest-last — never let an older
@@ -83,6 +83,12 @@ export async function upsertSmartConversation({ companyId, waId, customerName, l
           ...(updateLastMessage && lastMessageAt ? { lastMessageAt } : {}),
           ...(updateLastMessage && lastMessagePreview !== undefined ? { lastMessagePreview } : {}),
           ...(linkedCustomerId ? { linkedCustomerId } : {}),
+          // Only ever set from an actual inbound message (see
+          // session-manager.js) — an outbound-only call (starting a fresh
+          // conversation, or a routine send) never passes this, and must
+          // never reset an already-known lid conversation back to the
+          // s.whatsapp.net default.
+          ...(jidServer ? { jidServer } : {}),
         },
         ...(incrementUnread ? { $inc: { unreadCount: 1 } } : {}),
       },
@@ -107,6 +113,7 @@ export async function upsertSmartConversation({ companyId, waId, customerName, l
     lastMessagePreview: updateLastMessage && lastMessagePreview !== undefined ? lastMessagePreview : (existing?.lastMessagePreview || ""),
     unreadCount: (existing?.unreadCount || 0) + (incrementUnread ? 1 : 0),
     linkedCustomerId,
+    jidServer: jidServer || existing?.jidServer || "s.whatsapp.net",
     createdAt: existing?.createdAt || now(),
     updatedAt: now(),
   };
@@ -183,6 +190,27 @@ export async function createSmartMessage(record) {
   const stored = { _id: id(), ...record, createdAt: now(), updatedAt: now() };
   memory.smartWhatsappMessages.set(key, stored);
   return clone(stored);
+}
+
+// Delivery/read ticks arriving after the fact for a message already
+// recorded (see smart-whatsapp.service.js's handleWebhook, kind
+// "message_status"). A message that hasn't synced into our DB yet (a
+// status update racing ahead of the original send acknowledgement) is a
+// harmless no-op — there's nothing to update.
+export async function updateSmartMessageStatus({ companyId, waMessageId, status }) {
+  if (isMongoConnected()) {
+    return SmartWhatsAppMessage.findOneAndUpdate(
+      { companyId: mixedIdFilter(companyId), waMessageId },
+      { $set: { status } },
+      { new: true },
+    ).lean();
+  }
+  const key = `${companyId}:${waMessageId}`;
+  const existing = memory.smartWhatsappMessages.get(key);
+  if (!existing) return null;
+  existing.status = status;
+  existing.updatedAt = now();
+  return clone(existing);
 }
 
 export async function listSmartMessagesForConversation({ companyId, conversationId, limit = 100 }) {

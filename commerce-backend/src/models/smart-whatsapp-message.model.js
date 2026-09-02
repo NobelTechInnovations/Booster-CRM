@@ -15,7 +15,10 @@ const smartWhatsappMessageSchema = new mongoose.Schema(
     mediaUrl: { type: String, default: "" },
     mediaId: { type: String, default: "" },
     mediaMimeType: { type: String, default: "" },
-    status: { type: String, enum: ["received", "sent", "failed"], default: "received" },
+    // "delivered"/"read" arrive later, as a status update on an already-
+    // sent outbound message (see smart-whatsapp.service.js's handleWebhook,
+    // kind "message_status") — never the initial value.
+    status: { type: String, enum: ["received", "sent", "delivered", "read", "failed"], default: "received" },
     timestamp: { type: Date, required: true },
     sentByUserName: { type: String, default: "" },
   },

@@ -9,7 +9,32 @@ import QRCode from "qrcode";
 import path from "node:path";
 import fs from "node:fs";
 import { config } from "./config.js";
-import { notifyInboundMessage, notifyStatusChange } from "./backend-client.js";
+import { notifyInboundMessage, notifyStatusChange, notifyMessageStatusUpdate } from "./backend-client.js";
+
+// WhatsApp's newer privacy system: some contacts show up under a `@lid`
+// (Linked ID) JID instead of the real `@s.whatsapp.net` phone-number JID —
+// an opaque WhatsApp-internal id that happens to LOOK like a phone number
+// when you strip the domain off, which is exactly what made a reply land
+// on "an unknown international number" that never reached anyone: a reply
+// was always rebuilt as `{digits}@s.whatsapp.net`, discarding whichever
+// domain the message actually arrived on. The fix isn't resolving a LID to
+// a real phone number (WhatsApp doesn't hand that out for free) — it's
+// simply replying on the SAME domain the message came in on, which
+// WhatsApp itself supports natively for both @lid and @s.whatsapp.net.
+function jidServerOf(remoteJid) {
+  return (remoteJid || "").split("@")[1] || "s.whatsapp.net";
+}
+
+// Baileys' numeric message-status codes (messages.update's update.status):
+// 0 ERROR, 1 PENDING, 2 SERVER_ACK ("sent"), 3 DELIVERY_ACK ("delivered"),
+// 4 READ, 5 PLAYED (voice notes — treated as read for tick purposes).
+function mapWaStatus(code) {
+  if (code === 0) return "failed";
+  if (code >= 4) return "read";
+  if (code === 3) return "delivered";
+  if (code === 2) return "sent";
+  return null; // 1 (PENDING) — not worth a round-trip, "sent" already covers it
+}
 
 // Baileys logs very heavily at default levels — this service has its own,
 // much shorter, log lines below, so Baileys itself is kept quiet. Flip to
@@ -117,6 +142,7 @@ export async function startSession(companyId) {
 
     const waId = (m.key.remoteJid || "").split("@")[0];
     if (!waId) return;
+    const jidServer = jidServerOf(m.key.remoteJid);
 
     const msg = m.message;
     const text = msg.conversation || msg.extendedTextMessage?.text || "";
@@ -140,6 +166,7 @@ export async function startSession(companyId) {
     notifyInboundMessage({
       companyId,
       waId,
+      jidServer,
       text: text || media?.node?.caption || "",
       type: media?.type || "text",
       mediaId: media ? m.key.id : undefined,
@@ -174,16 +201,33 @@ export async function startSession(companyId) {
     }
   });
 
+  // Delivery/read ticks for messages WE sent — WhatsApp reports these as
+  // updates to the same message key, not as new messages. Without this,
+  // every outbound message stayed on a single grey "sent" tick forever,
+  // never showing the customer actually got or read it.
+  sock.ev.on("messages.update", (updates) => {
+    for (const { key, update } of updates) {
+      if (!key.fromMe || update.status === undefined) continue;
+      const status = mapWaStatus(update.status);
+      if (!status) continue;
+      notifyMessageStatusUpdate({ companyId, waMessageId: key.id, status });
+    }
+  });
+
   return entry;
 }
 
-export async function sendMessage(companyId, { to, text, mediaUrl, mediaType }) {
+export async function sendMessage(companyId, { to, text, mediaUrl, mediaType, jidServer }) {
   const entry = sessions.get(companyId);
   if (!entry || entry.status !== "open") throw new Error("This WhatsApp number isn't connected right now.");
   if (!to) throw new Error("Recipient phone number is required.");
   if (!text?.trim() && !mediaUrl) throw new Error("Message text or attachment is required.");
 
-  const jid = `${String(to).replace(/\D/g, "")}@s.whatsapp.net`;
+  // jidServer comes from the conversation this is a reply in (see
+  // jidServerOf's comment above) — a brand-new outbound conversation the
+  // business is starting fresh always uses a real, typed phone number, so
+  // the s.whatsapp.net default is correct there.
+  const jid = `${String(to).replace(/\D/g, "")}@${jidServer || "s.whatsapp.net"}`;
   const payload = mediaUrl
     ? { [mediaType || "document"]: { url: mediaUrl }, ...(text?.trim() ? { caption: text.trim() } : {}) }
     : { text: text.trim() };

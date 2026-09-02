@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { MessageCircle, Send, RefreshCw, Check, Clock, Plus, X, Unlink, Paperclip, Trash2, ShieldAlert } from "lucide-react";
+import { MessageCircle, Send, RefreshCw, Check, CheckCheck, Clock, Plus, X, Unlink, Paperclip, Trash2, ShieldAlert } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -29,6 +29,10 @@ function fmt(date) {
 }
 
 function statusIcon(status) {
+  // Same read/delivered/sent convention as the official WhatsApp tab:
+  // single grey tick = sent, double grey = delivered, double blue = read.
+  if (status === "read") return <CheckCheck size={12} className="text-blue-500" />;
+  if (status === "delivered") return <CheckCheck size={12} className="text-slate-400" />;
   if (status === "sent") return <Check size={12} className="text-slate-400" />;
   if (status === "failed") return <span className="text-rose-500">!</span>;
   return <Clock size={12} className="text-slate-300" />;

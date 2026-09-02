@@ -132,6 +132,10 @@ smartWhatsappRoutes.post(
       companyId: req.auth.companyId,
       conversationId: req.params.id,
       to: conversation.waId,
+      // Reply on the exact same JID domain the conversation's messages
+      // actually arrived on — see smart-whatsapp-service's session-manager
+      // .js (jidServerOf) for why this can't just default to a phone number.
+      jidServer: conversation.jidServer,
       text: req.body?.text,
       mediaUrl: req.body?.mediaUrl,
       mediaType: req.body?.mediaType,

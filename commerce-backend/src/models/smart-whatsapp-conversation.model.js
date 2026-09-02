@@ -15,6 +15,15 @@ const smartWhatsappConversationSchema = new mongoose.Schema(
     lastMessagePreview: { type: String, default: "" },
     unreadCount: { type: Number, default: 0 },
     linkedCustomerId: { type: mongoose.Schema.Types.Mixed },
+    // "s.whatsapp.net" (a real phone-number contact) or "lid" (WhatsApp's
+    // privacy-preserving Linked ID — the contact's real number is hidden).
+    // Captured from whichever domain the first inbound message actually
+    // arrived on; a reply MUST go back out on this same domain or it goes
+    // nowhere (a @lid message sent to {digits}@s.whatsapp.net addresses a
+    // phone number that doesn't exist — that digit string is an opaque
+    // WhatsApp id, not a real MSISDN). See smart-whatsapp-service's
+    // session-manager.js (jidServerOf) for the full explanation.
+    jidServer: { type: String, default: "s.whatsapp.net" },
   },
   { timestamps: true },
 );

@@ -25,11 +25,14 @@ async function postToBackend(path, body) {
 // direction defaults to "inbound" (every call site before history sync
 // existed only ever pushed inbound messages) — history sync is the one
 // caller that passes "outbound" too, for messages sent from the phone
-// itself before this bridge ever connected.
-export function notifyInboundMessage({ companyId, waId, text, type, mediaId, mediaMimeType, senderName, waMessageId, timestamp, direction }) {
+// itself before this bridge ever connected. jidServer ("s.whatsapp.net" or
+// "lid") is stored on the conversation so a later reply can be sent back
+// on the same domain the message actually arrived on — see session-manager
+// .js's jidServerOf comment for why this matters.
+export function notifyInboundMessage({ companyId, waId, jidServer, text, type, mediaId, mediaMimeType, senderName, waMessageId, timestamp, direction }) {
   return postToBackend(config.backendWebhookPath, {
     kind: "message",
-    companyId, waId, text, type, mediaId, mediaMimeType, senderName, waMessageId,
+    companyId, waId, jidServer, text, type, mediaId, mediaMimeType, senderName, waMessageId,
     direction: direction || "inbound",
     timestamp: timestamp || new Date().toISOString(),
   });
@@ -39,5 +42,14 @@ export function notifyStatusChange({ companyId, status, phoneNumber }) {
   return postToBackend(config.backendWebhookPath, {
     kind: "status",
     companyId, status, phoneNumber,
+  });
+}
+
+// Delivery/read ticks for a message we sent — see session-manager.js's
+// messages.update handler.
+export function notifyMessageStatusUpdate({ companyId, waMessageId, status }) {
+  return postToBackend(config.backendWebhookPath, {
+    kind: "message_status",
+    companyId, waMessageId, status,
   });
 }

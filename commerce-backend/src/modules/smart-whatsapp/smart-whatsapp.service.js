@@ -9,6 +9,7 @@ import {
   markSmartConversationRead,
   deleteSmartConversation,
   createSmartMessage,
+  updateSmartMessageStatus,
   listSmartMessagesForConversation,
 } from "../../repositories/smart-whatsapp.repo.js";
 
@@ -70,9 +71,9 @@ async function requireOpenSession(companyId) {
   }
 }
 
-export async function sendSmartMessage({ companyId, conversationId, to, text, mediaUrl, mediaType, sentByUserName }) {
+export async function sendSmartMessage({ companyId, conversationId, to, jidServer, text, mediaUrl, mediaType, sentByUserName }) {
   await requireOpenSession(companyId);
-  const result = await callService(`/sessions/${companyId}/send`, { method: "POST", body: { to, text, mediaUrl, mediaType } });
+  const result = await callService(`/sessions/${companyId}/send`, { method: "POST", body: { to, jidServer, text, mediaUrl, mediaType } });
 
   const waId = String(to).replace(/\D/g, "");
   const type = mediaUrl ? (mediaType || "document") : "text";
@@ -112,8 +113,16 @@ export async function handleWebhook(payload) {
     return;
   }
 
+  // Delivery/read ticks for a message we already sent — see
+  // session-manager.js's messages.update handler.
+  if (kind === "message_status") {
+    if (!payload.waMessageId || !payload.status) return;
+    await updateSmartMessageStatus({ companyId, waMessageId: payload.waMessageId, status: payload.status });
+    return;
+  }
+
   if (kind === "message") {
-    const { waId, text, type, mediaId, mediaMimeType, senderName, waMessageId, timestamp } = payload;
+    const { waId, jidServer, text, type, mediaId, mediaMimeType, senderName, waMessageId, timestamp } = payload;
     if (!waId || !waMessageId) return;
     const ts = timestamp ? new Date(timestamp) : new Date();
     // "outbound" here means a message sent from the phone itself, before or
@@ -129,6 +138,7 @@ export async function handleWebhook(payload) {
       // Our own historical outbound messages shouldn't bump the unread
       // counter — that's for what the customer sent us.
       incrementUnread: direction === "inbound",
+      jidServer,
     });
     await createSmartMessage({
       companyId,
