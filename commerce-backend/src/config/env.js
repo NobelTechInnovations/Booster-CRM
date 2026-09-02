@@ -75,4 +75,11 @@ export const env = {
     serviceUrl: process.env.SMART_WHATSAPP_SERVICE_URL || "",
     sharedSecret: process.env.SMART_WHATSAPP_SHARED_SECRET || "",
   },
+  // Platform Admin (app/admin) — a completely separate login for the people
+  // who run Booster itself, not a company's own users. Deliberately its own
+  // JWT secret, distinct from jwtSecret above: a leaked/forged company token
+  // must never be replayable as admin access, and vice versa.
+  platformAdmin: {
+    jwtSecret: process.env.PLATFORM_ADMIN_JWT_SECRET || "dev-only-platform-admin-secret",
+  },
 };

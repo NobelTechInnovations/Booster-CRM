@@ -1,0 +1,155 @@
+"use client";
+
+import { Fragment, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { Building2, CircleDollarSign, Users2, AlertTriangle } from "lucide-react";
+import { listAdminCompanies } from "@/lib/admin-api";
+
+const STATUS_STYLE = {
+  active: "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20",
+  trialing: "bg-amber-500/10 text-amber-400 ring-1 ring-amber-500/20",
+  past_due: "bg-orange-500/10 text-orange-400 ring-1 ring-orange-500/20",
+  suspended: "bg-rose-500/10 text-rose-400 ring-1 ring-rose-500/20",
+  cancelled: "bg-slate-500/10 text-slate-400 ring-1 ring-slate-500/20",
+  disabled: "bg-rose-500/10 text-rose-400 ring-1 ring-rose-500/20",
+};
+
+function StatCard({ icon: Icon, label, value }) {
+  return (
+    <div className="rounded-xl border border-slate-800 bg-slate-900 p-4">
+      <div className="flex items-center gap-2 text-slate-400">
+        <Icon size={14} />
+        <span className="text-xs font-semibold uppercase tracking-wide">{label}</span>
+      </div>
+      <p className="mt-2 text-2xl font-bold text-white">{value}</p>
+    </div>
+  );
+}
+
+export default function AdminCompaniesPage() {
+  const [companies, setCompanies] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    listAdminCompanies()
+      .then((res) => setCompanies(res.companies || []))
+      .catch((err) => setError(err.message))
+      .finally(() => setIsLoading(false));
+  }, []);
+
+  const filtered = useMemo(() => {
+    if (!search) return companies;
+    const q = search.toLowerCase();
+    return companies.filter(
+      (c) => (c.name || "").toLowerCase().includes(q) || (c.ownerEmail || "").toLowerCase().includes(q),
+    );
+  }, [companies, search]);
+
+  // Group by owner email so a single customer's several brands show together
+  // — this app already lets one login own multiple Company docs.
+  const grouped = useMemo(() => {
+    const byOwner = new Map();
+    for (const c of filtered) {
+      const key = c.ownerEmail || `unowned-${c._id}`;
+      if (!byOwner.has(key)) byOwner.set(key, []);
+      byOwner.get(key).push(c);
+    }
+    return [...byOwner.entries()];
+  }, [filtered]);
+
+  const stats = useMemo(() => {
+    const subStatus = (c) => c.subscription?.status;
+    return {
+      total: companies.length,
+      active: companies.filter((c) => subStatus(c) === "active").length,
+      trialing: companies.filter((c) => subStatus(c) === "trialing" || !c.subscription).length,
+      suspended: companies.filter((c) => c.status === "disabled" || subStatus(c) === "suspended").length,
+    };
+  }, [companies]);
+
+  return (
+    <div>
+      <div className="mb-6 flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-bold tracking-tight text-white">Companies</h1>
+          <p className="mt-1 text-sm text-slate-400">Every company on Booster, grouped by owner.</p>
+        </div>
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search company or owner email…"
+          className="h-9 w-72 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-amber-500"
+        />
+      </div>
+
+      <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <StatCard icon={Building2} label="Total companies" value={stats.total} />
+        <StatCard icon={CircleDollarSign} label="Active plan" value={stats.active} />
+        <StatCard icon={Users2} label="Trialing / no plan" value={stats.trialing} />
+        <StatCard icon={AlertTriangle} label="Suspended" value={stats.suspended} />
+      </div>
+
+      {error ? (
+        <div className="mb-4 rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm font-medium text-rose-300">{error}</div>
+      ) : null}
+
+      <div className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+        {isLoading ? (
+          <div className="p-8 text-center text-sm text-slate-500">Loading…</div>
+        ) : grouped.length === 0 ? (
+          <div className="p-8 text-center text-sm text-slate-500">No companies found.</div>
+        ) : (
+          <div className="overflow-x-auto">
+          <table className="w-full min-w-[820px] border-collapse text-sm">
+            <thead>
+              <tr className="border-b border-slate-800 text-left text-[11px] uppercase tracking-wide text-slate-500">
+                <th className="px-4 py-3">Company</th>
+                <th className="px-4 py-3">Owner</th>
+                <th className="px-4 py-3">Plan</th>
+                <th className="px-4 py-3">Status</th>
+                <th className="px-4 py-3 text-right">Orders</th>
+                <th className="px-4 py-3 text-right">Created</th>
+                <th className="px-4 py-3 text-right">Open</th>
+              </tr>
+            </thead>
+            <tbody>
+              {grouped.map(([ownerEmail, group]) => (
+                <Fragment key={ownerEmail}>
+                  {group.length > 1 ? (
+                    <tr key={`${ownerEmail}-header`} className="border-b border-slate-800/60 bg-slate-950/40">
+                      <td colSpan={7} className="px-4 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                        {ownerEmail} — {group.length} brands
+                      </td>
+                    </tr>
+                  ) : null}
+                  {group.map((c) => (
+                    <tr key={c._id} className="border-b border-slate-800/60 last:border-0 hover:bg-slate-800/30">
+                      <td className="px-4 py-3 font-semibold text-white">{c.name}</td>
+                      <td className="px-4 py-3 text-slate-400">{c.ownerEmail || "—"}</td>
+                      <td className="px-4 py-3 text-slate-300">{c.subscription?.planSlug || "—"}</td>
+                      <td className="px-4 py-3">
+                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${STATUS_STYLE[c.status === "disabled" ? "disabled" : (c.subscription?.status || "trialing")]}`}>
+                          {c.status === "disabled" ? "disabled" : (c.subscription?.status || "trialing")}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-right text-slate-300">{c.orderCount}</td>
+                      <td className="px-4 py-3 text-right text-slate-500">{c.createdAt ? new Date(c.createdAt).toLocaleDateString("en-IN") : "—"}</td>
+                      <td className="px-4 py-3 text-right">
+                        <Link href={`/admin/companies/${c._id}`} className="text-xs font-semibold text-amber-400 hover:underline">
+                          Manage
+                        </Link>
+                      </td>
+                    </tr>
+                  ))}
+                </Fragment>
+              ))}
+            </tbody>
+          </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

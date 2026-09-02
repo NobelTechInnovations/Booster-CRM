@@ -70,6 +70,26 @@ const companySchema = new mongoose.Schema(
       dailySummaryEmail: { type: Boolean, default: false },
       lowStockThreshold: { type: Number, default: 5 },
     },
+    // Set by a platform admin (app/admin), never by the company itself —
+    // absent entirely on every company that existed before this field was
+    // added, and companyHasFeature() (utils/feature-gate.js) treats an
+    // absent subscription as full access, so nothing changes for any
+    // existing company until an admin explicitly assigns one.
+    subscription: {
+      planId: { type: mongoose.Schema.Types.ObjectId, ref: "Plan" },
+      planSlug: String,
+      // Denormalized from the Plan at assignment time so a feature check
+      // never needs an extra Plan lookup — re-copied whenever the
+      // subscription is updated.
+      features: [String],
+      status: { type: String, enum: ["trialing", "active", "past_due", "suspended", "cancelled"], default: "trialing" },
+      trialEndsAt: Date,
+      currentPeriodEnd: Date,
+      seats: Number,
+      // Admin's own internal notes about this company's billing — not
+      // shown to the company itself anywhere.
+      notes: String,
+    },
   },
   { timestamps: true },
 );

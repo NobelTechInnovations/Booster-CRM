@@ -33,6 +33,8 @@ export const memory = {
   smartWhatsappSessions: new Map(),
   smartWhatsappConversations: new Map(),
   smartWhatsappMessages: new Map(),
+  platformAdmins: new Map(),
+  plans: new Map(),
 };
 
 export function id() {
