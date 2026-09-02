@@ -25,6 +25,17 @@ function jidServerOf(remoteJid) {
   return (remoteJid || "").split("@")[1] || "s.whatsapp.net";
 }
 
+// The connected account itself gets a SECOND identity for WhatsApp's own
+// multi-device sync (this bridge is, from WhatsApp's point of view, just
+// another linked device alongside the actual phone) — self-sync traffic
+// under that identity was showing up as a real "conversation" with the
+// business's own profile name, because nothing distinguished it from an
+// actual customer. jidDigits() strips both a phone JID and a lid JID down
+// to comparable digits so it can be filtered out in processMessage below.
+function jidDigits(jid) {
+  return (jid || "").split("@")[0].split(":")[0];
+}
+
 // Baileys' numeric message-status codes (messages.update's update.status):
 // 0 ERROR, 1 PENDING, 2 SERVER_ACK ("sent"), 3 DELIVERY_ACK ("delivered"),
 // 4 READ, 5 PLAYED (voice notes — treated as read for tick purposes).
@@ -87,10 +98,22 @@ export async function startSession(companyId) {
   const { version } = await fetchLatestBaileysVersion().catch(() => ({ version: undefined }));
 
   const sock = makeWASocket({ version, auth: state, logger, printQRInTerminal: false });
-  const entry = { sock, status: "connecting", qr: null, phoneNumber: "" };
+  // Both the account's phone-number identity and its separate lid identity
+  // (see jidDigits' comment) — populated as soon as each becomes known, so
+  // processMessage below can filter out the account's own multi-device
+  // sync traffic regardless of which identity a given event uses.
+  const entry = { sock, status: "connecting", qr: null, phoneNumber: "", ownJids: new Set() };
   sessions.set(companyId, entry);
 
-  sock.ev.on("creds.update", saveCreds);
+  function trackOwnIdentity() {
+    if (sock.user?.id) entry.ownJids.add(jidDigits(sock.user.id));
+    if (sock.user?.lid) entry.ownJids.add(jidDigits(sock.user.lid));
+  }
+
+  sock.ev.on("creds.update", (update) => {
+    saveCreds(update);
+    trackOwnIdentity();
+  });
 
   sock.ev.on("connection.update", async (update) => {
     const { connection, lastDisconnect, qr } = update;
@@ -104,6 +127,7 @@ export async function startSession(companyId) {
       entry.status = "open";
       entry.qr = null;
       entry.phoneNumber = (sock.user?.id || "").split(":")[0];
+      trackOwnIdentity();
       notifyStatusChange({ companyId, status: "open", phoneNumber: entry.phoneNumber });
     }
 
@@ -140,8 +164,12 @@ export async function startSession(companyId) {
     // customer conversations, not a general WhatsApp client.
     if (m.key.remoteJid?.endsWith("@g.us")) return;
 
-    const waId = (m.key.remoteJid || "").split("@")[0];
+    const waId = jidDigits(m.key.remoteJid);
     if (!waId) return;
+    // The account's own multi-device sync traffic (see trackOwnIdentity) —
+    // not a real customer, filter it out rather than let it show up as a
+    // conversation with the business's own name.
+    if (entry.ownJids.has(waId)) return;
     const jidServer = jidServerOf(m.key.remoteJid);
 
     const msg = m.message;
@@ -205,9 +233,19 @@ export async function startSession(companyId) {
   // updates to the same message key, not as new messages. Without this,
   // every outbound message stayed on a single grey "sent" tick forever,
   // never showing the customer actually got or read it.
+  //
+  // Not filtering on key.fromMe here: Baileys derives that flag from its
+  // own internal receipt-parsing logic (whether attrs.recipient was set,
+  // retry/sender receipt types, etc.), which doesn't reliably come back
+  // true for a plain 1:1 delivery/read ack — dropping status updates on
+  // that check was the actual reason ticks never moved past "sent".
+  // Harmless either way: updateSmartMessageStatus only touches a message
+  // that's already in our DB by its exact waMessageId, and status is never
+  // rendered for inbound messages, so a status update landing on the wrong
+  // direction has no visible effect.
   sock.ev.on("messages.update", (updates) => {
     for (const { key, update } of updates) {
-      if (!key.fromMe || update.status === undefined) continue;
+      if (update.status === undefined) continue;
       const status = mapWaStatus(update.status);
       if (!status) continue;
       notifyMessageStatusUpdate({ companyId, waMessageId: key.id, status });
