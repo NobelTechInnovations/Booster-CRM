@@ -101,7 +101,13 @@ function InvoiceModal({ order, company, onClose }) {
   const taxableValue = Math.round((total / (1 + gstRate / 100)) * 100) / 100;
   const taxAmount = Math.round((total - taxableValue) * 100) / 100;
   const itemsTotal = lineItems.reduce((sum, item) => sum + Number(item.price || 0) * Number(item.quantity || 1), 0);
-  const discount = Number(order.totalDiscounts || 0);
+  // totalDiscounts is the channel-native (Shopify) discount, already baked
+  // into totalPrice by the sync. manualDiscount/manualExtraCharge are our
+  // own CRM-side adjustments (see applyManualAdjustments in order.repo.js)
+  // — layered on top at read time, so they show up in totalPrice but were
+  // never surfaced as their own invoice line. Show both kinds here.
+  const discount = Number(order.totalDiscounts || 0) + Number(order.manualDiscount || 0);
+  const extraCharge = Number(order.manualExtraCharge || 0);
 
   // Printing via the page's own CSS ("hide everything except the invoice")
   // turned out unreliable — a display:none/revert combo that should work per
@@ -252,6 +258,11 @@ function InvoiceModal({ order, company, onClose }) {
                   {discount > 0 ? (
                     <div className="flex justify-between text-slate-500">
                       <span>Discount</span><span className="font-medium text-rose-600">−₹{discount.toFixed(2)}</span>
+                    </div>
+                  ) : null}
+                  {extraCharge > 0 ? (
+                    <div className="flex justify-between text-slate-500">
+                      <span>{order.manualAdjustmentNote || "Shipping / Extra Charge"}</span><span className="font-medium text-slate-700">+₹{extraCharge.toFixed(2)}</span>
                     </div>
                   ) : null}
                   <div className="flex justify-between text-slate-500">
