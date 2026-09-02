@@ -383,7 +383,7 @@ function MessageThread({ conversation, channelName, onDeleted }) {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div className="flex h-full min-h-0 flex-col">
       <div className="flex items-center gap-3 border-b border-[var(--line)] px-4 py-3">
         <div className="grid h-9 w-9 place-items-center rounded-full bg-emerald-100 text-emerald-700">
           <MessageCircle size={16} />
@@ -736,7 +736,7 @@ export function WhatsAppView() {
           <Card className="overflow-hidden" style={{ height: CHAT_HEIGHT }}>
           <div className="grid h-full grid-cols-1 md:grid-cols-[300px_1fr]">
             {/* Conversation list */}
-            <div className="flex flex-col border-r border-[var(--line)]">
+            <div className="flex h-full min-h-0 flex-col border-r border-[var(--line)]">
               <div className="shrink-0 border-b border-[var(--line)] px-4 py-3">
                 <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">Conversations</p>
               </div>
@@ -780,7 +780,7 @@ export function WhatsAppView() {
             </div>
 
             {/* Thread */}
-            <div className="flex flex-col">
+            <div className="flex h-full min-h-0 flex-col">
               {selected ? (
                 <MessageThread
                   conversation={selected}
