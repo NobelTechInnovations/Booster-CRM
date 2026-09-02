@@ -5,6 +5,7 @@ import {
   AlertCircle,
   ArrowLeft,
   Box,
+  CheckCircle2,
   ChevronDown,
   ChevronRight,
   ClipboardList,
@@ -13,7 +14,9 @@ import {
   ExternalLink,
   FileText,
   Info,
+  Loader2,
   MapPin,
+  MessageCircle,
   Package,
   Pencil,
   Phone,
@@ -26,12 +29,13 @@ import {
   Truck,
   User,
   X,
+  XCircle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { listAllOrders, getCompanyProfile, updateOrderAdjustments } from "@/lib/api";
+import { listAllOrders, getCompanyProfile, updateOrderAdjustments, updateOrderConfirmation, sendOrderInvoiceWhatsApp } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -819,10 +823,45 @@ export function OrdersView() {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [invoiceOrder, setInvoiceOrder] = useState(null);
   const [company, setCompany] = useState(null);
+  const [confirmingId, setConfirmingId] = useState("");
+  const [sendingInvoiceId, setSendingInvoiceId] = useState("");
+  const [invoiceSendError, setInvoiceSendError] = useState("");
 
   useEffect(() => {
     getCompanyProfile().then((res) => setCompany(res.company)).catch(() => { });
   }, []);
+
+  function orderKey(order) {
+    return String(order.externalId || order._id || order.id);
+  }
+
+  // Optimistic — updates the row immediately rather than re-fetching the
+  // whole order list for a one-field change.
+  async function handleConfirmation(order, status) {
+    const key = orderKey(order);
+    setConfirmingId(key);
+    try {
+      const res = await updateOrderConfirmation(order._id || order.id || order.externalId, status);
+      setOrders((prev) => prev.map((o) => (orderKey(o) === key ? { ...o, ...res.order } : o)));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setConfirmingId("");
+    }
+  }
+
+  async function handleSendInvoiceWhatsApp(order) {
+    const key = orderKey(order);
+    setSendingInvoiceId(key);
+    setInvoiceSendError("");
+    try {
+      await sendOrderInvoiceWhatsApp(order._id || order.id || order.externalId);
+    } catch (err) {
+      setInvoiceSendError(`${order.name}: ${err.message}`);
+    } finally {
+      setSendingInvoiceId("");
+    }
+  }
 
   async function loadOrders() {
     setIsLoading(true);
@@ -1015,6 +1054,12 @@ export function OrdersView() {
           {error}
         </div>
       )}
+      {invoiceSendError && (
+        <div className="mb-5 flex items-center justify-between gap-2 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm font-medium text-rose-700">
+          <span className="flex items-center gap-2"><AlertCircle size={17} /> Couldn't send invoice — {invoiceSendError}</span>
+          <button onClick={() => setInvoiceSendError("")} className="text-rose-400 hover:text-rose-600"><X size={15} /></button>
+        </div>
+      )}
 
       {/* Table */}
       <Card>
@@ -1028,13 +1073,14 @@ export function OrdersView() {
               <p className="mt-1 text-sm text-slate-400">Try a different filter or sync your channel data.</p>
             </div>
           ) : (
-            <table className="w-full min-w-[820px] border-collapse text-sm">
+            <table className="w-full min-w-[940px] border-collapse text-sm">
               <thead>
                 <tr className="border-b border-[var(--line)] bg-slate-50 text-left text-[11px]  uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3">Order</th>
                   <th className="px-4 py-3">Customer</th>
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Items</th>
+                  <th className="px-4 py-3">Confirmation</th>
                   <th className="px-4 py-3">Fulfilment</th>
                   <th className="px-4 py-3">Payment</th>
                   <th className="px-4 py-3 text-right">Amount</th>
@@ -1083,6 +1129,55 @@ export function OrdersView() {
                         </div>
                       </td>
                       <td className="px-4 py-3">
+                        {(() => {
+                          const key = orderKey(order);
+                          const status = order.confirmationStatus || "pending";
+                          const busy = confirmingId === key;
+                          if (status === "confirmed") {
+                            return (
+                              <button
+                                onClick={() => handleConfirmation(order, "pending")}
+                                title="Confirmed — click to reset"
+                                className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-700 ring-1 ring-emerald-600/15 hover:bg-emerald-100"
+                              >
+                                <CheckCircle2 size={11} /> Confirmed
+                              </button>
+                            );
+                          }
+                          if (status === "declined") {
+                            return (
+                              <button
+                                onClick={() => handleConfirmation(order, "pending")}
+                                title="Declined — click to reset"
+                                className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-rose-700 ring-1 ring-rose-600/15 hover:bg-rose-100"
+                              >
+                                <XCircle size={11} /> Declined
+                              </button>
+                            );
+                          }
+                          return (
+                            <div className="flex items-center gap-1">
+                              <button
+                                onClick={() => handleConfirmation(order, "confirmed")}
+                                disabled={busy}
+                                title="Customer confirmed this order"
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-emerald-200 bg-white text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-50"
+                              >
+                                {busy ? <Loader2 size={11} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                              </button>
+                              <button
+                                onClick={() => handleConfirmation(order, "declined")}
+                                disabled={busy}
+                                title="Customer did not confirm"
+                                className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-rose-200 bg-white text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                              >
+                                {busy ? <Loader2 size={11} className="animate-spin" /> : <XCircle size={12} />}
+                              </button>
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td className="px-4 py-3">
                         <Badge tone={statusTone(order.fulfillmentStatus)}>
                           {order.fulfillmentStatus || "unfulfilled"}
                         </Badge>
@@ -1107,6 +1202,16 @@ export function OrdersView() {
                           >
                             <FileText size={12} />
                           </button>
+                          {order.phone ? (
+                            <button
+                              onClick={() => handleSendInvoiceWhatsApp(order)}
+                              disabled={sendingInvoiceId === orderKey(order)}
+                              title="Send tax invoice to customer on WhatsApp"
+                              className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-slate-500 shadow-xs transition hover:border-emerald-400 hover:text-emerald-700 disabled:opacity-50"
+                            >
+                              {sendingInvoiceId === orderKey(order) ? <Loader2 size={12} className="animate-spin" /> : <MessageCircle size={12} />}
+                            </button>
+                          ) : null}
                           <button
                             onClick={() => setSelectedOrder(order)}
                             className="inline-flex h-7 items-center gap-1 rounded-lg border border-[var(--line)] bg-white px-2.5 text-[11px] font-semibold text-slate-600 shadow-xs transition hover:border-indigo-400 hover:text-indigo-700 group-hover:border-indigo-300"

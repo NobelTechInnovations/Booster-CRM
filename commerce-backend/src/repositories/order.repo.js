@@ -1447,6 +1447,26 @@ export async function updateOrderManualAdjustments({ companyId, orderId, discoun
   return updated ? applyManualAdjustments(updated) : null;
 }
 
+// Customer-confirmation gate — set from the order row's Confirm/Decline
+// buttons after someone actually reaches the customer (WhatsApp/call) to
+// verify the order before it goes to fulfillment. Purely a status flag:
+// doesn't block shipOrder() itself, since some sellers ship COD orders
+// without ever calling to confirm — it's a visible signal, not a hard gate.
+export async function updateOrderConfirmation({ companyId, orderId, status }) {
+  if (!["pending", "confirmed", "declined"].includes(status)) {
+    return { error: "Invalid confirmation status" };
+  }
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) return null;
+
+  const update = {
+    confirmationStatus: status,
+    confirmedAt: status === "confirmed" ? new Date() : null,
+  };
+  const updated = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
+  return updated ? applyManualAdjustments(updated) : null;
+}
+
 // Revenue that was refunded/cancelled/returned in this period — kept separate
 // from the main revenue total so it can be shown as its own line item. RTO
 // ("Return to Origin" — courier-tagged undelivered/bounced-back shipment) is

@@ -88,6 +88,25 @@ export function extractProductInterest(payload) {
   return "";
 }
 
+// The price to go with extractProductInterest's name — real cart payloads
+// (verified against actual Fastrr events) carry it right alongside the name,
+// either per-item (items[].price) or as a parallel array (item_price_list),
+// but nothing ever pulled it out before. Only the first item's price when
+// there are several — good enough to give a follow-up call something
+// concrete to reference, not meant to be an exact multi-item cart total
+// (that's cartValue, already captured separately).
+export function extractProductPrice(payload) {
+  const flat = flatten(payload);
+
+  if (Array.isArray(flat.items) && flat.items[0]?.price !== undefined) {
+    return Number(flat.items[0].price);
+  }
+  if (Array.isArray(flat.item_price_list) && flat.item_price_list[0] !== undefined) {
+    return Number(flat.item_price_list[0]);
+  }
+  return undefined;
+}
+
 // Pulls out the customer/cart info common to abandoned-cart style payloads.
 // Verified against real Fastrr payloads (cart_id, latest_stage, first_name/
 // last_name, phone_number, total_price) — not guessed. Other providers fall
@@ -106,7 +125,8 @@ export function extractLeadInfo(provider, payload) {
   const ip = flat.ipv4_address || flat.ip_address || flat.ip || "";
   const landingPageUrl = flat.landing_page_url || flat.landing_site || "";
   const productInterest = extractProductInterest(payload);
-  return { name, phone, email, stage, cartValue, ip, landingPageUrl, productInterest };
+  const productPrice = extractProductPrice(payload);
+  return { name, phone, email, stage, cartValue, ip, landingPageUrl, productInterest, productPrice };
 }
 
 // Groups repeat events from the same underlying lead — a Fastrr cart moving

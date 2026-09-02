@@ -9,6 +9,8 @@ import {
   Mail,
   MapPin,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   ShoppingCart,
   PhoneCall,
   MessageCircle,
@@ -169,16 +171,34 @@ export function CustomersView() {
   const [sortBy, setSortBy] = useState("latest");
   const [savingLeadPhone, setSavingLeadPhone] = useState("");
   const [leadSaveError, setLeadSaveError] = useState("");
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 20;
 
+  // Customers load first and alone — the table can render as soon as this
+  // resolves. Leads (below) used to be fetched in the same Promise.all,
+  // which meant the whole page (customer table included) sat on a loading
+  // skeleton until BOTH finished, even though leads only power a small
+  // "Lead" badge and the separate leads-not-yet-customers table underneath.
   async function loadCustomers() {
     setIsLoading(true);
     setError("");
     try {
-      const [custRes, leadsRes] = await Promise.all([
-        listSyncedRecords("customers"),
-        listWebhookLeads({ limit: 2000 }).catch(() => ({ leads: [] })),
-      ]);
+      const custRes = await listSyncedRecords("customers");
       setCustomers(custRes.records || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  // Fired separately, after the customer table is already interactive —
+  // never blocks it. Also trimmed from a 2000-row fetch to 500: this only
+  // feeds a supplementary badge/table, and follow-up-worthy leads are
+  // always recent ones.
+  async function loadLeads() {
+    try {
+      const leadsRes = await listWebhookLeads({ limit: 500 });
       // Keep only the most recently-updated lead per phone if duplicates
       // exist, so the badge reflects current status, not a stale earlier one.
       const byPhone = new Map();
@@ -190,14 +210,13 @@ export function CustomersView() {
         }
       }
       setLeadByPhone(byPhone);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Non-critical — the customer table itself already loaded fine.
     }
   }
 
-  useEffect(() => { loadCustomers(); }, []);
+  useEffect(() => { loadCustomers(); loadLeads(); }, []);
+  useEffect(() => { setPage(1); }, [search, sortBy]);
 
   const filtered = useMemo(() => {
     let list = customers;
@@ -224,6 +243,9 @@ export function CustomersView() {
     });
     return sorted;
   }, [customers, search, sortBy]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageItems = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   // Leads that never made it into Shopify as a real customer — a phone-based
   // webhook lead (abandoned cart, form fill, etc.) with no matching
@@ -321,7 +343,7 @@ export function CustomersView() {
                 </tr>
               </thead>
               <tbody>
-                {filtered.map((c) => (
+                {pageItems.map((c) => (
                   <tr key={c._id || c.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50/60">
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2">
@@ -369,6 +391,30 @@ export function CustomersView() {
             </table>
           )}
         </CardContent>
+        {!isLoading && filtered.length > 0 ? (
+          <div className="flex items-center justify-between border-t border-[var(--line)] px-4 py-3">
+            <p className="text-xs text-slate-400">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-slate-500 transition hover:border-indigo-400 hover:text-indigo-700 disabled:opacity-40 disabled:hover:border-[var(--line)] disabled:hover:text-slate-500"
+              >
+                <ChevronLeft size={13} />
+              </button>
+              <span className="text-xs font-semibold text-slate-600">Page {page} of {totalPages}</span>
+              <button
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="inline-flex h-7 w-7 items-center justify-center rounded-lg border border-[var(--line)] bg-white text-slate-500 transition hover:border-indigo-400 hover:text-indigo-700 disabled:opacity-40 disabled:hover:border-[var(--line)] disabled:hover:text-slate-500"
+              >
+                <ChevronRight size={13} />
+              </button>
+            </div>
+          </div>
+        ) : null}
       </Card>
 
       {pureLeads.length ? (

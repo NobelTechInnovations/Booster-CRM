@@ -40,6 +40,9 @@ const webhookLeadSchema = new mongoose.Schema(
     // when available, else parsed from the landing-page URL. The whole point
     // of this field: know what to talk about on the follow-up call.
     productInterest: String,
+    // The first item's price, alongside productInterest — see
+    // extractProductPrice's own comment for why only the first item.
+    productPrice: Number,
     landingPageUrl: String,
     ipAddress: String,
 

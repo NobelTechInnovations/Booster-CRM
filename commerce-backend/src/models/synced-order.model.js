@@ -62,6 +62,14 @@ const syncedOrderSchema = new mongoose.Schema(
     manualExtraCharge:   { type: Number, default: 0 },
     manualAdjustmentNote: { type: String, default: "" },
 
+    // Did the customer actually confirm this order (usually via a
+    // follow-up WhatsApp/call) before it's picked up for fulfillment?
+    // Distinct from omsStatus/fulfillmentStatus — those track shipping
+    // progress, this tracks whether the order should even be trusted to
+    // start that process. "pending" until someone acts on it.
+    confirmationStatus: { type: String, enum: ["pending", "confirmed", "declined"], default: "pending", index: true },
+    confirmedAt:         Date,
+
     // COD detection
     isCOD:     { type: Boolean, default: false },
     codAmount:  { type: Number, default: 0 },

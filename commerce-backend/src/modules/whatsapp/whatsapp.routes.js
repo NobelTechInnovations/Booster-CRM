@@ -19,6 +19,7 @@ import {
   listMessageTemplates,
   fetchWhatsAppMedia,
   uploadWhatsAppMedia,
+  sendOrderInvoiceViaWhatsApp,
   handleIncomingWebhook,
 } from "./whatsapp.service.js";
 
@@ -355,6 +356,21 @@ whatsappRoutes.post(
       mediaType: req.body?.mediaType,
       sentByUserName: req.auth.displayName || req.auth.email || "",
     });
+    res.json(result);
+  }),
+);
+
+// ─── Send an order's Tax Invoice as a WhatsApp document — one click from
+// the Orders table row. Only works while a 24-hour customer-service window
+// is open with that number (see sendOrderInvoiceViaWhatsApp's own comment);
+// otherwise Meta's own rejection reason comes through as the error below.
+
+whatsappRoutes.post(
+  "/orders/:orderId/send-invoice",
+  requireAuth,
+  requirePermission("whatsapp:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await sendOrderInvoiceViaWhatsApp({ companyId: req.auth.companyId, orderId: req.params.orderId });
     res.json(result);
   }),
 );

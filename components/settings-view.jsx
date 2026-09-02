@@ -10,6 +10,7 @@ import {
   Clock,
   Copy,
   CreditCard,
+  ExternalLink,
   KeyRound,
   MessageCircle,
   Package,
@@ -476,7 +477,20 @@ function LeadDrawer({ lead, onClose, onLogFollowUp, onWhatsApp }) {
               <Badge tone={LEAD_STATUS_TONE[lead.followUpStatus] || "slate"}>{(lead.followUpStatus || "new").replace(/_/g, " ")}</Badge>
             </div>
             {lead.productInterest ? (
-              <p className="mt-2 text-xs text-slate-600"><span className="font-semibold text-slate-500">Interested in:</span> {lead.productInterest}</p>
+              <p className="mt-2 text-xs text-slate-600">
+                <span className="font-semibold text-slate-500">Interested in: </span>
+                {lead.landingPageUrl ? (
+                  <a href={lead.landingPageUrl} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-0.5 font-medium text-indigo-700 hover:underline">
+                    {lead.productInterest}
+                    <ExternalLink size={10} />
+                  </a>
+                ) : (
+                  lead.productInterest
+                )}
+                {lead.productPrice !== undefined && lead.productPrice !== null ? (
+                  <span className="ml-1.5 font-semibold text-slate-700">· {formatMoney(lead.productPrice)}</span>
+                ) : null}
+              </p>
             ) : null}
             {(lead.geoCity || lead.geoRegion) ? (
               <p className="mt-1 text-xs text-slate-600">
@@ -595,7 +609,26 @@ function LeadRow({ lead, duplicateCount, onView, onFollowUp, onWhatsApp }) {
       </td>
       <td className="max-w-[220px] py-2.5 pr-3">
         {lead.productInterest ? (
-          <p className="truncate text-xs font-medium text-slate-700" title={lead.productInterest}>{lead.productInterest}</p>
+          <>
+            {lead.landingPageUrl ? (
+              <a
+                href={lead.landingPageUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={(e) => e.stopPropagation()}
+                title={lead.productInterest}
+                className="inline-flex max-w-full items-center gap-0.5 truncate text-xs font-medium text-indigo-700 hover:underline"
+              >
+                <span className="truncate">{lead.productInterest}</span>
+                <ExternalLink size={10} className="shrink-0" />
+              </a>
+            ) : (
+              <p className="truncate text-xs font-medium text-slate-700" title={lead.productInterest}>{lead.productInterest}</p>
+            )}
+            {lead.productPrice !== undefined && lead.productPrice !== null ? (
+              <p className="text-[11px] text-slate-500">{formatMoney(lead.productPrice)}</p>
+            ) : null}
+          </>
         ) : (
           <span className="text-xs text-slate-300">—</span>
         )}

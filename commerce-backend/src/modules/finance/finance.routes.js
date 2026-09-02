@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost, updateOrderManualAdjustments } from "../../repositories/order.repo.js";
+import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost, updateOrderManualAdjustments, updateOrderConfirmation } from "../../repositories/order.repo.js";
 import {
   createExpense,
   createPurchase,
@@ -114,6 +114,17 @@ financeRoutes.patch(
     });
     if (!result) throw new HttpError(404, "Order not found");
     res.json({ message: "Order adjustments updated", order: result });
+  }),
+);
+
+financeRoutes.patch(
+  "/orders/:orderId/confirmation",
+  requirePermission("finance:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await updateOrderConfirmation({ companyId: req.auth.companyId, orderId: req.params.orderId, status: req.body?.status });
+    if (!result) throw new HttpError(404, "Order not found");
+    if (result.error) throw new HttpError(400, result.error);
+    res.json({ message: "Order confirmation updated", order: result });
   }),
 );
 

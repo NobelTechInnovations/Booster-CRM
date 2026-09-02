@@ -17,6 +17,9 @@ import {
   getPendingWhatsAppSignup,
   deletePendingWhatsAppSignup,
 } from "../../repositories/whatsapp.repo.js";
+import { getOrderById } from "../../repositories/order.repo.js";
+import { getCompany } from "../../repositories/company.repo.js";
+import { buildInvoicePdf } from "../../utils/invoice-pdf.js";
 
 const GRAPH_BASE = () => `https://graph.facebook.com/${env.whatsapp.apiVersion}`;
 
@@ -449,6 +452,39 @@ export async function uploadWhatsAppMedia({ companyId, fileBuffer, filename, mim
   const category = (mimeType || "").split("/")[0];
   const mediaType = category === "image" || category === "video" || category === "audio" ? category : "document";
   return { mediaId: body.id, mediaType };
+}
+
+// ─── Send an order's Tax Invoice as a WhatsApp document ────────────────────
+// Builds the same invoice shown in the app's own Tax Invoice modal (see
+// invoice-pdf.js) as a real PDF file, uploads it to Meta's media store, and
+// sends it as a document attachment to the order's phone number. Uses the
+// free-form send path (sendWhatsAppMessage above), so — same platform rule
+// noted below — this only works while a 24-hour customer-service window is
+// open with that number (i.e. they've messaged the business recently);
+// otherwise Meta rejects it and that error surfaces to the caller as-is.
+export async function sendOrderInvoiceViaWhatsApp({ companyId, orderId }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) throw new HttpError(404, "Order not found");
+  if (!order.phone) throw new HttpError(400, "This order has no phone number to send to");
+
+  const [company, [channelSummary]] = await Promise.all([
+    getCompany(companyId),
+    listWhatsAppChannels(companyId),
+  ]);
+  if (!channelSummary) throw new HttpError(400, "Connect a WhatsApp number first");
+
+  const pdfBuffer = await buildInvoicePdf({ order, company });
+  const filename = `${order.name || order.externalId || "invoice"}.pdf`.replace(/^#/, "");
+  const { mediaId } = await uploadWhatsAppMedia({ companyId, fileBuffer: pdfBuffer, filename, mimeType: "application/pdf" });
+
+  return sendWhatsAppMessage({
+    companyId,
+    channelId: channelSummary._id || channelSummary.id,
+    to: order.phone,
+    text: `Here's your invoice for order ${order.name || ""}`.trim(),
+    mediaId,
+    mediaType: "document",
+  });
 }
 
 // ─── Send (message template — for a number that has never messaged first) ──

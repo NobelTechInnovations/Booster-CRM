@@ -146,6 +146,7 @@ async function upsertWebhookLead({ companyId, endpointId, provider, leadKey, typ
     // cart (they added a different item), so it's always refreshed to the
     // latest — same as latestStage. ip/landingPageUrl too.
     ...(info.productInterest ? { productInterest: info.productInterest } : {}),
+    ...(info.productPrice !== undefined ? { productPrice: info.productPrice } : {}),
     ...(info.landingPageUrl ? { landingPageUrl: info.landingPageUrl } : {}),
     ...(info.ip ? { ipAddress: info.ip } : {}),
     lastEventAt: now_,
