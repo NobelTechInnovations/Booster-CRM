@@ -225,6 +225,8 @@ function normalizeCustomer({ companyId, channelId, provider, shop, customer }) {
     totalSpent:  toNumber(customer.total_spent),
     currency:    customer.currency,
     defaultAddress: {
+      address1: defaultAddress.address1,
+      address2: defaultAddress.address2,
       city:     defaultAddress.city,
       province: defaultAddress.province,
       country:  defaultAddress.country,
@@ -297,6 +299,8 @@ function normalizeAmazonCustomer({ companyId, channelId, shop, order }) {
     totalSpent:  toNumber(order.OrderTotal?.Amount),
     currency:    order.OrderTotal?.CurrencyCode,
     defaultAddress: {
+      address1: shippingAddress.AddressLine1,
+      address2: shippingAddress.AddressLine2,
       city:     shippingAddress.City,
       province: shippingAddress.StateOrRegion,
       country:  shippingAddress.CountryCode,
@@ -710,6 +714,20 @@ function publicSyncedRecord(record, channels = []) {
       ? raw.shipping_lines.reduce((sum, line) => sum + (Number(line.price) || 0), 0)
       : 0;
     copy.totalShipping = Number.isFinite(fromSet) && fromSet > 0 ? fromSet : fromLines;
+  }
+
+  // Same gap on customers: normalizeCustomer never mapped address1/address2
+  // from Shopify's default_address into our own defaultAddress (only
+  // city/province/country/zip), even though the schema had fields for them
+  // and the full address was sitting right there in raw the whole time — so
+  // "Create Order" pre-filled city but left the street address blank for
+  // every customer synced before that mapping was added. Same read-time
+  // derivation as above, so it's fixed immediately with no resync needed.
+  if (copy.raw && copy.defaultAddress && !copy.defaultAddress.address1) {
+    const rawAddress = copy.raw.default_address || {};
+    if (rawAddress.address1) {
+      copy.defaultAddress = { ...copy.defaultAddress, address1: rawAddress.address1, address2: rawAddress.address2 };
+    }
   }
 
   delete copy.raw;
