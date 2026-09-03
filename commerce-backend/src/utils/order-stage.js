@@ -11,6 +11,7 @@
 // should always win over whatever progress stage the order was in before —
 // e.g. a shipped order that gets RTO'd should read "Returned", not "Shipped".
 export const ORDER_STAGES = [
+  { key: "draft", label: "Draft" },
   { key: "created", label: "Order Created" },
   { key: "confirmed", label: "Confirmed" },
   { key: "declined", label: "Declined" },
@@ -26,6 +27,12 @@ const STAGE_LABEL = Object.fromEntries(ORDER_STAGES.map((s) => [s.key, s.label])
 export function computeOrderStage(order) {
   if (!order) return "created";
 
+  // A draft outranks everything else — it isn't a real, committed order
+  // yet (never synced to Shopify), so none of the progress/exception
+  // states below are meaningful until it's finalized.
+  if (order.isDraft) {
+    return "draft";
+  }
   if (order.cancelledAt || order.omsStatus === "cancelled" || order.financialStatus === "voided") {
     return "cancelled";
   }

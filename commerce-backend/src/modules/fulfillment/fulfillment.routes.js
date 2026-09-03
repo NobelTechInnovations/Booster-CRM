@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, getFulfilledOrders, shipOrder, shipOrdersBulk, downloadLabelsBulk, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder, pushTrackingToShopify } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, shipOrdersBulk, downloadLabelsBulk, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder, pushTrackingToShopify, editDraftOrder, discardDraftOrder } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -33,13 +33,40 @@ fulfillmentRoutes.get(
 
 // Create an order directly in the panel (not synced from Shopify/Amazon) —
 // lands in the same fulfillment queue below, ready to ship like any other order.
+// isDraft:true instead saves it as a draft (see synced-order.model.js) —
+// freely editable scratch space that never touches Shopify until finalized
+// (POST /api/channels/orders/:orderId/finalize-draft).
 fulfillmentRoutes.post(
   "/orders/local",
   requireAuth,
   asyncHandler(async (req, res) => {
+    const { customer, shippingAddress, lineItems, isCOD, note, isDraft } = req.body || {};
+    const order = await createManualOrder({ companyId: req.auth.companyId, customer, shippingAddress, lineItems, isCOD, note, isDraft: Boolean(isDraft) });
+    res.json({ message: isDraft ? "Draft saved" : "Order created", order });
+  }),
+);
+
+// Edit a draft order's own contents — only ever valid while it's still a
+// draft (see editDraftOrder / updateDraftOrder for the guard).
+fulfillmentRoutes.patch(
+  "/orders/:orderId/draft",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
     const { customer, shippingAddress, lineItems, isCOD, note } = req.body || {};
-    const order = await createManualOrder({ companyId: req.auth.companyId, customer, shippingAddress, lineItems, isCOD, note });
-    res.json({ message: "Order created", order });
+    const order = await editDraftOrder({ companyId: req.auth.companyId, orderId, customer, shippingAddress, lineItems, isCOD, note });
+    res.json({ message: "Draft updated", order });
+  }),
+);
+
+// Permanently discard a draft that never went anywhere.
+fulfillmentRoutes.post(
+  "/orders/:orderId/discard-draft",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    await discardDraftOrder({ companyId: req.auth.companyId, orderId });
+    res.json({ message: "Draft discarded" });
   }),
 );
 

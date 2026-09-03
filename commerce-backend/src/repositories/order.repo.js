@@ -511,7 +511,13 @@ export async function upsertSingleOrder({ companyId, channelId, provider, shop, 
 // the exact same Fulfillment "ready to ship" queue as every synced order —
 // the whole ship/track/cancel pipeline downstream is unchanged, this only
 // adds a second way to get an order INTO that queue.
-export async function createLocalOrder({ companyId, customer = {}, shippingAddress = {}, lineItems = [], isCOD = true, note = "" }) {
+//
+// isDraft:true relaxes the address requirement below (a draft is explicitly
+// scratch space for an order that's still being put together — the PIN code
+// might not be known yet) and tags the order number #DR- instead of #LC- so
+// it reads as unmistakably provisional. Line items are still required either
+// way; an order with nothing in it isn't useful even as a draft.
+export async function createLocalOrder({ companyId, customer = {}, shippingAddress = {}, lineItems = [], isCOD = true, note = "", isDraft = false }) {
   const cleanItems = (lineItems || [])
     .filter((item) => item && item.title)
     .map((item) => ({
@@ -524,7 +530,7 @@ export async function createLocalOrder({ companyId, customer = {}, shippingAddre
     }));
 
   if (!cleanItems.length) return { error: "At least one line item is required" };
-  if (!shippingAddress.zip) return { error: "Shipping address PIN code is required" };
+  if (!isDraft && !shippingAddress.zip) return { error: "Shipping address PIN code is required" };
 
   const totalPrice = cleanItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
   const externalId = `local-${id()}`;
@@ -536,7 +542,7 @@ export async function createLocalOrder({ companyId, customer = {}, shippingAddre
     provider: "local",
     shop: "local",
     externalId,
-    name: `#LC-${shortCode}`,
+    name: `${isDraft ? "#DR" : "#LC"}-${shortCode}`,
     email: customer.email || "",
     phone: customer.phone || shippingAddress.phone || "",
     customerName: customer.name || shippingAddress.name || "Customer",
@@ -548,6 +554,7 @@ export async function createLocalOrder({ companyId, customer = {}, shippingAddre
     subtotalPrice: totalPrice,
     isCOD,
     codAmount: isCOD ? totalPrice : 0,
+    isDraft,
     shippingAddress: {
       name: shippingAddress.name || customer.name || "",
       address1: shippingAddress.address1 || "",
@@ -562,7 +569,7 @@ export async function createLocalOrder({ companyId, customer = {}, shippingAddre
     omsStatus: "pending",
     shopifyCreatedAt: new Date(),
     raw: { manualCreate: true },
-    tags: ["local-order"],
+    tags: [isDraft ? "draft-order" : "local-order"],
   };
 
   if (isMongoConnected()) {
@@ -573,6 +580,88 @@ export async function createLocalOrder({ companyId, customer = {}, shippingAddre
   const stored = { _id: id(), ...orderDoc, createdAt: now(), updatedAt: now() };
   memory.orders.set(`${companyId}:local:${externalId}`, stored);
   return { order: clone(stored) };
+}
+
+// Full edit of a draft order's own content (line items, address, note,
+// isCOD) — distinct from updateOrderManualAdjustments (which only ever
+// layers a discount/extra-charge on top of a committed total): a draft
+// hasn't been placed anywhere yet, so its actual contents are still meant
+// to change freely up until it's finalized. Only ever allowed while
+// isDraft is still true — once finalized the real Shopify order is the
+// source of truth and this draft row no longer exists.
+export async function updateDraftOrder({ companyId, orderId, customer, shippingAddress, lineItems, isCOD, note }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) return null;
+  if (!order.isDraft) return { error: "This order is no longer a draft" };
+
+  const update = {};
+  if (lineItems) {
+    const cleanItems = lineItems
+      .filter((item) => item && item.title)
+      .map((item) => ({
+        title: String(item.title).trim(),
+        sku: item.sku || "",
+        quantity: Math.max(1, Number(item.quantity) || 1),
+        price: Math.max(0, Number(item.price) || 0),
+        grams: Number(item.grams) || 0,
+        requiresShipping: item.requiresShipping !== false,
+      }));
+    if (!cleanItems.length) return { error: "At least one line item is required" };
+    update.lineItems = cleanItems;
+    const totalPrice = cleanItems.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    update.totalPrice = totalPrice;
+    update.subtotalPrice = totalPrice;
+  }
+  if (shippingAddress) {
+    update.shippingAddress = {
+      name: shippingAddress.name || order.shippingAddress?.name || "",
+      address1: shippingAddress.address1 || "",
+      address2: shippingAddress.address2 || "",
+      city: shippingAddress.city || "",
+      province: shippingAddress.province || "",
+      country: shippingAddress.country || "India",
+      zip: String(shippingAddress.zip || ""),
+      phone: shippingAddress.phone || order.shippingAddress?.phone || "",
+    };
+  }
+  if (customer) {
+    if (customer.name) update.customerName = customer.name;
+    if (customer.email !== undefined) update.email = customer.email;
+    if (customer.phone !== undefined) update.phone = customer.phone;
+  }
+  if (isCOD !== undefined) {
+    const total = update.totalPrice !== undefined ? update.totalPrice : toNumber(order.totalPrice);
+    update.isCOD = Boolean(isCOD);
+    update.codAmount = update.isCOD ? total : 0;
+    update.financialStatus = update.isCOD ? "pending" : "paid";
+  }
+  if (note !== undefined) update.note = note;
+
+  const updated = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
+  return updated ? finalizeOrder(updated) : null;
+}
+
+// Permanently removes a draft order — used once a draft has been finalized
+// (superseded by the real, now-synced Shopify order) or when the seller
+// just wants to discard one that never went anywhere. Refuses to touch
+// anything that isn't a draft, so this can never be used to delete a real
+// order's history.
+export async function deleteDraftOrder({ companyId, orderId }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) return { error: "Order not found" };
+  if (!order.isDraft) return { error: "Only draft orders can be deleted this way" };
+
+  if (isMongoConnected()) {
+    await SyncedOrder.deleteOne({ _id: order._id, companyId });
+  } else {
+    for (const [key, o] of memory.orders.entries()) {
+      if (String(o.companyId) === String(companyId) && String(o._id) === String(order._id)) {
+        memory.orders.delete(key);
+        break;
+      }
+    }
+  }
+  return { success: true };
 }
 
 export async function updateOrderOmsStatus({ companyId, shopifyOrderId, update }) {
@@ -846,6 +935,9 @@ export async function listPendingOrders(companyId, { page = 1, limit = 100 } = {
       cancelledAt: null,
       // Exclude orders that Shopify already marked as fulfilled (e.g. fulfilled via another channel or Shopify admin)
       fulfillmentStatus: { $nin: ["fulfilled", "partial"] },
+      // Drafts aren't committed orders yet (never synced to Shopify) — they
+      // don't belong in the "ready to ship" queue until finalized.
+      isDraft: { $ne: true },
     })
       .sort({ shopifyCreatedAt: -1 })
       .skip((page - 1) * limit)
@@ -859,7 +951,8 @@ export async function listPendingOrders(companyId, { page = 1, limit = 100 } = {
         String(o.companyId) === String(companyId) &&
         ["pending", "awaiting_shipment"].includes(o.omsStatus) &&
         !o.cancelledAt &&
-        !["fulfilled", "partial"].includes(o.fulfillmentStatus),
+        !["fulfilled", "partial"].includes(o.fulfillmentStatus) &&
+        !o.isDraft,
       )
       .sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0)),
   );
@@ -1065,7 +1158,7 @@ export async function getDashboardSummary(companyId, { period } = {}) {
   const monthlySales = revenueOrders
     .filter((order) => order.shopifyCreatedAt && new Date(order.shopifyCreatedAt) >= monthStart)
     .reduce((total, order) => total + toNumber(order.totalPrice), 0);
-  const pendingOrders = orders.filter((order) => order.fulfillmentStatus === "unfulfilled" && !order.cancelledAt).length;
+  const pendingOrders = orders.filter((order) => order.fulfillmentStatus === "unfulfilled" && !order.cancelledAt && !order.isDraft).length;
   const cancelledOrders = orders.filter((order) => order.cancelledAt || order.financialStatus === "voided").length;
   const deliveredOrders = orders.filter((order) => order.fulfillmentStatus === "fulfilled").length;
   const lowStockProducts = products.filter((product) => toNumber(product.totalInventory) <= 5).length;
@@ -1261,7 +1354,10 @@ export function isRevenueOrder(order) {
   return !order.cancelledAt
     && order.financialStatus !== "voided"
     && order.financialStatus !== "refunded"
-    && !order.isRTO;
+    && !order.isRTO
+    // A draft isn't a committed sale — it's never even reached Shopify —
+    // so it can't count toward revenue until it's finalized.
+    && !order.isDraft;
 }
 
 // Same historical/manually-imported fallback labels as channelReport() in
@@ -1448,15 +1544,33 @@ export async function updateOrderShippingCost({ companyId, orderId, shippingCost
 // extra discount" / "add a packaging/handling charge" case, not tied to
 // Amazon's per-order shipping fee specifically. Stored separately from
 // totalPrice (see applyManualAdjustments) so it survives future re-syncs.
-export async function updateOrderManualAdjustments({ companyId, orderId, discount, extraCharge, note }) {
+//
+// isCOD is optional and edited in the same form — correcting the payment
+// mode (a wrongly COD-tagged order, or one placed COD that later paid
+// online) usually comes with a matching cost change, e.g. adding/removing
+// a COD handling charge. It's our own OMS-owned annotation: for a
+// Shopify-synced order this never touches Shopify's own financialStatus
+// (that stays exactly what Shopify reports) — it only corrects what our
+// own COD/Prepaid filters and codAmount read. codAmount is recomputed off
+// the adjusted total (post discount/extra-charge), since that's what the
+// customer actually owes on delivery.
+export async function updateOrderManualAdjustments({ companyId, orderId, discount, extraCharge, note, isCOD }) {
   const order = await getOrderById({ companyId, orderId });
   if (!order) return null;
 
+  const manualDiscount = Math.max(0, toNumber(discount));
+  const manualExtraCharge = Math.max(0, toNumber(extraCharge));
   const update = {
-    manualDiscount: Math.max(0, toNumber(discount)),
-    manualExtraCharge: Math.max(0, toNumber(extraCharge)),
+    manualDiscount,
+    manualExtraCharge,
     manualAdjustmentNote: String(note || "").slice(0, 500),
   };
+
+  if (isCOD !== undefined) {
+    const adjustedTotal = Math.max(0, toNumber(order.totalPrice) - manualDiscount + manualExtraCharge);
+    update.isCOD = Boolean(isCOD);
+    update.codAmount = update.isCOD ? adjustedTotal : 0;
+  }
 
   const updated = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
   return updated ? finalizeOrder(updated) : null;

@@ -111,6 +111,7 @@ financeRoutes.patch(
       discount: req.body?.discount,
       extraCharge: req.body?.extraCharge,
       note: req.body?.note,
+      isCOD: req.body?.isCOD,
     });
     if (!result) throw new HttpError(404, "Order not found");
     res.json({ message: "Order adjustments updated", order: result });

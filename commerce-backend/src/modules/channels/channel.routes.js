@@ -14,6 +14,8 @@ import {
   saveProductMapping,
   getSavedCommerceData,
   getDashboardSummary,
+  getOrderById,
+  deleteDraftOrder,
 } from "../../repositories/order.repo.js";
 import { updateAmazonConfig, updateShopifyConfig } from "../../repositories/company.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
@@ -311,6 +313,83 @@ channelRoutes.post(
 
     res.json({
       message: "Order created on Shopify and added to fulfillment queue",
+      shopifyOrderId: shopifyOrder.id,
+      shopifyOrderName: shopifyOrder.name,
+      savedOrder,
+    });
+  }),
+);
+
+// Push a draft order (see synced-order.model.js's isDraft) for real onto
+// Shopify — the only thing that ever turns a draft into an actual order.
+// Resolves an existing customer by phone/email first so repeat drafts for
+// the same person don't create duplicate Shopify customers; only creates a
+// new one when nothing matches. Requires a connected Shopify channel with
+// write scopes, same as every other direct-create flow in this file — a
+// draft can be saved with no store connected at all, but finalizing it
+// can't skip that requirement, since there's nowhere to sync it to.
+channelRoutes.post(
+  "/orders/:orderId/finalize-draft",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { companyId, sub: userId } = req.auth;
+    const { orderId } = req.params;
+
+    const draft = await getOrderById({ companyId, orderId });
+    if (!draft) throw new HttpError(404, "Order not found");
+    if (!draft.isDraft) throw new HttpError(400, "This order is not a draft");
+    if (!draft.lineItems?.length) throw new HttpError(400, "Draft has no line items");
+    if (!draft.shippingAddress?.zip) throw new HttpError(400, "Add a shipping address with a PIN code before finalizing");
+
+    let customer = null;
+    if (isMongoConnected() && (draft.phone || draft.email)) {
+      customer = await SyncedCustomer.findOne({
+        companyId,
+        $or: [
+          ...(draft.phone ? [{ phone: draft.phone }] : []),
+          ...(draft.email ? [{ email: draft.email }] : []),
+        ],
+      }).lean();
+    }
+
+    if (!customer) {
+      const [firstName, ...rest] = String(draft.customerName || "Customer").trim().split(/\s+/);
+      const created = await createShopifyCustomerDirect({
+        companyId,
+        userId,
+        firstName,
+        lastName: rest.join(" "),
+        email: draft.email || undefined,
+        phone: draft.phone || undefined,
+        address: draft.shippingAddress,
+      });
+      customer = created.customer;
+    }
+
+    const { order: shopifyOrder, channel } = await createShopifyOrderDirect({
+      companyId,
+      customerId: customer._id || customer.id,
+      lineItems: draft.lineItems,
+      shippingAddress: draft.shippingAddress,
+      note: draft.note,
+      tags: draft.isCOD ? "COD, Draft-Finalized" : "Prepaid, Draft-Finalized",
+      isCOD: draft.isCOD,
+    });
+
+    const savedOrder = await upsertSingleOrder({
+      companyId,
+      channelId: channel._id,
+      provider: "shopify",
+      shop: channel.shop,
+      order: shopifyOrder,
+    });
+
+    // The draft's job is done — delete it so it doesn't sit alongside its
+    // now-real Shopify counterpart as a duplicate in the Orders list.
+    await deleteDraftOrder({ companyId, orderId: draft._id });
+
+    res.json({
+      message: `Draft synced to Shopify as ${shopifyOrder.name}`,
       shopifyOrderId: shopifyOrder.id,
       shopifyOrderName: shopifyOrder.name,
       savedOrder,

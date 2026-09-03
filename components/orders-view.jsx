@@ -12,6 +12,7 @@ import {
   Clock,
   CreditCard,
   ExternalLink,
+  FileEdit,
   FileText,
   Info,
   Loader2,
@@ -26,7 +27,9 @@ import {
   Search,
   ShoppingBag,
   Tag,
+  Trash2,
   Truck,
+  UploadCloud,
   User,
   X,
   XCircle,
@@ -35,7 +38,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { listAllOrders, getCompanyProfile, updateOrderAdjustments, updateOrderConfirmation, updateOrderFulfillmentAssignment, sendOrderInvoiceWhatsApp } from "@/lib/api";
+import { DraftOrderModal } from "@/components/draft-order-modal";
+import { listAllOrders, getCompanyProfile, updateOrderAdjustments, updateOrderConfirmation, updateOrderFulfillmentAssignment, sendOrderInvoiceWhatsApp, finalizeDraftOrder, discardDraftOrder } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -73,6 +77,7 @@ function paymentTone(status) {
 // always comes from the server, never recomputed here, so the two can
 // never drift.
 const STAGE_META = {
+  draft:                  { label: "Draft",                tone: "teal",   icon: FileEdit },
   created:               { label: "Order Created",        tone: "slate",  icon: ClipboardList },
   confirmed:              { label: "Confirmed",            tone: "blue",   icon: CheckCircle2 },
   declined:               { label: "Declined",             tone: "rose",   icon: XCircle },
@@ -385,11 +390,12 @@ function TimelineStep({ label, sublabel, date, done, tone = "slate" }) {
 
 // ─── Order Detail Modal ───────────────────────────────────────────────────────
 
-function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenerateInvoice, onOrderUpdated }) {
+function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenerateInvoice, onOrderUpdated, onFinalizeDraft, onDiscardDraft, draftActionId }) {
   const [editingAdjustments, setEditingAdjustments] = useState(false);
   const [discountInput, setDiscountInput] = useState("");
   const [extraChargeInput, setExtraChargeInput] = useState("");
   const [noteInput, setNoteInput] = useState("");
+  const [isCODInput, setIsCODInput] = useState(true);
   const [savingAdjustments, setSavingAdjustments] = useState(false);
   const [adjustmentError, setAdjustmentError] = useState("");
 
@@ -404,10 +410,14 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
     setDiscountInput(String(order.manualDiscount || ""));
     setExtraChargeInput(String(order.manualExtraCharge || ""));
     setNoteInput(order.manualAdjustmentNote || "");
+    setIsCODInput(Boolean(order.isCOD));
     setAdjustmentError("");
     setEditingAdjustments(true);
   }
 
+  // Payment mode + discount/extra-charge are edited together — a wrongly
+  // COD-tagged order and its COD handling charge usually get fixed in the
+  // same motion, so one form covers both instead of two separate edits.
   async function saveAdjustments() {
     setSavingAdjustments(true);
     setAdjustmentError("");
@@ -416,6 +426,7 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
         discount: Number(discountInput) || 0,
         extraCharge: Number(extraChargeInput) || 0,
         note: noteInput,
+        isCOD: isCODInput,
       });
       onOrderUpdated?.(res.order);
       setEditingAdjustments(false);
@@ -556,6 +567,10 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                   <p className="mt-0.5 font-semibold text-slate-700">{order.financialStatus || "—"}</p>
                 </div>
                 <div>
+                  <p className="text-[11px] font-semibold uppercase text-slate-500">Payment Mode</p>
+                  <Badge tone={order.isCOD ? "amber" : "green"}>{order.isCOD ? "COD" : "Prepaid"}</Badge>
+                </div>
+                <div>
                   <p className="text-[11px] font-semibold uppercase text-slate-500">Payment Method</p>
                   <p className="mt-0.5 font-medium text-slate-700 capitalize">{order.paymentGateway || order.payment_gateway || "—"}</p>
                 </div>
@@ -577,9 +592,14 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                 )}
               </div>
 
-              {/* Manual discount / extra charge — layered on top of the
-                  synced total, never overwrites it (see applyManualAdjustments
-                  in order.repo.js), so it survives future re-syncs. */}
+              {/* Payment mode + manual discount/extra charge — edited
+                  together since a corrected payment mode (e.g. wrongly
+                  tagged COD) usually comes with a matching cost change
+                  (removing/adding a COD handling fee). The cost side is
+                  layered on top of the synced total, never overwrites it
+                  (see applyManualAdjustments in order.repo.js), so it
+                  survives future re-syncs. isCOD is our own OMS annotation
+                  — this never rewrites Shopify's own financialStatus. */}
               <div className="mt-3 border-t border-[var(--line)] pt-3">
                 {!editingAdjustments ? (
                   <div className="flex items-center justify-between">
@@ -598,11 +618,26 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                       className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-indigo-700 hover:bg-indigo-50"
                     >
                       <Pencil size={12} />
-                      {hasAdjustment ? "Edit" : "Add discount / charge"}
+                      Edit payment & pricing
                     </button>
                   </div>
                 ) : (
                   <div className="space-y-2">
+                    <div>
+                      <span className="text-[11px] font-semibold uppercase text-slate-500">Payment Mode</span>
+                      <div className="mt-1 flex gap-2">
+                        {[["COD", true], ["Prepaid", false]].map(([label, val]) => (
+                          <button
+                            key={label}
+                            type="button"
+                            onClick={() => setIsCODInput(val)}
+                            className={`flex-1 rounded-md border py-1.5 text-xs font-semibold transition ${isCODInput === val ? "border-indigo-700 bg-indigo-700 text-white" : "border-[var(--line)] text-slate-600 hover:bg-slate-50"}`}
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       <label className="block">
                         <span className="text-[11px] font-semibold uppercase text-slate-500">Discount (₹)</span>
@@ -843,11 +878,33 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-[var(--line)] px-4 py-3 bg-slate-50">
           <p className="text-xs text-slate-400">
-            Shopify ID: {order.externalId || "—"}
+            {order.stage === "draft" ? "Draft — not yet on Shopify" : `Shopify ID: ${order.externalId || "—"}`}
           </p>
-          <button onClick={onClose} className="h-8 rounded-lg border border-[var(--line)] bg-white px-4 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition">
-            Close
-          </button>
+          <div className="flex items-center gap-2">
+            {order.stage === "draft" && (
+              <>
+                <button
+                  onClick={() => onDiscardDraft?.(order)}
+                  disabled={draftActionId === (order.externalId || order._id || order.id)}
+                  className="flex h-8 items-center gap-1.5 rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                >
+                  <Trash2 size={13} />
+                  Discard
+                </button>
+                <button
+                  onClick={() => onFinalizeDraft?.(order)}
+                  disabled={draftActionId === (order.externalId || order._id || order.id)}
+                  className="flex h-8 items-center gap-1.5 rounded-lg bg-indigo-700 px-3 text-xs font-semibold text-white transition hover:bg-indigo-800 disabled:opacity-50"
+                >
+                  {draftActionId === (order.externalId || order._id || order.id) ? <Loader2 size={13} className="animate-spin" /> : <UploadCloud size={13} />}
+                  Finalize & Sync to Shopify
+                </button>
+              </>
+            )}
+            <button onClick={onClose} className="h-8 rounded-lg border border-[var(--line)] bg-white px-4 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition">
+              Close
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -871,6 +928,9 @@ export function OrdersView() {
   const [assigningId, setAssigningId] = useState("");
   const [sendingInvoiceId, setSendingInvoiceId] = useState("");
   const [invoiceSendError, setInvoiceSendError] = useState("");
+  const [showDraftModal, setShowDraftModal] = useState(false);
+  const [draftActionId, setDraftActionId] = useState("");
+  const [draftNotice, setDraftNotice] = useState("");
 
   useEffect(() => {
     getCompanyProfile().then((res) => setCompany(res.company)).catch(() => { });
@@ -908,6 +968,44 @@ export function OrdersView() {
       setError(err.message);
     } finally {
       setAssigningId("");
+    }
+  }
+
+  // Pushes a draft for real onto Shopify — unlike every other row action,
+  // this doesn't just patch the row in place: the draft row is deleted
+  // server-side and a brand new Shopify-synced order takes its place, so a
+  // full reload is the simplest correct way to reflect that (an optimistic
+  // merge would either keep the dead draft or fabricate the new order's id).
+  async function handleFinalizeDraft(order) {
+    const key = orderKey(order);
+    setDraftActionId(key);
+    setError("");
+    setDraftNotice("");
+    try {
+      const res = await finalizeDraftOrder(order._id || order.id || order.externalId);
+      if (selectedOrder && orderKey(selectedOrder) === key) setSelectedOrder(null);
+      await loadOrders();
+      setDraftNotice(res.message);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDraftActionId("");
+    }
+  }
+
+  async function handleDiscardDraft(order) {
+    if (!window.confirm(`Discard draft ${order.name}? This can't be undone.`)) return;
+    const key = orderKey(order);
+    setDraftActionId(key);
+    setError("");
+    try {
+      await discardDraftOrder(order._id || order.id || order.externalId);
+      setOrders((prev) => prev.filter((o) => orderKey(o) !== key));
+      if (selectedOrder && orderKey(selectedOrder) === key) setSelectedOrder(null);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDraftActionId("");
     }
   }
 
@@ -964,6 +1062,7 @@ export function OrdersView() {
   const filtered = useMemo(() => {
     return orders.filter((o) => {
       if (filterStatus !== "all") {
+        if (filterStatus === "draft" && o.stage !== "draft") return false;
         if (filterStatus === "to_ship" && !OPEN_STAGES.includes(o.stage)) return false;
         if (filterStatus === "shipped" && o.stage !== "shipped") return false;
         if (filterStatus === "not_proceeding" && !["declined", "cancelled", "returned", "refunded"].includes(o.stage)) return false;
@@ -1000,6 +1099,7 @@ export function OrdersView() {
   // same regardless of what Shopify itself shows.
   const counts = useMemo(() => ({
     total: orders.length,
+    drafts: orders.filter((o) => o.stage === "draft").length,
     toShip: orders.filter((o) => OPEN_STAGES.includes(o.stage)).length,
     shipped: orders.filter((o) => o.stage === "shipped").length,
     notProceeding: orders.filter((o) => ["declined", "cancelled", "returned", "refunded"].includes(o.stage)).length,
@@ -1035,10 +1135,16 @@ export function OrdersView() {
             {counts.total} total · {counts.toShip} to ship · {counts.shipped} shipped
           </p>
         </div>
-        <Button variant="secondary" onClick={loadOrders} disabled={isLoading}>
-          <RefreshCcw size={15} className={isLoading ? "animate-spin" : ""} />
-          Refresh
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={() => setShowDraftModal(true)}>
+            <FileEdit size={15} />
+            Create Draft Order
+          </Button>
+          <Button variant="secondary" onClick={loadOrders} disabled={isLoading}>
+            <RefreshCcw size={15} className={isLoading ? "animate-spin" : ""} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
@@ -1071,6 +1177,7 @@ export function OrdersView() {
             <div className="flex rounded-lg border border-slate-200 bg-white shadow-xs overflow-hidden">
               {[
                 { key: "all", label: `All (${counts.total})` },
+                ...(counts.drafts > 0 ? [{ key: "draft", label: `Drafts (${counts.drafts})` }] : []),
                 { key: "to_ship", label: `To Ship (${counts.toShip})` },
                 { key: "shipped", label: `Shipped (${counts.shipped})` },
                 { key: "not_proceeding", label: `Cancelled/Returns (${counts.notProceeding})` },
@@ -1110,6 +1217,15 @@ export function OrdersView() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Draft finalized notice */}
+      {draftNotice && (
+        <div className="mb-5 flex items-center gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-medium text-emerald-700">
+          <CheckCircle2 size={17} />
+          {draftNotice}
+          <button onClick={() => setDraftNotice("")} className="ml-auto text-emerald-500 hover:text-emerald-700"><X size={14} /></button>
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -1265,6 +1381,27 @@ export function OrdersView() {
                               {assigningId === orderKey(order) ? <Loader2 size={9} className="animate-spin" /> : <X size={9} />}
                             </button>
                           )}
+                          {order.stage === "draft" && (
+                            <>
+                              <button
+                                onClick={() => handleFinalizeDraft(order)}
+                                disabled={draftActionId === orderKey(order)}
+                                title="Push this draft to Shopify for real"
+                                className="mt-0.5 inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-indigo-200 bg-white px-1.5 text-[9px] font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+                              >
+                                {draftActionId === orderKey(order) ? <Loader2 size={9} className="animate-spin" /> : <UploadCloud size={9} />}
+                                Finalize
+                              </button>
+                              <button
+                                onClick={() => handleDiscardDraft(order)}
+                                disabled={draftActionId === orderKey(order)}
+                                title="Discard this draft"
+                                className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-rose-200 bg-white text-rose-500 transition hover:bg-rose-50 disabled:opacity-50"
+                              >
+                                <Trash2 size={9} />
+                              </button>
+                            </>
+                          )}
                         </div>
                       </td>
                       <td className="px-4 py-3">
@@ -1331,12 +1468,23 @@ export function OrdersView() {
             setSelectedOrder(updated);
             setOrders((prev) => prev.map((o) => ((o._id || o.id) === (updated._id || updated.id) ? { ...o, ...updated } : o)));
           }}
+          onFinalizeDraft={handleFinalizeDraft}
+          onDiscardDraft={handleDiscardDraft}
+          draftActionId={draftActionId}
         />
       )}
 
       {/* Tax invoice */}
       {invoiceOrder && (
         <InvoiceModal order={invoiceOrder} company={company} onClose={() => setInvoiceOrder(null)} />
+      )}
+
+      {/* Create draft order */}
+      {showDraftModal && (
+        <DraftOrderModal
+          onClose={() => setShowDraftModal(false)}
+          onDraftCreated={() => { setShowDraftModal(false); loadOrders(); }}
+        />
       )}
     </div>
   );

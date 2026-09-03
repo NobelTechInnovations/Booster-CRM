@@ -70,6 +70,15 @@ const syncedOrderSchema = new mongoose.Schema(
     confirmationStatus: { type: String, enum: ["pending", "confirmed", "declined"], default: "pending", index: true },
     confirmedAt:         Date,
 
+    // A draft is created entirely in-panel (provider "local") and is never
+    // pushed to Shopify — freely editable scratch space for an order that
+    // isn't final yet. "Finalize" (finalizeDraftOrder in shopify.service.js)
+    // is the only thing that turns it into a real order: it creates the
+    // actual order on Shopify and this draft row is deleted once that
+    // succeeds, so isDraft:true rows never linger as duplicates of a real
+    // synced order. Never true for provider !== "local".
+    isDraft: { type: Boolean, default: false, index: true },
+
     // COD detection
     isCOD:     { type: Boolean, default: false },
     codAmount:  { type: Number, default: 0 },

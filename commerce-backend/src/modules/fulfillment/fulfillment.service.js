@@ -1,4 +1,4 @@
-import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus, createLocalOrder } from "../../repositories/order.repo.js";
+import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus, createLocalOrder, updateDraftOrder, deleteDraftOrder } from "../../repositories/order.repo.js";
 import { getWarehouseByExternalId, listWarehouses } from "../../repositories/warehouse.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
@@ -50,10 +50,28 @@ export async function getFulfilledOrders(companyId, { page = 1, limit = 200 } = 
  * here on it's shipped exactly the way any other order is — via shipOrder()
  * below, same Ship Order flow, same providers, same everything.
  */
-export async function createManualOrder({ companyId, customer, shippingAddress, lineItems, isCOD, note }) {
-  const result = await createLocalOrder({ companyId, customer, shippingAddress, lineItems, isCOD, note });
+export async function createManualOrder({ companyId, customer, shippingAddress, lineItems, isCOD, note, isDraft }) {
+  const result = await createLocalOrder({ companyId, customer, shippingAddress, lineItems, isCOD, note, isDraft });
   if (result.error) throw new HttpError(400, result.error);
   return result.order;
+}
+
+// Edit a draft's own contents (items/address/payment mode/note) — see
+// updateDraftOrder's own comment in order.repo.js for why this is separate
+// from the manual-adjustments discount/extra-charge editor.
+export async function editDraftOrder({ companyId, orderId, customer, shippingAddress, lineItems, isCOD, note }) {
+  const result = await updateDraftOrder({ companyId, orderId, customer, shippingAddress, lineItems, isCOD, note });
+  if (!result) throw new HttpError(404, "Order not found");
+  if (result.error) throw new HttpError(400, result.error);
+  return result;
+}
+
+// Discard a draft that never went anywhere — permanent, but only ever
+// touches orders still flagged isDraft (see deleteDraftOrder's own guard).
+export async function discardDraftOrder({ companyId, orderId }) {
+  const result = await deleteDraftOrder({ companyId, orderId });
+  if (result.error) throw new HttpError(400, result.error);
+  return result;
 }
 
 /**
