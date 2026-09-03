@@ -26,9 +26,19 @@ export const env = {
   shopify: {
     apiKey: process.env.SHOPIFY_API_KEY || "",
     apiSecret: process.env.SHOPIFY_API_SECRET || "",
+    // read/write_merchant_managed_fulfillment_orders are required by the
+    // modern Fulfillment Orders API (GET .../fulfillment_orders.json,
+    // POST /fulfillments.json) that pushTrackingToShopify/markShopifyOrderFulfilled
+    // use — write_orders alone is NOT enough for those two calls specifically,
+    // Shopify returns a 403 "api_client does not have the required
+    // permission(s)" without them. A channel connected before this scope was
+    // added needs to be disconnected and reconnected for the new permission
+    // to actually apply (existing OAuth grants don't gain new scopes on their
+    // own — see the check in markShopifyOrderFulfilled for the clear error
+    // this produces on a stale connection instead of Shopify's raw 403).
     scopes:
       process.env.SHOPIFY_SCOPES ||
-      "read_products,write_products,read_orders,write_orders,read_inventory,read_customers,write_customers",
+      "read_products,write_products,read_orders,write_orders,read_inventory,read_customers,write_customers,read_merchant_managed_fulfillment_orders,write_merchant_managed_fulfillment_orders",
     appUrl: process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
     apiVersion: process.env.SHOPIFY_API_VERSION || "2026-01",
     installUrl: process.env.SHOPIFY_APP_INSTALL_URL || "",

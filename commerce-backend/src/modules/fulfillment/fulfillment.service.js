@@ -532,6 +532,18 @@ export async function markShopifyOrderFulfilled({ shop, shopifyOrderId, awbCode,
     throw new Error(`No connected Shopify channel with a valid access token for ${shop}`);
   }
 
+  // The Fulfillment Orders API (both calls below) needs these two scopes
+  // specifically — write_orders is NOT enough, Shopify returns a bare 403
+  // "api_client does not have the required permission(s)" with no
+  // indication of which scope is missing. Checking up front turns that
+  // into an actionable message instead. A channel connected before this
+  // scope existed won't have it even if SHOPIFY_SCOPES now requests it —
+  // OAuth grants don't gain new scopes on their own, so it has to be
+  // disconnected and reconnected once for Shopify to re-prompt for it.
+  if (!channel.scopes?.includes("write_merchant_managed_fulfillment_orders")) {
+    throw new Error(`Shopify token is missing write_merchant_managed_fulfillment_orders — disconnect and reconnect the ${shop} Shopify channel to grant this permission, then try again.`);
+  }
+
   const accessToken = channel.credentials.accessToken;
 
   // 1. Fetch fulfillment orders for this order

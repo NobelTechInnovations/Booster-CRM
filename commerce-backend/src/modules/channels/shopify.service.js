@@ -482,8 +482,17 @@ export async function createShopifyOrderDirect({ companyId, customerId, lineItem
     send_fulfillment_receipt: true,
     financial_status: isCOD ? "pending" : "paid",
     // Shipping line — Shopify requires this to show shipping on the order.
+    // Title matches this store's own real checkout naming ("Standard
+    // (Prepaid)" / "Standard (COD)") based on payment mode, instead of a
+    // generic "Shipping" — Shopify's order list otherwise shows orders
+    // placed through the panel with a visibly different, unlabeled
+    // delivery method next to organically-placed orders.
     ...(shippingCost > 0 ? {
-      shipping_lines: [{ price: String(shippingCost), code: "Shipping", title: "Shipping" }],
+      shipping_lines: [{
+        price: String(shippingCost),
+        code: isCOD ? "Standard (COD)" : "Standard (Prepaid)",
+        title: isCOD ? "Standard (COD)" : "Standard (Prepaid)",
+      }],
     } : {}),
     // Discount code or manual discount — Shopify applies as a fixed amount.
     ...(discount > 0 ? {
