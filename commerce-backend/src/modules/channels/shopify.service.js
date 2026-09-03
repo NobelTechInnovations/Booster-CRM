@@ -403,7 +403,7 @@ export async function updateShopifyRecord({ companyId, resource, recordId, paylo
  * Create a new order directly on Shopify using the provided line items, customer, and shipping address.
  * Returns the newly created Shopify order object.
  */
-export async function createShopifyOrderDirect({ companyId, customerId, lineItems, shippingAddress, note, tags, isCOD, shippingCost = 0, discount = 0 }) {
+export async function createShopifyOrderDirect({ companyId, customerId, lineItems, shippingAddress, billingAddress, note, tags, isCOD, shippingCost = 0, discount = 0 }) {
   const context = await getCommerceRecordForUpdate({ companyId, resource: "customers", recordId: customerId });
 
   if (!context) {
@@ -450,22 +450,32 @@ export async function createShopifyOrderDirect({ companyId, customerId, lineItem
         phone: customer.phone || undefined,
       });
 
+  // Shopify order creation only ever sent shipping_address — billing_address
+  // was never included at all, which left every order created this way with
+  // no billing address on Shopify's side. Sellers almost never collect a
+  // separate billing address for a D2C order, so when none is given here,
+  // billing mirrors shipping — but both fields are always sent, never just
+  // one, so Shopify's own order record (and anything downstream that reads
+  // billing_address, e.g. invoicing apps) has a real value either way.
+  const addressToShopifyPayload = (addr) => addr
+    ? pickDefined({
+        first_name: addr.firstName || customer.firstName || undefined,
+        last_name: addr.lastName || customer.lastName || undefined,
+        address1: addr.address1 || undefined,
+        address2: addr.address2 || undefined,
+        city: addr.city || undefined,
+        province: addr.province || undefined,
+        country: addr.country || "India",
+        zip: addr.zip || undefined,
+        phone: addr.phone || customer.phone || undefined,
+      })
+    : undefined;
+
   const orderPayloadBody = pickDefined({
     customer: Object.keys(customerPayloadObj).length ? customerPayloadObj : undefined,
     line_items: shopifyLineItems,
-    shipping_address: shippingAddress
-      ? pickDefined({
-          first_name: shippingAddress.firstName || customer.firstName || undefined,
-          last_name: shippingAddress.lastName || customer.lastName || undefined,
-          address1: shippingAddress.address1 || undefined,
-          address2: shippingAddress.address2 || undefined,
-          city: shippingAddress.city || undefined,
-          province: shippingAddress.province || undefined,
-          country: shippingAddress.country || "India",
-          zip: shippingAddress.zip || undefined,
-          phone: shippingAddress.phone || customer.phone || undefined,
-        })
-      : undefined,
+    shipping_address: addressToShopifyPayload(shippingAddress),
+    billing_address: addressToShopifyPayload(billingAddress || shippingAddress),
     note: note || undefined,
     tags: tags || undefined,
     send_receipt: true,

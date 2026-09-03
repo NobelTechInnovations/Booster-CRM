@@ -276,7 +276,7 @@ channelRoutes.post(
   asyncHandler(async (req, res) => {
     const { companyId } = req.auth;
     const { customerId } = req.params;
-    const { lineItems = [], shippingAddress, note, tags, isCOD = true, shippingCost, discount } = req.body || {};
+    const { lineItems = [], shippingAddress, billingAddress, note, tags, isCOD = true, shippingCost, discount } = req.body || {};
 
     if (!lineItems.length) {
       throw new HttpError(400, "At least one line item is required");
@@ -287,6 +287,11 @@ channelRoutes.post(
       customerId,
       lineItems,
       shippingAddress,
+      // No separate billing address field exists in the Create Order UI
+      // today — createShopifyOrderDirect itself falls back to
+      // shippingAddress when this is undefined, so billing_address is
+      // still always sent to Shopify either way.
+      billingAddress,
       note,
       tags,
       isCOD,
@@ -371,6 +376,9 @@ channelRoutes.post(
       customerId: customer._id || customer.id,
       lineItems: draft.lineItems,
       shippingAddress: draft.shippingAddress,
+      // Drafts don't collect a separate billing address — createShopifyOrderDirect
+      // falls back to shippingAddress for billing_address, so Shopify still
+      // gets both fields populated.
       note: draft.note,
       tags: draft.isCOD ? "COD, Draft-Finalized" : "Prepaid, Draft-Finalized",
       isCOD: draft.isCOD,
