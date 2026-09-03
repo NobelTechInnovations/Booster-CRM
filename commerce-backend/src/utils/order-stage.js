@@ -17,6 +17,7 @@ export const ORDER_STAGES = [
   { key: "declined", label: "Declined" },
   { key: "fulfillment_assigned", label: "Fulfillment Assigned" },
   { key: "shipped", label: "Shipped" },
+  { key: "delivered", label: "Delivered" },
   { key: "returned", label: "Returned" },
   { key: "refunded", label: "Refunded" },
   { key: "cancelled", label: "Cancelled" },
@@ -42,7 +43,10 @@ export function computeOrderStage(order) {
   if (order.financialStatus === "refunded" || order.financialStatus === "partially_refunded") {
     return "refunded";
   }
-  if (order.omsStatus === "shipped" || order.omsStatus === "delivered") {
+  if (order.omsStatus === "delivered") {
+    return "delivered";
+  }
+  if (order.omsStatus === "shipped") {
     return "shipped";
   }
   if (order.omsStatus === "processing" || order.omsStatus === "awaiting_shipment") {

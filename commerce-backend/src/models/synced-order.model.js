@@ -131,11 +131,18 @@ const syncedOrderSchema = new mongoose.Schema(
       default: "pending",
       index: true,
     },
-    shippingProvider: String,    // which provider handled this
+    shippingProvider: String,    // which provider handled this — "manual" for a
+                                  // courier booked outside this panel (see
+                                  // markOrderShippedManually in fulfillment.service.js)
     shipmentId:       { type: mongoose.Schema.Types.ObjectId, ref: "Shipment" },
     awbCode:          String,
     labelUrl:         String,
     markedFulfilledAt: Date,
+    // Set manually (updateOrderDeliveryStatus) when the seller confirms a
+    // shipment actually reached the customer — there's no courier
+    // integration that tells us this automatically for every provider, so
+    // it's a plain manual record, not derived from anything else.
+    deliveredAt: Date,
     // Freight cost quoted/selected at ship time (courier rate the user picked in the
     // Ship Order modal) — captured here since it varies per order by destination and
     // weight, so it can't be a fixed per-SKU cost. Used to compute true net margin.

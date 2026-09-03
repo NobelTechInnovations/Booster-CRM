@@ -21,6 +21,7 @@ import {
   Package,
   Pencil,
   Phone,
+  Plus,
   Printer,
   RefreshCcw,
   Repeat2,
@@ -39,7 +40,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
 import { DraftOrderModal } from "@/components/draft-order-modal";
-import { listAllOrders, getCompanyProfile, updateOrderAdjustments, updateOrderConfirmation, updateOrderFulfillmentAssignment, sendOrderInvoiceWhatsApp, finalizeDraftOrder, discardDraftOrder } from "@/lib/api";
+import { listAllOrders, getCompanyProfile, updateOrderAdjustments, updateOrderConfirmation, updateOrderFulfillmentAssignment, sendOrderInvoiceWhatsApp, finalizeDraftOrder, discardDraftOrder, markOrderShippedManually, updateOrderDeliveryStatus } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -83,6 +84,7 @@ const STAGE_META = {
   declined:               { label: "Declined",             tone: "rose",   icon: XCircle },
   fulfillment_assigned:   { label: "Fulfillment Assigned", tone: "indigo", icon: Package },
   shipped:                { label: "Shipped",              tone: "green",  icon: Truck },
+  delivered:              { label: "Delivered",            tone: "green",  icon: CheckCircle2 },
   returned:               { label: "Returned",             tone: "gold",   icon: Repeat2 },
   refunded:               { label: "Refunded",             tone: "amber",  icon: RefreshCcw },
   cancelled:              { label: "Cancelled",            tone: "rose",   icon: XCircle },
@@ -91,6 +93,10 @@ const STAGE_META = {
 // Stages that still count as "not shipped yet" — used to group the To Ship
 // filter tab and to decide when the Assign-to-fulfillment toggle applies.
 const OPEN_STAGES = ["created", "confirmed", "fulfillment_assigned"];
+// "Shipped" as a filter/count groups delivered in too — it's still true
+// the order shipped, delivered is just further along the same leg. The
+// per-row Stage badge still shows the more specific "Delivered" though.
+const SHIPPED_STAGES = ["shipped", "delivered"];
 
 function StageBadge({ order, compact = false }) {
   const meta = STAGE_META[order.stage] || STAGE_META.created;
@@ -398,6 +404,13 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
   const [isCODInput, setIsCODInput] = useState(true);
   const [savingAdjustments, setSavingAdjustments] = useState(false);
   const [adjustmentError, setAdjustmentError] = useState("");
+  const [addingTracking, setAddingTracking] = useState(false);
+  const [trackingNumberInput, setTrackingNumberInput] = useState("");
+  const [trackingCompanyInput, setTrackingCompanyInput] = useState("");
+  const [trackingUrlInput, setTrackingUrlInput] = useState("");
+  const [savingTracking, setSavingTracking] = useState(false);
+  const [trackingError, setTrackingError] = useState("");
+  const [markingDelivered, setMarkingDelivered] = useState(false);
 
   if (!order) return null;
 
@@ -436,6 +449,41 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
       setSavingAdjustments(false);
     }
   }
+
+  async function onSaveManualTracking() {
+    if (!trackingNumberInput.trim()) { setTrackingError("Tracking number is required"); return; }
+    setSavingTracking(true);
+    setTrackingError("");
+    try {
+      const res = await markOrderShippedManually(order.externalId || order._id || order.id, {
+        trackingNumber: trackingNumberInput.trim(),
+        trackingCompany: trackingCompanyInput.trim(),
+        trackingUrl: trackingUrlInput.trim(),
+      });
+      onOrderUpdated?.(res.order);
+      setAddingTracking(false);
+    } catch (err) {
+      setTrackingError(err.message);
+    } finally {
+      setSavingTracking(false);
+    }
+  }
+
+  async function setDeliveryStatus(delivered) {
+    setMarkingDelivered(true);
+    try {
+      const res = await updateOrderDeliveryStatus(order.externalId || order._id || order.id, delivered);
+      onOrderUpdated?.(res.order);
+    } catch (err) {
+      // Surfaced inline rather than a full error banner — this is a small,
+      // low-stakes toggle deep in the modal.
+      window.alert(err.message);
+    } finally {
+      setMarkingDelivered(false);
+    }
+  }
+  const onMarkDelivered = () => setDeliveryStatus(true);
+  const onUndoDelivered = () => setDeliveryStatus(false);
 
   return (
     <div
@@ -688,11 +736,12 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             </section>
 
             {/* Tracking */}
-            {(order.trackingNumber || order.awbCode) && (
+            {(order.trackingNumber || order.awbCode) ? (
               <section className="rounded-xl border border-emerald-100 bg-emerald-50/40 p-4">
                 <div className="mb-3 flex items-center gap-2">
                   <Truck size={15} className="text-emerald-700" />
                   <h3 className="text-sm  text-slate-800">Tracking</h3>
+                  {order.shippingProvider === "manual" && <Badge tone="slate">Manually added</Badge>}
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <div>
@@ -715,8 +764,98 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                     </a>
                   )}
                 </div>
+                {/* Manual delivery-status toggle — no courier integration
+                    reports this back to us for a manually-tracked shipment
+                    (and not consistently for every real provider either),
+                    so it's a plain manual record either way. */}
+                {order.stage === "shipped" && (
+                  <button
+                    onClick={onMarkDelivered}
+                    disabled={markingDelivered}
+                    className="mt-3 flex w-full items-center justify-center gap-1.5 rounded-lg border border-emerald-300 bg-white py-1.5 text-xs font-semibold text-emerald-700 transition hover:bg-emerald-50 disabled:opacity-50"
+                  >
+                    {markingDelivered ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                    Mark as Delivered
+                  </button>
+                )}
+                {order.stage === "delivered" && (
+                  <div className="mt-3 flex items-center justify-between rounded-lg bg-emerald-100 px-3 py-2">
+                    <span className="flex items-center gap-1.5 text-xs font-semibold text-emerald-800">
+                      <CheckCircle2 size={13} /> Delivered {order.deliveredAt ? `· ${fmtDate(order.deliveredAt)}` : ""}
+                    </span>
+                    <button onClick={onUndoDelivered} disabled={markingDelivered} className="text-[11px] font-semibold text-emerald-700 underline hover:text-emerald-900 disabled:opacity-50">
+                      Undo
+                    </button>
+                  </div>
+                )}
               </section>
-            )}
+            ) : ["created", "confirmed", "fulfillment_assigned"].includes(order.stage) ? (
+              <section className="rounded-xl border border-[var(--line)] p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <Truck size={15} className="text-indigo-600" />
+                  <h3 className="text-sm  text-slate-800">Tracking</h3>
+                </div>
+                {!addingTracking ? (
+                  <button
+                    onClick={() => setAddingTracking(true)}
+                    className="flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-[var(--line)] py-2 text-xs font-semibold text-slate-500 hover:border-indigo-400 hover:text-indigo-700"
+                  >
+                    <Plus size={12} />
+                    Fulfilled outside the panel? Add tracking
+                  </button>
+                ) : (
+                  <div className="space-y-2">
+                    <p className="text-xs text-slate-500">
+                      For an order shipped directly with a courier (not through this panel's Ship flow) — marks it Shipped with the details you enter.
+                    </p>
+                    <label className="block">
+                      <span className="text-[11px] font-semibold uppercase text-slate-500">Tracking / AWB Number</span>
+                      <input
+                        type="text"
+                        value={trackingNumberInput}
+                        onChange={(e) => setTrackingNumberInput(e.target.value)}
+                        className="mt-1 h-9 w-full rounded-md border border-[var(--line)] px-2.5 text-sm outline-none focus:border-indigo-500"
+                        placeholder="e.g. 1234567890"
+                      />
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase text-slate-500">Courier</span>
+                        <input
+                          type="text"
+                          value={trackingCompanyInput}
+                          onChange={(e) => setTrackingCompanyInput(e.target.value)}
+                          className="mt-1 h-9 w-full rounded-md border border-[var(--line)] px-2.5 text-sm outline-none focus:border-indigo-500"
+                          placeholder="e.g. Delhivery"
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="text-[11px] font-semibold uppercase text-slate-500">Tracking Link (optional)</span>
+                        <input
+                          type="text"
+                          value={trackingUrlInput}
+                          onChange={(e) => setTrackingUrlInput(e.target.value)}
+                          className="mt-1 h-9 w-full rounded-md border border-[var(--line)] px-2.5 text-sm outline-none focus:border-indigo-500"
+                          placeholder="https://..."
+                        />
+                      </label>
+                    </div>
+                    {trackingError && <p className="text-xs font-medium text-rose-600">{trackingError}</p>}
+                    <div className="flex gap-2">
+                      <Button onClick={onSaveManualTracking} disabled={savingTracking} className="h-8 px-3 text-xs">
+                        {savingTracking ? "Saving…" : "Mark as Shipped"}
+                      </Button>
+                      <button
+                        onClick={() => setAddingTracking(false)}
+                        className="rounded-md px-3 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ) : null}
           </div>
 
           {/* Right column */}
@@ -861,6 +1000,9 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                     tone="emerald"
                   />
                 )}
+                {order.stage === "delivered" && (
+                  <TimelineStep label="Delivered" date={order.deliveredAt} done tone="emerald" />
+                )}
                 {order.cancelledAt && (
                   <TimelineStep label="Cancelled" date={order.cancelledAt} done tone="rose" />
                 )}
@@ -930,6 +1072,7 @@ export function OrdersView() {
   const [invoiceSendError, setInvoiceSendError] = useState("");
   const [showDraftModal, setShowDraftModal] = useState(false);
   const [draftActionId, setDraftActionId] = useState("");
+  const [deliveringId, setDeliveringId] = useState("");
   const [draftNotice, setDraftNotice] = useState("");
 
   useEffect(() => {
@@ -1009,6 +1152,20 @@ export function OrdersView() {
     }
   }
 
+  async function handleMarkDelivered(order) {
+    const key = orderKey(order);
+    setDeliveringId(key);
+    setError("");
+    try {
+      const res = await updateOrderDeliveryStatus(order._id || order.id || order.externalId, true);
+      setOrders((prev) => prev.map((o) => (orderKey(o) === key ? { ...o, ...res.order } : o)));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDeliveringId("");
+    }
+  }
+
   async function handleSendInvoiceWhatsApp(order) {
     const key = orderKey(order);
     setSendingInvoiceId(key);
@@ -1064,7 +1221,7 @@ export function OrdersView() {
       if (filterStatus !== "all") {
         if (filterStatus === "draft" && o.stage !== "draft") return false;
         if (filterStatus === "to_ship" && !OPEN_STAGES.includes(o.stage)) return false;
-        if (filterStatus === "shipped" && o.stage !== "shipped") return false;
+        if (filterStatus === "shipped" && !SHIPPED_STAGES.includes(o.stage)) return false;
         if (filterStatus === "not_proceeding" && !["declined", "cancelled", "returned", "refunded"].includes(o.stage)) return false;
       }
       if (filterPayment === "cod" && !o.isCOD) return false;
@@ -1101,7 +1258,7 @@ export function OrdersView() {
     total: orders.length,
     drafts: orders.filter((o) => o.stage === "draft").length,
     toShip: orders.filter((o) => OPEN_STAGES.includes(o.stage)).length,
-    shipped: orders.filter((o) => o.stage === "shipped").length,
+    shipped: orders.filter((o) => SHIPPED_STAGES.includes(o.stage)).length,
     notProceeding: orders.filter((o) => ["declined", "cancelled", "returned", "refunded"].includes(o.stage)).length,
   }), [orders]);
 
@@ -1379,6 +1536,17 @@ export function OrdersView() {
                               className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50 disabled:opacity-50"
                             >
                               {assigningId === orderKey(order) ? <Loader2 size={9} className="animate-spin" /> : <X size={9} />}
+                            </button>
+                          )}
+                          {order.stage === "shipped" && (
+                            <button
+                              onClick={() => handleMarkDelivered(order)}
+                              disabled={deliveringId === orderKey(order)}
+                              title="Mark as delivered"
+                              className="mt-0.5 inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-emerald-200 bg-white px-1.5 text-[9px] font-semibold text-emerald-600 transition hover:bg-emerald-50 disabled:opacity-50"
+                            >
+                              {deliveringId === orderKey(order) ? <Loader2 size={9} className="animate-spin" /> : <CheckCircle2 size={9} />}
+                              Delivered
                             </button>
                           )}
                           {order.stage === "draft" && (

@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { getFulfillmentOrders, getFulfilledOrders, shipOrder, shipOrdersBulk, downloadLabelsBulk, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder, pushTrackingToShopify, editDraftOrder, discardDraftOrder } from "./fulfillment.service.js";
+import { getFulfillmentOrders, getFulfilledOrders, shipOrder, shipOrdersBulk, downloadLabelsBulk, cancelOrderFulfillment, cancelShipment, syncShipmentStatus, createManualOrder, pushTrackingToShopify, editDraftOrder, discardDraftOrder, markOrderShippedManually, updateOrderDeliveryStatus } from "./fulfillment.service.js";
 import { listActiveShipments, listShipments } from "../../repositories/shipment.repo.js";
 
 export const fulfillmentRoutes = Router();
@@ -104,6 +104,37 @@ fulfillmentRoutes.post(
         : `Order shipped via ${provider}. AWB: ${result.shipment.awbCode}`,
       ...result,
     });
+  }),
+);
+
+// Mark an order shipped by hand — for a courier booked directly outside
+// this panel (no real Shipment record, no shipping-provider integration
+// involved). Just records the tracking details the seller already has.
+fulfillmentRoutes.post(
+  "/orders/:orderId/mark-shipped",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const { trackingNumber, trackingCompany, trackingUrl } = req.body || {};
+    const result = await markOrderShippedManually({ companyId: req.auth.companyId, orderId, trackingNumber, trackingCompany, trackingUrl });
+    res.json({
+      message: result.shopifyPushError
+        ? `Marked shipped, but Shopify wasn't marked fulfilled: ${result.shopifyPushError}`
+        : "Order marked shipped",
+      ...result,
+    });
+  }),
+);
+
+// Manual delivery-status toggle — { delivered: true } marks delivered,
+// { delivered: false } reverts back to shipped.
+fulfillmentRoutes.patch(
+  "/orders/:orderId/delivery-status",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { orderId } = req.params;
+    const order = await updateOrderDeliveryStatus({ companyId: req.auth.companyId, orderId, delivered: Boolean(req.body?.delivered) });
+    res.json({ message: req.body?.delivered ? "Order marked delivered" : "Reverted to shipped", order });
   }),
 );
 

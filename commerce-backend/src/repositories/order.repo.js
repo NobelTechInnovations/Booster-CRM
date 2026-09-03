@@ -742,7 +742,7 @@ function applyManualAdjustments(order) {
 // AND attaches the panel-only stage badge, so the order object handed back
 // to the frontend's optimistic update always carries a fresh `.stage`
 // instead of the caller's merge silently keeping a stale one.
-function finalizeOrder(order) {
+export function finalizeOrder(order) {
   return { ...applyManualAdjustments(order), stage: computeOrderStage(order) };
 }
 

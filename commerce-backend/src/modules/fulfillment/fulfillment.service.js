@@ -1,4 +1,4 @@
-import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus, createLocalOrder, updateDraftOrder, deleteDraftOrder } from "../../repositories/order.repo.js";
+import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus, createLocalOrder, updateDraftOrder, deleteDraftOrder, finalizeOrder } from "../../repositories/order.repo.js";
 import { getWarehouseByExternalId, listWarehouses } from "../../repositories/warehouse.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
@@ -72,6 +72,94 @@ export async function discardDraftOrder({ companyId, orderId }) {
   const result = await deleteDraftOrder({ companyId, orderId });
   if (result.error) throw new HttpError(400, result.error);
   return result;
+}
+
+/**
+ * Marks an order shipped WITHOUT creating a real shipment through one of
+ * our integrated shipping providers — for when the seller booked the
+ * courier directly (their own Delhivery/Shiprocket dashboard, a local
+ * courier with no API here, WhatsApp order handed to a rider, etc) and just
+ * needs Booster to reflect what already happened: the tracking number the
+ * courier gave them, and who's carrying it. Runs the exact same downstream
+ * side effects a real shipOrder() does (Shopify fulfillment push, packaging
+ * deduction, per-order wallet fee) since those depend on the order having
+ * shipped, not on how it shipped.
+ */
+export async function markOrderShippedManually({ companyId, orderId, trackingNumber, trackingCompany, trackingUrl }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) throw new HttpError(404, "Order not found");
+  if (!trackingNumber?.trim()) throw new HttpError(400, "Tracking number is required");
+  if (["shipped", "delivered", "cancelled", "returned"].includes(order.omsStatus)) {
+    throw new HttpError(400, "This order has already moved past pending fulfillment");
+  }
+
+  let updatedOrder = await updateOrderOmsStatus({
+    companyId,
+    shopifyOrderId: order.externalId,
+    update: {
+      omsStatus: "shipped",
+      shippingProvider: "manual",
+      trackingNumber: trackingNumber.trim(),
+      trackingCompany: (trackingCompany || "").trim(),
+      trackingUrl: (trackingUrl || "").trim(),
+      markedFulfilledAt: new Date(),
+    },
+  });
+
+  // Same fulfillment-push contract as shipOrder() — only mark fulfilled
+  // locally once Shopify actually confirms it, so a failed push can't leave
+  // our own record claiming something Shopify doesn't agree with.
+  let shopifyPushError = null;
+  if (order.provider === "shopify" && order.shop) {
+    try {
+      await markShopifyOrderFulfilled({
+        shop: order.shop,
+        shopifyOrderId: order.externalId,
+        awbCode: trackingNumber.trim(),
+        trackingUrl: trackingUrl || undefined,
+        courierName: trackingCompany || "Courier",
+      });
+      updatedOrder = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
+    } catch (err) {
+      shopifyPushError = err.message;
+      console.warn(`[Fulfillment] Shopify auto-fulfillment update failed for ${order.name}:`, err.message);
+    }
+  } else {
+    updatedOrder = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
+  }
+
+  try {
+    await deductAssetsForOrder({ companyId, order: updatedOrder });
+  } catch (err) {
+    console.warn(`[Fulfillment] Asset deduction failed for ${order.name}:`, err.message);
+  }
+
+  try {
+    await chargeWalletForFulfillment({ companyId, order: updatedOrder });
+  } catch (err) {
+    console.warn(`[Fulfillment] Wallet charge failed for ${order.name}:`, err.message);
+  }
+
+  return { order: finalizeOrder(updatedOrder), shopifyPushError };
+}
+
+// Manual delivery-status marking — "delivered" (or reverting back to
+// "shipped" if marked by mistake). Purely a panel-side record: no courier
+// integration reports "delivered" back to us for every provider (and none
+// at all for a manually-tracked third-party shipment), and Shopify itself
+// has no "delivered" fulfillment event to push this to.
+export async function updateOrderDeliveryStatus({ companyId, orderId, delivered }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) throw new HttpError(404, "Order not found");
+  if (!["shipped", "delivered"].includes(order.omsStatus)) {
+    throw new HttpError(400, "Order must be shipped before it can be marked delivered");
+  }
+
+  const update = delivered
+    ? { omsStatus: "delivered", deliveredAt: new Date() }
+    : { omsStatus: "shipped", deliveredAt: null };
+  const updatedOrder = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
+  return finalizeOrder(updatedOrder);
 }
 
 /**
