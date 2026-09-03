@@ -2,7 +2,7 @@ import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
-import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost, updateOrderManualAdjustments, updateOrderConfirmation } from "../../repositories/order.repo.js";
+import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost, updateOrderManualAdjustments, updateOrderConfirmation, updateOrderFulfillmentAssignment } from "../../repositories/order.repo.js";
 import {
   createExpense,
   createPurchase,
@@ -125,6 +125,17 @@ financeRoutes.patch(
     if (!result) throw new HttpError(404, "Order not found");
     if (result.error) throw new HttpError(400, result.error);
     res.json({ message: "Order confirmation updated", order: result });
+  }),
+);
+
+financeRoutes.patch(
+  "/orders/:orderId/fulfillment-assignment",
+  requirePermission("finance:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await updateOrderFulfillmentAssignment({ companyId: req.auth.companyId, orderId: req.params.orderId, assigned: Boolean(req.body?.assigned) });
+    if (!result) throw new HttpError(404, "Order not found");
+    if (result.error) throw new HttpError(400, result.error);
+    res.json({ message: "Order fulfillment assignment updated", order: result });
   }),
 );
 

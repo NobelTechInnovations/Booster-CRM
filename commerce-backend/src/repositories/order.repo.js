@@ -9,6 +9,7 @@ import { memory, id, clone, now, toDate, toNumber, fullName } from "./memory-sto
 import { listSkuCosts } from "./sku-cost.repo.js";
 import { listAssetMappings, listAssets } from "./asset.repo.js";
 import { parseUtmFromOrder } from "../utils/utm.js";
+import { computeOrderStage } from "../utils/order-stage.js";
 
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
@@ -647,6 +648,15 @@ function applyManualAdjustments(order) {
   };
 }
 
+// Shared return path for every single-order mutation below (confirmation,
+// fulfillment assignment, manual adjustments) — applies the money adjustment
+// AND attaches the panel-only stage badge, so the order object handed back
+// to the frontend's optimistic update always carries a fresh `.stage`
+// instead of the caller's merge silently keeping a stale one.
+function finalizeOrder(order) {
+  return { ...applyManualAdjustments(order), stage: computeOrderStage(order) };
+}
+
 export async function getSavedCommerceData(companyId) {
   if (isMongoConnected()) {
     const [orders, products, customers, channels] = await Promise.all([
@@ -729,6 +739,11 @@ function publicSyncedRecord(record, channels = []) {
       copy.defaultAddress = { ...copy.defaultAddress, address1: rawAddress.address1, address2: rawAddress.address2 };
     }
   }
+
+  // Panel-only order stage badge — see order-stage.js. Computed at read time
+  // (not stored) so it's always in sync with whatever fields actually drove
+  // it, with no separate write path to keep consistent or ever go stale.
+  copy.stage = computeOrderStage(copy);
 
   delete copy.raw;
   return copy.totalPrice !== undefined ? applyManualAdjustments(copy) : copy;
@@ -1444,7 +1459,7 @@ export async function updateOrderManualAdjustments({ companyId, orderId, discoun
   };
 
   const updated = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
-  return updated ? applyManualAdjustments(updated) : null;
+  return updated ? finalizeOrder(updated) : null;
 }
 
 // Customer-confirmation gate — set from the order row's Confirm/Decline
@@ -1464,7 +1479,26 @@ export async function updateOrderConfirmation({ companyId, orderId, status }) {
     confirmedAt: status === "confirmed" ? new Date() : null,
   };
   const updated = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
-  return updated ? applyManualAdjustments(updated) : null;
+  return updated ? finalizeOrder(updated) : null;
+}
+
+// Ops marking an order as picked up for packing/label prep — a middle step
+// between "customer confirmed" and "actually shipped", purely a panel-side
+// flag the team sets by hand (reuses omsStatus's long-declared but
+// previously-unused "processing" value). Never touches Shopify, and only
+// applies before the order actually ships — once it's shipped/cancelled/etc
+// the stage badge has already moved past this, so toggling it here is a
+// no-op error rather than silently rewriting history.
+export async function updateOrderFulfillmentAssignment({ companyId, orderId, assigned }) {
+  const order = await getOrderById({ companyId, orderId });
+  if (!order) return null;
+  if (!["pending", "processing"].includes(order.omsStatus)) {
+    return { error: "This order has already moved past fulfillment assignment" };
+  }
+
+  const update = { omsStatus: assigned ? "processing" : "pending" };
+  const updated = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
+  return updated ? finalizeOrder(updated) : null;
 }
 
 // Revenue that was refunded/cancelled/returned in this period — kept separate

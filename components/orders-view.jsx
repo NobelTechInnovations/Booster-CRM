@@ -35,7 +35,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton } from "@/components/ui/skeleton";
-import { listAllOrders, getCompanyProfile, updateOrderAdjustments, updateOrderConfirmation, sendOrderInvoiceWhatsApp } from "@/lib/api";
+import { listAllOrders, getCompanyProfile, updateOrderAdjustments, updateOrderConfirmation, updateOrderFulfillmentAssignment, sendOrderInvoiceWhatsApp } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -58,21 +58,51 @@ function fmtDate(date) {
 
 const PROVIDER_LABELS = { local: "Local Shop", website: "Website (Historical)", flipkart: "Flipkart", shopdeck: "Shopdeck", amazon: "Amazon", shopify: "Shopify" };
 
-function statusTone(status) {
-  const s = (status || "").toLowerCase();
-  if (s === "fulfilled" || s === "shipped") return "green";
-  if (s === "cancelled" || s === "canceled") return "rose";
-  if (s === "unfulfilled" || s === "pending") return "amber";
-  if (s === "partial") return "blue";
-  return "slate";
-}
-
 function paymentTone(status) {
   const s = (status || "").toLowerCase();
   if (s === "paid") return "green";
   if (s === "refunded" || s === "voided") return "rose";
   if (s === "pending" || s === "partially_paid") return "amber";
   return "slate";
+}
+
+// Panel-only "where is this order right now" stage — mirrors
+// commerce-backend/src/utils/order-stage.js's computeOrderStage(), which
+// is what actually sets order.stage on every order the API returns. This
+// is display metadata only (label/tone/icon); the stage value itself
+// always comes from the server, never recomputed here, so the two can
+// never drift.
+const STAGE_META = {
+  created:               { label: "Order Created",        tone: "slate",  icon: ClipboardList },
+  confirmed:              { label: "Confirmed",            tone: "blue",   icon: CheckCircle2 },
+  declined:               { label: "Declined",             tone: "rose",   icon: XCircle },
+  fulfillment_assigned:   { label: "Fulfillment Assigned", tone: "indigo", icon: Package },
+  shipped:                { label: "Shipped",              tone: "green",  icon: Truck },
+  returned:               { label: "Returned",             tone: "gold",   icon: Repeat2 },
+  refunded:               { label: "Refunded",             tone: "amber",  icon: RefreshCcw },
+  cancelled:              { label: "Cancelled",            tone: "rose",   icon: XCircle },
+};
+
+// Stages that still count as "not shipped yet" — used to group the To Ship
+// filter tab and to decide when the Assign-to-fulfillment toggle applies.
+const OPEN_STAGES = ["created", "confirmed", "fulfillment_assigned"];
+
+function StageBadge({ order, compact = false }) {
+  const meta = STAGE_META[order.stage] || STAGE_META.created;
+  const Icon = meta.icon;
+  return (
+    <div>
+      <Badge tone={meta.tone}>
+        <Icon size={11} />
+        {meta.label}
+      </Badge>
+      {order.stage === "shipped" && (order.trackingNumber || order.awbCode) && !compact && (
+        <p className="mt-1 truncate text-[10px] font-medium text-slate-500">
+          {order.trackingCompany || order.shippingProvider || "Courier"} · {order.trackingNumber || order.awbCode}
+        </p>
+      )}
+    </div>
+  );
 }
 
 // ─── Tax Invoice (printable / save-as-PDF) ────────────────────────────────────
@@ -334,6 +364,9 @@ function TimelineStep({ label, sublabel, date, done, tone = "slate" }) {
     blue: "bg-blue-500",
     emerald: "bg-emerald-500",
     rose: "bg-rose-500",
+    indigo: "bg-indigo-500",
+    gold: "bg-amber-600",
+    amber: "bg-amber-500",
   }[tone];
 
   return (
@@ -408,12 +441,15 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
             <div>
               <div className="flex items-center gap-2">
                 <h2 className="text-lg font-bold text-slate-900">{order.name}</h2>
-                <Badge tone={statusTone(order.fulfillmentStatus)}>{order.fulfillmentStatus || "unfulfilled"}</Badge>
-                <Badge tone={paymentTone(order.financialStatus)}>{order.financialStatus || "—"}</Badge>
+                <StageBadge order={order} compact />
                 {order.isCOD && <Badge tone="amber">COD</Badge>}
               </div>
-              <p className="text-xs text-slate-500 mt-0.5">
+              <p className="mt-1 flex items-center gap-1.5 text-xs text-slate-500">
                 Placed {fmt(order.shopifyCreatedAt)} · {order.provider || "Shopify"}
+                <span className="text-slate-300">·</span>
+                <span title="Raw status as reported by Shopify — our own Stage badge above is the one to trust">
+                  Shopify: {order.fulfillmentStatus || "unfulfilled"} / {order.financialStatus || "—"}
+                </span>
               </p>
             </div>
           </div>
@@ -762,6 +798,15 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                 {order.processedAt && (
                   <TimelineStep label="Payment processed" date={order.processedAt} done tone="blue" />
                 )}
+                {order.confirmationStatus === "confirmed" && (
+                  <TimelineStep label="Customer confirmed" date={order.confirmedAt} done tone="blue" />
+                )}
+                {order.confirmationStatus === "declined" && (
+                  <TimelineStep label="Customer declined" date={order.confirmedAt} done tone="rose" />
+                )}
+                {order.stage === "fulfillment_assigned" && (
+                  <TimelineStep label="Assigned for fulfillment" sublabel="Picked up for packing / label prep" done tone="indigo" />
+                )}
                 {(order.fulfillments || []).map((f, idx) => (
                   <TimelineStep
                     key={idx}
@@ -784,12 +829,11 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                 {order.cancelledAt && (
                   <TimelineStep label="Cancelled" date={order.cancelledAt} done tone="rose" />
                 )}
-                {!order.cancelledAt && order.omsStatus && (
-                  <TimelineStep
-                    label={`Current status: ${order.omsStatus}`}
-                    done={false}
-                    tone="slate"
-                  />
+                {order.stage === "returned" && (
+                  <TimelineStep label="Returned (RTO)" done tone="gold" />
+                )}
+                {order.stage === "refunded" && (
+                  <TimelineStep label="Refunded" done tone="amber" />
                 )}
               </ol>
             </section>
@@ -824,6 +868,7 @@ export function OrdersView() {
   const [invoiceOrder, setInvoiceOrder] = useState(null);
   const [company, setCompany] = useState(null);
   const [confirmingId, setConfirmingId] = useState("");
+  const [assigningId, setAssigningId] = useState("");
   const [sendingInvoiceId, setSendingInvoiceId] = useState("");
   const [invoiceSendError, setInvoiceSendError] = useState("");
 
@@ -847,6 +892,22 @@ export function OrdersView() {
       setError(err.message);
     } finally {
       setConfirmingId("");
+    }
+  }
+
+  // Same optimistic-update pattern as handleConfirmation — "Assign to
+  // fulfillment" / "Undo" toggle for the panel-only middle stage between
+  // confirmed and shipped.
+  async function handleFulfillmentAssignment(order, assigned) {
+    const key = orderKey(order);
+    setAssigningId(key);
+    try {
+      const res = await updateOrderFulfillmentAssignment(order._id || order.id || order.externalId, assigned);
+      setOrders((prev) => prev.map((o) => (orderKey(o) === key ? { ...o, ...res.order } : o)));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setAssigningId("");
     }
   }
 
@@ -903,10 +964,9 @@ export function OrdersView() {
   const filtered = useMemo(() => {
     return orders.filter((o) => {
       if (filterStatus !== "all") {
-        const fs = (o.fulfillmentStatus || "unfulfilled").toLowerCase();
-        if (filterStatus === "fulfilled" && fs !== "fulfilled") return false;
-        if (filterStatus === "unfulfilled" && fs !== "unfulfilled") return false;
-        if (filterStatus === "cancelled" && !o.cancelledAt) return false;
+        if (filterStatus === "to_ship" && !OPEN_STAGES.includes(o.stage)) return false;
+        if (filterStatus === "shipped" && o.stage !== "shipped") return false;
+        if (filterStatus === "not_proceeding" && !["declined", "cancelled", "returned", "refunded"].includes(o.stage)) return false;
       }
       if (filterPayment === "cod" && !o.isCOD) return false;
       if (filterPayment === "prepaid" && o.isCOD) return false;
@@ -934,11 +994,15 @@ export function OrdersView() {
     return all.filter((o) => (o.externalId || o._id) !== (order.externalId || order._id));
   }
 
+  // Panel-only stage counts (see order-stage.js) — this is what drives the
+  // Status filter tabs below, deliberately not Shopify's raw
+  // fulfillmentStatus, so "which orders still need action" always reads the
+  // same regardless of what Shopify itself shows.
   const counts = useMemo(() => ({
     total: orders.length,
-    unfulfilled: orders.filter((o) => !["fulfilled", "partial"].includes((o.fulfillmentStatus || "").toLowerCase()) && !o.cancelledAt).length,
-    fulfilled: orders.filter((o) => ["fulfilled", "partial"].includes((o.fulfillmentStatus || "").toLowerCase())).length,
-    cancelled: orders.filter((o) => !!o.cancelledAt).length,
+    toShip: orders.filter((o) => OPEN_STAGES.includes(o.stage)).length,
+    shipped: orders.filter((o) => o.stage === "shipped").length,
+    notProceeding: orders.filter((o) => ["declined", "cancelled", "returned", "refunded"].includes(o.stage)).length,
   }), [orders]);
 
   // Every distinct provider actually present in the data — Shopify (live sync),
@@ -968,7 +1032,7 @@ export function OrdersView() {
           <Badge tone="indigo">{filterChannel === "all" ? "All Channels" : PROVIDER_LABELS[filterChannel] || filterChannel}</Badge>
           <h1 className="mt-2 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Orders</h1>
           <p className="mt-1 text-sm text-slate-500">
-            {counts.total} total · {counts.unfulfilled} to ship · {counts.fulfilled} fulfilled
+            {counts.total} total · {counts.toShip} to ship · {counts.shipped} shipped
           </p>
         </div>
         <Button variant="secondary" onClick={loadOrders} disabled={isLoading}>
@@ -1007,9 +1071,9 @@ export function OrdersView() {
             <div className="flex rounded-lg border border-slate-200 bg-white shadow-xs overflow-hidden">
               {[
                 { key: "all", label: `All (${counts.total})` },
-                { key: "unfulfilled", label: `Pending (${counts.unfulfilled})` },
-                { key: "fulfilled", label: `Fulfilled (${counts.fulfilled})` },
-                { key: "cancelled", label: `Cancelled (${counts.cancelled})` },
+                { key: "to_ship", label: `To Ship (${counts.toShip})` },
+                { key: "shipped", label: `Shipped (${counts.shipped})` },
+                { key: "not_proceeding", label: `Cancelled/Returns (${counts.notProceeding})` },
               ].map((tab) => (
                 <button
                   key={tab.key}
@@ -1081,7 +1145,7 @@ export function OrdersView() {
                   <th className="px-4 py-3">Date</th>
                   <th className="px-4 py-3">Items</th>
                   <th className="px-4 py-3">Confirmation</th>
-                  <th className="px-4 py-3">Fulfilment</th>
+                  <th className="px-4 py-3">Stage</th>
                   <th className="px-4 py-3">Payment</th>
                   <th className="px-4 py-3 text-right">Amount</th>
                   <th className="px-4 py-3 text-right">Open</th>
@@ -1178,9 +1242,30 @@ export function OrdersView() {
                         })()}
                       </td>
                       <td className="px-4 py-3">
-                        <Badge tone={statusTone(order.fulfillmentStatus)}>
-                          {order.fulfillmentStatus || "unfulfilled"}
-                        </Badge>
+                        <div className="flex items-start gap-1.5">
+                          <StageBadge order={order} />
+                          {(order.stage === "created" || order.stage === "confirmed") && (
+                            <button
+                              onClick={() => handleFulfillmentAssignment(order, true)}
+                              disabled={assigningId === orderKey(order)}
+                              title="Mark as picked up for packing/fulfillment"
+                              className="mt-0.5 inline-flex h-5 shrink-0 items-center gap-1 rounded-full border border-indigo-200 bg-white px-1.5 text-[9px] font-semibold text-indigo-600 transition hover:bg-indigo-50 disabled:opacity-50"
+                            >
+                              {assigningId === orderKey(order) ? <Loader2 size={9} className="animate-spin" /> : <Package size={9} />}
+                              Assign
+                            </button>
+                          )}
+                          {order.stage === "fulfillment_assigned" && (
+                            <button
+                              onClick={() => handleFulfillmentAssignment(order, false)}
+                              disabled={assigningId === orderKey(order)}
+                              title="Undo — move back to pending"
+                              className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-400 transition hover:bg-slate-50 disabled:opacity-50"
+                            >
+                              {assigningId === orderKey(order) ? <Loader2 size={9} className="animate-spin" /> : <X size={9} />}
+                            </button>
+                          )}
+                        </div>
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
