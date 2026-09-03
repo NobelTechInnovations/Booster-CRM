@@ -10,6 +10,14 @@ const companySchema = new mongoose.Schema(
     email: { type: String, trim: true, lowercase: true },
     phone: { type: String, trim: true },
     website: { type: String, trim: true },
+    // The brand logo — stored as a data: URI (base64-encoded image), not a
+    // link to external storage, since this project has no S3/Cloudinary
+    // account configured and the backend's own filesystem is ephemeral on
+    // Vercel. A data URI works as-is everywhere a URL would (<img src>,
+    // fetched and decoded for the invoice PDF), so no separate file host is
+    // needed. Kept small (see updateCompanyLogo's size cap) since it lives
+    // directly on every read of this document. Empty string = no logo set.
+    logoUrl: { type: String, default: "" },
     businessType: {
       type: String,
       enum: ["Proprietorship", "Partnership", "LLP", "Private Limited", "Public Limited", "Other", ""],

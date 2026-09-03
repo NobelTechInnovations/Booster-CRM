@@ -25,11 +25,29 @@ function truncate(text, max) {
   return t.length > max ? `${t.slice(0, max - 1)}…` : t;
 }
 
+// company.logoUrl is a data: URI (see company.model.js) — only PNG/JPEG are
+// ever saved (store.js's updateCompanyLogo validates this at upload time),
+// which is exactly what pdf-lib can embed. Still wrapped in try/catch: a
+// logo that somehow fails to embed should never take the whole invoice
+// down with it — it just renders without one, same as having none set.
+async function embedLogo(pdfDoc, logoUrl) {
+  if (!logoUrl) return null;
+  try {
+    const match = String(logoUrl).match(/^data:image\/(png|jpe?g);base64,([A-Za-z0-9+/]+={0,2})$/);
+    if (!match) return null;
+    const bytes = Buffer.from(match[2], "base64");
+    return match[1].toLowerCase() === "png" ? await pdfDoc.embedPng(bytes) : await pdfDoc.embedJpg(bytes);
+  } catch {
+    return null;
+  }
+}
+
 export async function buildInvoicePdf({ order, company }) {
   const pdfDoc = await PDFDocument.create();
   const page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
   const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
   const bold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+  const logoImage = await embedLogo(pdfDoc, company?.logoUrl);
 
   let y = PAGE_HEIGHT - MARGIN;
   const left = MARGIN;
@@ -67,12 +85,30 @@ export async function buildInvoicePdf({ order, company }) {
   }
 
   // ── Letterhead ──
+  // Logo (if any) sits in its own top-left box, scaled to fit without
+  // distorting its aspect ratio; the legal name/GSTIN/address text block
+  // starts to the right of it instead of at the page margin.
+  const LOGO_BOX = 40;
+  let textLeft = left;
+  if (logoImage) {
+    const scale = Math.min(LOGO_BOX / logoImage.width, LOGO_BOX / logoImage.height);
+    const w = logoImage.width * scale;
+    const h = logoImage.height * scale;
+    // drawImage's y is the image's BOTTOM edge (PDF y-axis grows upward) —
+    // subtracting its height from the current (top) position lines its top
+    // up with the first line of text.
+    page.drawImage(logoImage, { x: left, y: y - h, width: w, height: h });
+    textLeft = left + LOGO_BOX + 10;
+  }
   text("TAX INVOICE", right - bold.widthOfTextAtSize("TAX INVOICE", 9), 9, { bold: true, color: MUTED });
-  text(legalName, left, 17, { bold: true });
+  text(legalName, textLeft, 17, { bold: true });
   y -= 16;
-  if (gstin) { text(`GSTIN ${gstin}`, left, 9, { color: MUTED }); y -= 12; }
-  if (registeredAddress) { text(truncate(registeredAddress, 70), left, 9, { color: MUTED }); y -= 12; }
+  if (gstin) { text(`GSTIN ${gstin}`, textLeft, 9, { color: MUTED }); y -= 12; }
+  if (registeredAddress) { text(truncate(registeredAddress, 70), textLeft, 9, { color: MUTED }); y -= 12; }
   y -= 6;
+  // If the logo box is taller than the text block ended up being, make sure
+  // the divider below still clears it rather than cutting through the image.
+  if (logoImage) y = Math.min(y, PAGE_HEIGHT - MARGIN - LOGO_BOX - 6);
   text(`Invoice #: ${invoiceNumber}`, left, 9, { color: MUTED });
   const dateStr = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const dateLabel = `Date: ${dateStr}`;

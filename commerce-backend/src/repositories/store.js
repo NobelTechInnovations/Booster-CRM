@@ -674,6 +674,48 @@ export async function updateCompanyProfile({ companyId, payload }) {
   return { company: clone(company) };
 }
 
+// Separate from updateCompanyProfile above so uploading/removing a logo
+// never requires re-submitting the whole company form, and never trips
+// that function's "name is required" gate. Accepts a data: URI produced by
+// FileReader on the frontend (see company-view.jsx) — validated here
+// rather than trusted, since this same payload gets embedded straight into
+// invoice PDFs (invoice-pdf.js) and shown on the public tracking page with
+// no further checks downstream. logoDataUrl: "" removes the logo.
+const MAX_LOGO_BYTES = 600 * 1024; // ~600KB decoded — comfortably under the app's 1MB JSON body cap with room for the rest of the request
+// PNG/JPEG only, deliberately narrower than "any browser-displayable
+// image" — pdf-lib (invoice-pdf.js's embedPng/embedJpg) can only embed
+// these two formats, and the logo needs to render identically wherever
+// it's used (settings preview, public tracking page, print invoice, PDF
+// invoice). Accepting webp/gif here would silently fail only in the PDF.
+const LOGO_DATA_URL_PATTERN = /^data:image\/(png|jpe?g);base64,([A-Za-z0-9+/]+={0,2})$/;
+
+export async function updateCompanyLogo({ companyId, logoDataUrl }) {
+  const value = String(logoDataUrl || "").trim();
+
+  if (value) {
+    const match = value.match(LOGO_DATA_URL_PATTERN);
+    if (!match) {
+      return { error: "Logo must be a PNG or JPEG image" };
+    }
+    const decodedBytes = Buffer.from(match[2], "base64").length;
+    if (decodedBytes > MAX_LOGO_BYTES) {
+      return { error: `Logo is too large (${Math.round(decodedBytes / 1024)}KB) — please use an image under ${Math.round(MAX_LOGO_BYTES / 1024)}KB` };
+    }
+  }
+
+  if (isMongoConnected()) {
+    const company = await Company.findByIdAndUpdate(companyId, { $set: { logoUrl: value } }, { new: true }).lean();
+    if (!company) return { error: "Company not found" };
+    return { company };
+  }
+
+  const company = memory.companies.get(companyId);
+  if (!company) return { error: "Company not found" };
+  company.logoUrl = value;
+  company.updatedAt = now();
+  return { company: clone(company) };
+}
+
 export async function updateCompanyKyc({ companyId, payload }) {
   const kyc = cleanKycPayload(payload);
   const status = payload.submit ? "submitted" : "draft";

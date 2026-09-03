@@ -6,6 +6,7 @@ import {
   updateCompanyProfile,
   updateCompanyTaxSettings,
   updateCompanyNotificationSettings,
+  updateCompanyLogo,
 } from "../../repositories/store.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
@@ -34,6 +35,27 @@ companyRoutes.put(
     const result = await updateCompanyProfile({
       companyId: req.auth.companyId,
       payload: req.body,
+    });
+
+    if (result.error) {
+      throw new HttpError(400, result.error);
+    }
+
+    res.json({ company: result.company });
+  }),
+);
+
+// Upload (or clear, with logoDataUrl: "") the brand logo shown across every
+// public-facing surface — the no-auth order tracking page and invoices
+// (PDF + print view). See updateCompanyLogo for the validation/size cap.
+companyRoutes.put(
+  "/logo",
+  requireAuth,
+  requirePermission("company:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await updateCompanyLogo({
+      companyId: req.auth.companyId,
+      logoDataUrl: req.body?.logoDataUrl,
     });
 
     if (result.error) {

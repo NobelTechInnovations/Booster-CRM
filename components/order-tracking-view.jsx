@@ -45,6 +45,7 @@ export function OrderTrackingView({ companySlug }) {
   const [phone, setPhone] = useState("");
   const [searchedPhone, setSearchedPhone] = useState("");
   const [storeName, setStoreName] = useState("");
+  const [storeLogo, setStoreLogo] = useState("");
   const [orders, setOrders] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -61,6 +62,7 @@ export function OrderTrackingView({ companySlug }) {
     try {
       const res = await listPublicOrdersByPhone(companySlug, phone.trim());
       setStoreName(res.company?.name || "");
+      setStoreLogo(res.company?.logoUrl || "");
       setOrders(res.orders || []);
       setSearchedPhone(phone.trim());
     } catch (err) {
@@ -87,9 +89,13 @@ export function OrderTrackingView({ companySlug }) {
     <div className="min-h-screen bg-slate-50">
       <div className="mx-auto max-w-lg px-4 py-8">
         <div className="mb-6 text-center">
-          <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-indigo-700 text-white">
-            <ShoppingBag size={22} />
-          </div>
+          {storeLogo ? (
+            <img src={storeLogo} alt={storeName} className="mx-auto h-12 w-12 rounded-xl object-contain" />
+          ) : (
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-indigo-700 text-white">
+              <ShoppingBag size={22} />
+            </div>
+          )}
           <h1 className="mt-3 text-xl font-bold text-slate-900">{storeName || "Track Your Order"}</h1>
           <p className="mt-1 text-sm text-slate-500">Enter your phone number to see your orders</p>
         </div>

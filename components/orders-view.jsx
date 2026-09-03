@@ -222,11 +222,18 @@ function InvoiceModal({ order, company, onClose }) {
         <div id="invoice-printable" className="overflow-hidden rounded-xl border border-slate-200 bg-white text-[13px] shadow-2xl">
           {/* Letterhead */}
           <div className="flex items-start justify-between border-b border-slate-200 px-4 py-3.5">
-            <div>
-              <span className="inline-block rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">{brandWord}</span>
-              <h1 className="mt-1.5 text-base font-bold leading-tight tracking-tight text-slate-950">{legalName}</h1>
-              {gstin ? <p className="mt-0.5 text-[11px] font-medium text-slate-500">GSTIN {gstin}</p> : null}
-              {registeredAddress ? <p className="mt-0.5 max-w-xs text-[11px] leading-4 text-slate-500">{registeredAddress}</p> : null}
+            <div className="flex items-start gap-3">
+              {company?.logoUrl ? (
+                <img src={company.logoUrl} alt={legalName} className="h-10 w-10 shrink-0 rounded object-contain" />
+              ) : null}
+              <div>
+                {!company?.logoUrl && (
+                  <span className="inline-block rounded bg-slate-900 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wider text-white">{brandWord}</span>
+                )}
+                <h1 className={`text-base font-bold leading-tight tracking-tight text-slate-950 ${company?.logoUrl ? "" : "mt-1.5"}`}>{legalName}</h1>
+                {gstin ? <p className="mt-0.5 text-[11px] font-medium text-slate-500">GSTIN {gstin}</p> : null}
+                {registeredAddress ? <p className="mt-0.5 max-w-xs text-[11px] leading-4 text-slate-500">{registeredAddress}</p> : null}
+              </div>
             </div>
             <div className="text-right">
               <p className="inline-block rounded border border-slate-300 px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest text-slate-700">Tax Invoice</p>

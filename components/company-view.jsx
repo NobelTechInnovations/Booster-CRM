@@ -7,16 +7,28 @@ import {
   FileCheck2,
   Globe,
   Hash,
+  Image as ImageIcon,
+  ImageOff,
+  Loader2,
   Mail,
   MapPin,
   Phone,
   Save,
   ShieldCheck,
+  Trash2,
+  Upload,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getCompanyProfile, updateCompanyKyc, updateCompanyProfile } from "@/lib/api";
+import { getCompanyProfile, updateCompanyKyc, updateCompanyProfile, updateCompanyLogo } from "@/lib/api";
+
+// Kept in lockstep with commerce-backend's MAX_LOGO_BYTES / accepted-format
+// check (store.js's updateCompanyLogo) — validating here too so the seller
+// gets an instant, clear error instead of waiting on a round trip for a
+// file that was always going to be rejected.
+const MAX_LOGO_BYTES = 600 * 1024;
+const ACCEPTED_LOGO_TYPES = ["image/png", "image/jpeg"];
 
 const emptyCompany = {
   name: "",
@@ -27,6 +39,7 @@ const emptyCompany = {
   businessType: "",
   gstin: "",
   pan: "",
+  logoUrl: "",
   address: { line1: "", line2: "", city: "", state: "", pincode: "", country: "India" },
 };
 
@@ -48,6 +61,8 @@ export function CompanyView({ onCompanyUpdate }) {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [activeTab, setActiveTab] = useState("profile");
+  const [logoError, setLogoError] = useState("");
+  const logoInputRef = useRef(null);
 
   useEffect(() => {
     async function load() {
@@ -81,6 +96,59 @@ export function CompanyView({ onCompanyUpdate }) {
       setMessage("Company details saved successfully.");
     } catch (caught) {
       setError(caught.message);
+    } finally {
+      setSaving("");
+    }
+  }
+
+  // Uploads immediately on file select — a logo is a single self-contained
+  // action, not something that belongs behind the "Save Company Details"
+  // form submit (which also requires the name field to be valid).
+  function handleLogoFileSelect(event) {
+    const file = event.target.files?.[0];
+    event.target.value = ""; // allow re-selecting the same file later
+    if (!file) return;
+
+    setLogoError("");
+    if (!ACCEPTED_LOGO_TYPES.includes(file.type)) {
+      setLogoError("Logo must be a PNG or JPEG image");
+      return;
+    }
+    if (file.size > MAX_LOGO_BYTES) {
+      setLogoError(`Logo is too large (${Math.round(file.size / 1024)}KB) — please use an image under ${Math.round(MAX_LOGO_BYTES / 1024)}KB`);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      setSaving("logo");
+      setMessage("");
+      try {
+        const result = await updateCompanyLogo(reader.result);
+        setCompany((c) => ({ ...c, logoUrl: result.company.logoUrl }));
+        onCompanyUpdate?.(result.company);
+        setMessage("Logo updated.");
+      } catch (caught) {
+        setLogoError(caught.message);
+      } finally {
+        setSaving("");
+      }
+    };
+    reader.onerror = () => setLogoError("Could not read that file — try again");
+    reader.readAsDataURL(file);
+  }
+
+  async function removeLogo() {
+    setSaving("logo");
+    setMessage("");
+    setLogoError("");
+    try {
+      const result = await updateCompanyLogo("");
+      setCompany((c) => ({ ...c, logoUrl: "" }));
+      onCompanyUpdate?.(result.company);
+      setMessage("Logo removed.");
+    } catch (caught) {
+      setLogoError(caught.message);
     } finally {
       setSaving("");
     }
@@ -213,6 +281,49 @@ export function CompanyView({ onCompanyUpdate }) {
 
             {/* Side panel */}
             <div className="space-y-5">
+              <SectionCard title="Brand Logo" icon={ImageIcon} desc="Shown on your public order-tracking page and every invoice.">
+                <div className="flex items-center gap-4">
+                  <div className="grid h-16 w-16 shrink-0 place-items-center overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--panel-soft)]">
+                    {company.logoUrl ? (
+                      <img src={company.logoUrl} alt="Brand logo" className="h-full w-full object-contain" />
+                    ) : (
+                      <ImageOff size={20} className="text-slate-300" />
+                    )}
+                  </div>
+                  <div className="flex-1 space-y-1.5">
+                    <input
+                      ref={logoInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg"
+                      className="hidden"
+                      onChange={handleLogoFileSelect}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => logoInputRef.current?.click()}
+                      disabled={saving === "logo"}
+                      className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-3 text-xs font-semibold text-slate-700 transition hover:border-indigo-400 hover:text-indigo-700 disabled:opacity-50"
+                    >
+                      {saving === "logo" ? <Loader2 size={13} className="animate-spin" /> : <Upload size={13} />}
+                      {company.logoUrl ? "Replace logo" : "Upload logo"}
+                    </button>
+                    {company.logoUrl && (
+                      <button
+                        type="button"
+                        onClick={removeLogo}
+                        disabled={saving === "logo"}
+                        className="flex h-8 items-center gap-1.5 rounded-lg px-3 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+                      >
+                        <Trash2 size={13} />
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <p className="mt-3 text-[11px] text-slate-400">PNG or JPEG, under 600KB.</p>
+                {logoError && <p className="mt-2 text-xs font-medium text-rose-600">{logoError}</p>}
+              </SectionCard>
+
               <SectionCard title="Tax Identifiers" icon={Hash} desc="GSTIN and PAN linked to your company.">
                 <div className="space-y-4">
                   <Field label="GSTIN" value={company.gstin} onChange={(gstin) => setCompany({ ...company, gstin })} icon={Hash} />

@@ -125,7 +125,7 @@ export async function listPublicOrdersByPhone({ companySlug, phone }) {
   }
 
   return {
-    company: { name: company.name, slug: company.slug },
+    company: { name: company.name, slug: company.slug, logoUrl: company.logoUrl || "" },
     orders: orders.map(publicOrderSummary),
   };
 }
@@ -154,5 +154,5 @@ export async function getPublicOrderDetail({ companySlug, phone, orderId }) {
   const orderPhoneMatches = candidates.includes(order.phone) || candidates.includes(order.shippingAddress?.phone);
   if (!orderPhoneMatches) return { error: "not_found" };
 
-  return { company: { name: company.name, slug: company.slug }, order: publicOrderDetail(order) };
+  return { company: { name: company.name, slug: company.slug, logoUrl: company.logoUrl || "" }, order: publicOrderDetail(order) };
 }
