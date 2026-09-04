@@ -40,6 +40,7 @@ import {
   Camera,
   MessageCircle,
   Webhook,
+  Headset,
 } from "lucide-react";
 import {
   clearSession,
@@ -64,11 +65,12 @@ const NAV_GROUPS = [
       { label: "Fulfillment", icon: PackageCheck, href: "/panel/fulfillment" },
     ]
   },
-  // One-click items (not tucked under a sub-nav) — Customers and Leads are
-  // both used often enough that the extra click into a group first isn't
-  // worth it.
+  // One-click items (not tucked under a sub-nav) — Customers, Leads, and
+  // Support are all used often enough that the extra click into a group
+  // first isn't worth it.
   { label: "Customers", icon: UserRound, href: "/panel/customers", single: true },
   { label: "Leads", icon: Webhook, href: "/panel/leads", single: true },
+  { label: "Support", icon: Headset, href: "/panel/support", single: true },
   {
     label: "Products", icon: Package, href: "/panel/products", children: [
       { label: "Products", icon: Package, href: "/panel/products" },

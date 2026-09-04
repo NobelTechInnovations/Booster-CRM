@@ -1,3 +1,4 @@
+import mongoose from "mongoose";
 import { isMongoConnected } from "../config/database.js";
 import { Channel } from "../models/channel.model.js";
 import { Company } from "../models/company.model.js";
@@ -830,7 +831,16 @@ export async function upsertEmailChannel({ companyId, userId, host, port, secure
 // same as every other channel list.
 export async function getConnectedEmailChannel(companyId) {
   if (isMongoConnected()) {
-    return Channel.findOne({ companyId, channelType: "email", status: "connected" })
+    // companyId on Channel is Mixed (some rows store a plain string — e.g.
+    // every route that upserts a channel from req.auth.companyId, which a
+    // JWT always serializes to a string — others a real ObjectId), so a
+    // bare equality match silently misses rows stored in the other form.
+    // Found live, by this exact function returning null for a channel that
+    // very much existed. Same $in-both-forms fix already used throughout
+    // order.repo.js/public-tracking.repo.js for the identical field.
+    const str = String(companyId);
+    const companyIdMatch = mongoose.Types.ObjectId.isValid(str) ? { $in: [str, new mongoose.Types.ObjectId(str)] } : str;
+    return Channel.findOne({ companyId: companyIdMatch, channelType: "email", status: "connected" })
       .select("+credentials.host +credentials.port +credentials.secure +credentials.username +credentials.password")
       .lean();
   }

@@ -10,7 +10,7 @@ import { computeOrderStage } from "../utils/order-stage.js";
 // throughout order.repo.js) so an equality match against a bare ObjectId
 // silently matches nothing for the string-stored rows. Same $in-both-forms
 // fix as everywhere else in this codebase.
-function companyIdFilter(companyId) {
+export function companyIdFilter(companyId) {
   const str = String(companyId);
   return mongoose.Types.ObjectId.isValid(str) ? { $in: [str, new mongoose.Types.ObjectId(str)] } : str;
 }
@@ -28,14 +28,17 @@ function companyIdFilter(companyId) {
 // ("+919876543210", "919876543210", "9876543210", with spaces/dashes) —
 // same normalize-to-candidates approach already used for WhatsApp/lead
 // phone matching elsewhere in this codebase (see whatsapp.repo.js).
-function phoneCandidates(rawPhone) {
+export function phoneCandidates(rawPhone) {
   const digits = String(rawPhone || "").replace(/\D/g, "");
   if (!digits) return [];
   const last10 = digits.slice(-10);
   return [...new Set([digits, last10, `91${last10}`, `+91${last10}`])];
 }
 
-async function getActiveCompanyBySlug(companySlug) {
+// Exported for reuse by any other no-login, company-slug-scoped public
+// surface (see public-support.repo.js) — same "which company" resolution
+// every one of these needs, kept in exactly one place.
+export async function getActiveCompanyBySlug(companySlug) {
   const slug = String(companySlug || "").toLowerCase().trim();
   if (!slug) return null;
   if (isMongoConnected()) {
