@@ -53,30 +53,62 @@ async function salesReport({ companyId, from, to }) {
       { key: "date", label: "Date" },
       { key: "orders", label: "Orders" },
       { key: "revenue", label: "Revenue (₹)" },
-      { key: "aov", label: "AOV (₹)" },
+      // Spelled out, not just the acronym — this is the one column people
+      // ask "what is this" about once it's sitting in an exported sheet
+      // with no surrounding page context to explain it.
+      { key: "aov", label: "Avg Order Value (₹)" },
     ],
     rows,
   };
 }
 
 // ─── 2. GST / Tax Report ─────────────────────────────────────────────────────
+
+// Loose match — trims/lowercases/collapses whitespace so "Maharashtra " vs
+// "maharashtra" (or extra spacing from a manual entry) doesn't wrongly read
+// as inter-state. Doesn't attempt real alias resolution (e.g. "Orissa" vs
+// "Odisha", "Pondicherry" vs "Puducherry") — genuinely different spellings
+// still show as a mismatch, which is exactly why both raw state strings are
+// shown as their own columns below: a company can eyeball a suspicious row
+// rather than trusting a fully automated classification silently.
+function normalizeState(s) {
+  return String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
+}
+
 async function gstReport({ companyId, from, to }) {
   const [{ orders }, company] = await Promise.all([
     getOrdersInRange({ companyId, from, to }),
     getCompany(companyId),
   ]);
   const gstRate = Number(company?.taxSettings?.gstRate ?? 5);
+  // placeOfSupply is the actual GST-purpose field (Settings → Tax) —
+  // preferred over the company's plain registered address state, which
+  // may not be the same as where the business is GST-registered from.
+  const storeState = company?.taxSettings?.placeOfSupply || company?.address?.state || "";
+  const halfRate = round(gstRate / 2);
 
   const rows = orders.map((o) => {
+    const customerState = o.shippingAddress?.province || "";
     const isCancelled = Boolean(o.cancelledAt) || o.financialStatus === "voided" || o.financialStatus === "refunded";
+    const hasStateInfo = Boolean(storeState) && Boolean(customerState);
+    const isIntraState = hasStateInfo && normalizeState(storeState) === normalizeState(customerState);
+    const gstType = !hasStateInfo ? "Unknown" : isIntraState ? "CGST + SGST" : "IGST";
+    const rateSplit = !hasStateInfo ? `${gstRate}% (state unknown)` : isIntraState ? `CGST ${halfRate}% + SGST ${halfRate}%` : `IGST ${gstRate}%`;
 
     if (isCancelled) {
       return {
         orderNumber: o.name || o.externalId,
         date: fmtDate(o.shopifyCreatedAt),
+        storeState: storeState || "—",
+        customerState: customerState || "—",
+        gstType: "—",
+        rateSplit: "—",
         taxableValue: 0,
-        recordedTax: 0,
+        cgst: 0,
+        sgst: 0,
+        igst: 0,
         expectedTax: 0,
+        recordedTax: 0,
         total: 0,
         status: "Cancelled",
       };
@@ -90,13 +122,26 @@ async function gstReport({ companyId, from, to }) {
     // not subtotal × rate (which would double-count tax already included).
     const taxableValue = round(total / (1 + gstRate / 100));
     const expectedTax = round(total - taxableValue);
+    // Split only when we actually know both states — an "Unknown" row
+    // shows the full expected tax as neither CGST/SGST nor IGST, rather
+    // than guessing one way and quietly being wrong half the time.
+    const cgst = hasStateInfo && isIntraState ? round(expectedTax / 2) : 0;
+    const sgst = hasStateInfo && isIntraState ? round(expectedTax / 2) : 0;
+    const igst = hasStateInfo && !isIntraState ? expectedTax : 0;
 
     return {
       orderNumber: o.name || o.externalId,
       date: fmtDate(o.shopifyCreatedAt),
+      storeState: storeState || "—",
+      customerState: customerState || "—",
+      gstType,
+      rateSplit,
       taxableValue,
-      recordedTax,
+      cgst,
+      sgst,
+      igst,
       expectedTax,
+      recordedTax,
       total,
       status: paymentStatusLabel(o.financialStatus),
     };
@@ -106,13 +151,22 @@ async function gstReport({ companyId, from, to }) {
 
   return {
     title: "GST / Tax Report",
-    description: `GST @ ${gstRate}% treated as inclusive in the order total (India default) — expected tax vs. what Shopify recorded, for reconciliation. Cancelled orders show ₹0.`,
+    description: storeState
+      ? `Store registered in ${storeState} (Settings → Tax → Place of Supply) — same-state orders split as CGST + SGST, other-state orders as IGST, both at ${gstRate}% total. GST @ ${gstRate}% treated as inclusive in the order total (India default). Cancelled orders show ₹0.`
+      : `No Place of Supply set (Settings → Tax) — every row shows as "Unknown" until it's filled in, since CGST/SGST vs IGST can't be determined without knowing which state the store is registered in. GST @ ${gstRate}% treated as inclusive in the order total (India default). Cancelled orders show ₹0.`,
     columns: [
       { key: "orderNumber", label: "Order #" },
       { key: "date", label: "Date" },
+      { key: "storeState", label: "Store State" },
+      { key: "customerState", label: "Delivery State" },
+      { key: "gstType", label: "GST Type" },
+      { key: "rateSplit", label: "Rate" },
       { key: "taxableValue", label: "Taxable Value (₹)" },
+      { key: "cgst", label: "CGST (₹)" },
+      { key: "sgst", label: "SGST (₹)" },
+      { key: "igst", label: "IGST (₹)" },
+      { key: "expectedTax", label: "Total Expected GST (₹)" },
       { key: "recordedTax", label: "Recorded Tax (₹)" },
-      { key: "expectedTax", label: `Expected GST @ ${gstRate}% (₹)` },
       { key: "total", label: "Total (₹)" },
       { key: "status", label: "Status" },
     ],
