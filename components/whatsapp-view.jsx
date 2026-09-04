@@ -32,6 +32,40 @@ function isPermissionError(message) {
   return /necessary permissions|\(#200\)/i.test(message || "");
 }
 
+// Meta error 131047 — the customer hasn't messaged in the last 24 hours, so
+// free text is rejected outright; only an approved template can re-open the
+// conversation. Not a bug to "fix" like the permissions error above, just a
+// restriction the company needs a quick way to act on right where it shows.
+function isReengagementError(errorCode) {
+  return errorCode === 131047;
+}
+
+// Reuses TemplateSendForm (the same "cold number" flow from New Chat) —
+// upsertConversation/sendWhatsAppTemplateMessage on the backend already
+// resolve by waId, so sending a template here lands in this SAME
+// conversation rather than creating a duplicate.
+function ReengagementHint({ conversation, onSent }) {
+  const [open, setOpen] = useState(false);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => setOpen(true)}
+        className="mt-1 rounded-md bg-indigo-600 px-2.5 py-1 text-[11px] font-semibold text-white hover:bg-indigo-700"
+      >
+        Send an approved template instead
+      </button>
+    );
+  }
+
+  return (
+    <div className="mt-2 max-w-xs rounded-lg border border-indigo-100 bg-white p-3">
+      <TemplateSendForm to={conversation.waId} onSent={() => { setOpen(false); onSent(); }} />
+    </div>
+  );
+}
+
 function FixPermissionsHint() {
   const [fixing, setFixing] = useState(false);
   const [result, setResult] = useState("");
@@ -309,7 +343,14 @@ function MessageMedia({ message }) {
 
 function MessageThread({ conversation, channelName, onDeleted }) {
   const [messages, setMessages] = useState([]);
-  const [isLoading, setIsLoading] = useState(true);
+  // Deliberately no visible "Loading messages…" state — fetching happens
+  // quietly in the background (same on the first open of a conversation as
+  // on every 12s poll after) and messages just appear once they arrive,
+  // the way a real chat app behaves rather than flashing a loading screen.
+  // hasLoadedOnce only gates "No messages yet." (true empty) vs rendering
+  // nothing while that first fetch is still in flight, so an empty state
+  // is never shown before we actually know it's empty.
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
   const [text, setText] = useState("");
   const [attachment, setAttachment] = useState(null);
   const [sending, setSending] = useState(false);
@@ -331,18 +372,28 @@ function MessageThread({ conversation, channelName, onDeleted }) {
   }
 
   async function load(silent = false) {
-    if (!silent) setIsLoading(true);
     try {
       const res = await getWhatsAppMessages(conversation._id);
       setMessages(res.messages || []);
+      if (!silent) setError("");
     } catch (err) {
+      // A background poll failing silently is a transient blip, not
+      // something worth interrupting the view with — only a real,
+      // explicit load (first open, or right after sending) surfaces it.
       if (!silent) setError(err.message);
     } finally {
-      if (!silent) setIsLoading(false);
+      setHasLoadedOnce(true);
     }
   }
 
   useEffect(() => {
+    // Clear immediately on switching conversations — this component
+    // instance isn't remounted (no `key` on <MessageThread> in the parent),
+    // so without this the previous conversation's bubbles would otherwise
+    // stay on screen for a moment under the new conversation's header.
+    setMessages([]);
+    setHasLoadedOnce(false);
+    setError("");
     load();
     // No websocket/real-time push exists in this app yet — light polling
     // while a conversation is open is the simplest way to pick up new
@@ -403,9 +454,7 @@ function MessageThread({ conversation, channelName, onDeleted }) {
       </div>
 
       <div ref={listRef} className="flex-1 space-y-2 overflow-y-auto bg-slate-50/60 p-4">
-        {isLoading ? (
-          <p className="text-center text-xs text-[var(--muted)]">Loading messages…</p>
-        ) : messages.length === 0 ? (
+        {!hasLoadedOnce ? null : messages.length === 0 ? (
           <p className="text-center text-xs text-[var(--muted)]">No messages yet.</p>
         ) : (
           messages.map((m) => (
@@ -418,9 +467,12 @@ function MessageThread({ conversation, channelName, onDeleted }) {
                 <MessageMedia message={m} />
                 {m.text ? <p className="whitespace-pre-wrap">{m.text}</p> : null}
                 {m.status === "failed" && m.errorMessage ? (
-                  <p className="mt-1 text-[11px] font-medium text-rose-600">
-                    Failed: {m.errorMessage}{m.errorCode ? ` (${m.errorCode})` : ""}
-                  </p>
+                  <div className="mt-1">
+                    <p className="text-[11px] font-medium text-rose-600">
+                      Failed: {m.errorMessage}{m.errorCode ? ` (${m.errorCode})` : ""}
+                    </p>
+                    {isReengagementError(m.errorCode) ? <ReengagementHint conversation={conversation} onSent={load} /> : null}
+                  </div>
                 ) : null}
                 <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-slate-400">
                   {fmt(m.timestamp)}
