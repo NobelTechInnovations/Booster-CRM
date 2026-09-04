@@ -83,6 +83,7 @@ import {
   saveProductMapping,
   syncChannel,
   disconnectChannel,
+  setChannelActive,
   updateSyncedRecord,
   cancelFulfillmentOrder,
   listAssets,
@@ -830,21 +831,34 @@ const PROVIDER_COLORS = {
   default: { bg: "bg-slate-500", ring: "ring-slate-200", label: "?" },
 };
 
-function ChannelCard({ channel, connectedChannel, onSyncChannel, onDisconnectChannel }) {
+function ChannelCard({ channel, connectedChannel, onSyncChannel, onDisconnectChannel, onToggleActive }) {
   const isShopify = channel.provider === "shopify";
   const isAmazon = channel.provider === "amazon";
   const isConnected = Boolean(connectedChannel);
+  // A present-but-paused channel (see setChannelActive) still shows the
+  // "connected" card layout below — isActive just gates Sync and swaps
+  // the Mark Inactive/Reactivate button's label and action.
+  const isActive = connectedChannel?.status === "connected";
   const isAvailable = channel.status === "Available";
   const colors = PROVIDER_COLORS[channel.provider] || PROVIDER_COLORS.default;
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectError, setReconnectError] = useState("");
   const [isDisconnecting, setIsDisconnecting] = useState(false);
+  const [isTogglingActive, setIsTogglingActive] = useState(false);
 
   function handleDisconnect() {
     const label = connectedChannel?.shop || channel.name;
     if (!window.confirm(`Disconnect ${label}? Orders and products already synced stay put — you can reconnect any time, but automatic syncing stops until you do.`)) return;
     setIsDisconnecting(true);
     Promise.resolve(onDisconnectChannel?.(connectedChannel._id || connectedChannel.id)).finally(() => setIsDisconnecting(false));
+  }
+
+  function handleToggleActive() {
+    const channelId = connectedChannel._id || connectedChannel.id;
+    const label = connectedChannel?.shop || channel.name;
+    if (isActive && !window.confirm(`Mark ${label} inactive? Auto-sync (daily sync + incoming webhooks) stops until you reactivate it — credentials stay intact, no reconnect needed either way.`)) return;
+    setIsTogglingActive(true);
+    Promise.resolve(onToggleActive?.(channelId, !isActive)).finally(() => setIsTogglingActive(false));
   }
   const canEditShopify =
     !isShopify ||
@@ -886,7 +900,12 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel, onDisconnectCha
           </div>
         </div>
         {/* Status badge */}
-        {isConnected ? (
+        {isConnected && !isActive ? (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-50 px-2.5 py-1 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+            <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+            Inactive
+          </span>
+        ) : isConnected ? (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
             Live
@@ -933,10 +952,25 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel, onDisconnectCha
       <div className="mt-auto px-4 pb-5">
         {isConnected ? (
           <div className="space-y-2">
-            <Button className="w-full h-10 font-semibold" onClick={() => onSyncChannel?.(connectedChannel._id || connectedChannel.id)}>
+            <Button
+              className="w-full h-10 font-semibold"
+              onClick={() => onSyncChannel?.(connectedChannel._id || connectedChannel.id)}
+              disabled={!isActive}
+              title={isActive ? undefined : "Reactivate this channel first — auto-sync is paused"}
+            >
               <RefreshCw size={15} />
               Sync {channel.name}
             </Button>
+            <button
+              onClick={handleToggleActive}
+              disabled={isTogglingActive}
+              className={`flex w-full items-center justify-center gap-1.5 rounded-xl border py-2 text-xs font-semibold transition disabled:opacity-50 ${
+                isActive ? "border-amber-200 text-amber-700 hover:bg-amber-50" : "border-emerald-200 text-emerald-700 hover:bg-emerald-50"
+              }`}
+            >
+              <PlugZap size={13} />
+              {isTogglingActive ? "Updating…" : isActive ? "Mark Inactive" : "Reactivate"}
+            </button>
             {!canEditShopify ? (
               <>
                 <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -1007,6 +1041,21 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
     }
   }
 
+  // Pauses/resumes auto-sync without touching credentials — unlike
+  // disconnectOne above, the channel stays in the list (status flips
+  // in place) rather than dropping out of it.
+  async function toggleActiveOne(channelId, active) {
+    setChannelsError("");
+    try {
+      const result = await setChannelActive(channelId, active);
+      setConnectedChannels((current) =>
+        current.map((channel) => (String(channel._id || channel.id) === String(channelId) ? { ...channel, ...result.channel } : channel)),
+      );
+    } catch (error) {
+      setChannelsError(error.message);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -1025,14 +1074,18 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
 
       <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
         {channelCatalog.flatMap((channel) => {
+          // "inactive" (paused auto-sync, see setChannelActive) still shows
+          // as a present card with its own Reactivate action — only a truly
+          // disconnected channel falls back to the plain connect form.
           if (channel.provider !== "shopify") {
             return [
               <ChannelCard
                 key={channel.provider}
                 channel={channel}
-                connectedChannel={connectedChannels.find((entry) => entry.provider === channel.provider && entry.status === "connected") || null}
+                connectedChannel={connectedChannels.find((entry) => entry.provider === channel.provider && ["connected", "inactive"].includes(entry.status)) || null}
                 onSyncChannel={syncOne}
                 onDisconnectChannel={disconnectOne}
+                onToggleActive={toggleActiveOne}
               />,
             ];
           }
@@ -1042,7 +1095,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
           // only ever have been able to show whichever one Mongo happened
           // to return first — plus a trailing "connect another" card so
           // there's always a way to add one more.
-          const connectedShopifyChannels = connectedChannels.filter((entry) => entry.provider === "shopify" && entry.status === "connected");
+          const connectedShopifyChannels = connectedChannels.filter((entry) => entry.provider === "shopify" && ["connected", "inactive"].includes(entry.status));
           return [
             ...connectedShopifyChannels.map((entry) => (
               <ChannelCard
@@ -1051,6 +1104,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
                 connectedChannel={entry}
                 onSyncChannel={syncOne}
                 onDisconnectChannel={disconnectOne}
+                onToggleActive={toggleActiveOne}
               />
             )),
             <ChannelCard
@@ -1059,6 +1113,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
               connectedChannel={null}
               onSyncChannel={syncOne}
               onDisconnectChannel={disconnectOne}
+              onToggleActive={toggleActiveOne}
             />,
           ];
         })}

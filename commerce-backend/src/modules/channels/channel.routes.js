@@ -6,6 +6,8 @@ import {
   getChannelForSync,
   getStoreMode,
   listChannels,
+  setChannelActive,
+  updateChannelAppCredentials,
 } from "../../repositories/channel.repo.js";
 import {
   listCommerceRecords,
@@ -36,6 +38,7 @@ import {
   updateShopifyRecord,
   createShopifyOrderDirect,
   createShopifyCustomerDirect,
+  normalizeShop,
 } from "./shopify.service.js";
 import { isMongoConnected } from "../../config/database.js";
 import { SyncedCustomer } from "../../models/synced-customer.model.js";
@@ -490,9 +493,16 @@ channelRoutes.put(
   "/shopify/setup",
   requireAuth,
   asyncHandler(async (req, res) => {
+    // shop is optional — present only when this is a per-store custom app
+    // (a company connecting more than one Shopify store); normalized here
+    // so it matches exactly what buildShopifyInstallUrl/
+    // completeShopifyConnection look the pending config up by.
     const result = await updateShopifyConfig({
       companyId: req.auth.companyId,
-      payload: req.body || {},
+      payload: {
+        ...req.body,
+        shop: req.body?.shop ? normalizeShop(req.body.shop) : undefined,
+      },
     });
 
     if (result.error) {
@@ -807,6 +817,52 @@ channelRoutes.delete(
       throw new HttpError(404, "Channel not found");
     }
 
+    res.json({ channel });
+  }),
+);
+
+// Pause/resume auto-sync without touching credentials — see
+// setChannelActive's own comment for exactly how this differs from
+// disconnect above.
+channelRoutes.patch(
+  "/:channelId/status",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const active = Boolean(req.body?.active);
+    const result = await setChannelActive({
+      channelId: req.params.channelId,
+      companyId: req.auth.companyId,
+      active,
+    });
+
+    if (!result) throw new HttpError(404, "Channel not found");
+    if (result.error) throw new HttpError(400, result.error);
+
+    res.json({ channel: result });
+  }),
+);
+
+// Re-attach a Shopify app's Client ID/Secret to an already-connected
+// channel, no reconnect needed — see updateChannelAppCredentials's own
+// comment for why this is safe (the access token doesn't depend on it).
+channelRoutes.patch(
+  "/:channelId/app-credentials",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const apiKey = String(req.body?.apiKey || "").trim();
+    const apiSecret = String(req.body?.apiSecret || "").trim();
+    if (!apiKey || !apiSecret) {
+      throw new HttpError(400, "apiKey and apiSecret are required");
+    }
+
+    const channel = await updateChannelAppCredentials({
+      channelId: req.params.channelId,
+      companyId: req.auth.companyId,
+      apiKey,
+      apiSecret,
+    });
+
+    if (!channel) throw new HttpError(404, "Channel not found");
     res.json({ channel });
   }),
 );

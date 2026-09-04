@@ -37,8 +37,13 @@ const channelSchema = new mongoose.Schema(
     shop: { type: String, required: true, lowercase: true, trim: true },
 
     status: {
+      // "inactive" pauses auto-sync (daily sync job + incoming webhooks
+      // both already filter on status:"connected") while keeping the
+      // access token and any app credentials intact — deliberately
+      // different from "disconnected", which clears the token and needs a
+      // real reconnect. Toggled via setChannelActive (channel.repo.js).
       type: String,
-      enum: ["connected", "disconnected", "reconnect_required", "syncing"],
+      enum: ["connected", "disconnected", "reconnect_required", "syncing", "inactive"],
       default: "connected",
       index: true,
     },

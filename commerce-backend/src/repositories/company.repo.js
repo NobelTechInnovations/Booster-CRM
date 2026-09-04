@@ -2,6 +2,7 @@ import { isMongoConnected } from "../config/database.js";
 import { Company } from "../models/company.model.js";
 import { User } from "../models/user.model.js";
 import { memory, id, clone, now, slugify } from "./memory-store.js";
+import { upsertShopifyPendingAppConfig } from "./channel.repo.js";
 
 function publicUser(user, { actorUserId, company } = {}) {
   if (!user) return user;
@@ -185,7 +186,26 @@ export async function getShopifyConfig(companyId, { includeSecret = false } = {}
   return clone(memory.companies.get(companyId)?.integrations?.shopify || null);
 }
 
+// payload.shop is optional — when a company is connecting more than one
+// Shopify store (each with its own Partner app), passing shop scopes this
+// custom app config to THAT store only, via a short-lived pending record
+// (see shopify-pending-app-config.model.js) that buildShopifyInstallUrl/
+// completeShopifyConnection consume during the connect that follows.
+// Omitting shop keeps the original company-wide behavior exactly as it
+// was — the one app a company with a single store already has configured.
 export async function updateShopifyConfig({ companyId, payload }) {
+  const shop = String(payload.shop || "").trim().toLowerCase();
+
+  if (shop) {
+    const apiKey = String(payload.apiKey || "").trim();
+    const apiSecret = String(payload.apiSecret || "").trim();
+    if (!apiKey || !apiSecret) {
+      return { error: "Shopify Client ID and Client Secret are required" };
+    }
+    await upsertShopifyPendingAppConfig({ companyId, shop, apiKey, apiSecret });
+    return { config: { apiKey, shop } };
+  }
+
   const existing = await getShopifyConfig(companyId, { includeSecret: true });
   const shopify = {
     apiKey: String(payload.apiKey || "").trim(),

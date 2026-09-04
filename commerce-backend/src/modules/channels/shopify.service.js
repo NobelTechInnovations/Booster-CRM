@@ -8,6 +8,8 @@ import {
   addShopifyWebhookRecord,
   getConnectedShopifyChannel,
   getShopifyChannelByShop,
+  getShopifyPendingAppConfig,
+  deleteShopifyPendingAppConfig,
 } from "../../repositories/channel.repo.js";
 import { saveSyncedShopifyData, getCommerceRecordForUpdate } from "../../repositories/order.repo.js";
 import { getShopifyConfig } from "../../repositories/company.repo.js";
@@ -21,7 +23,19 @@ import { createOauthState, readOauthState } from "../../utils/oauth-state.js";
 // is always the same single backend callback regardless of which app is
 // used — each brand just needs to whitelist that one URL inside their own
 // app's "Redirect URLs" field once, no coordination with us needed.
-async function getEffectiveShopifyAppConfig(companyId) {
+//
+// Resolution order: a pending per-shop config (set up specifically for
+// THIS store, see shopify-pending-app-config.model.js — needed once a
+// company connects more than one Shopify store, each through its own app)
+// wins first; then the company-wide custom config (today's original,
+// single-store behavior); then the shared env app as the final fallback.
+async function getEffectiveShopifyAppConfig(companyId, shop) {
+  if (shop) {
+    const pending = await getShopifyPendingAppConfig({ companyId, shop });
+    if (pending?.apiKey && pending?.apiSecret) {
+      return { apiKey: pending.apiKey, apiSecret: pending.apiSecret, custom: true, pending: true };
+    }
+  }
   const custom = await getShopifyConfig(companyId, { includeSecret: true });
   if (custom?.apiKey && custom?.apiSecret) {
     return { apiKey: custom.apiKey, apiSecret: custom.apiSecret, custom: true };
@@ -52,7 +66,8 @@ export async function buildShopifyInstallUrl({ shop, companyId, userId }) {
     return env.shopify.installUrl;
   }
 
-  const config = await getEffectiveShopifyAppConfig(companyId);
+  const normalizedShop = normalizeShop(shop);
+  const config = await getEffectiveShopifyAppConfig(companyId, normalizedShop);
   if (!config.apiKey || !config.apiSecret) {
     throw new HttpError(
       500,
@@ -60,7 +75,6 @@ export async function buildShopifyInstallUrl({ shop, companyId, userId }) {
     );
   }
 
-  const normalizedShop = normalizeShop(shop);
   const state = createOauthState({ companyId, userId, shop: normalizedShop });
   const redirectUri = `${env.shopify.appUrl}/api/channels/shopify/callback`;
   const params = new URLSearchParams({
@@ -751,7 +765,7 @@ export async function completeShopifyConnection(query) {
     throw new HttpError(400, "Shopify state does not match shop");
   }
 
-  const config = await getEffectiveShopifyAppConfig(state.companyId);
+  const config = await getEffectiveShopifyAppConfig(state.companyId, shop);
   verifyShopifyHmac(query, config.apiSecret);
 
   const { accessToken, scopes } = await exchangeCodeForAccessToken(shop, query.code, config);
@@ -764,7 +778,18 @@ export async function completeShopifyConnection(query) {
     shopDetails,
     scopes,
     accessToken,
+    // Only ever set when this connect used a per-store pending app config
+    // (config.pending, from getEffectiveShopifyAppConfig above) — a plain
+    // reconnect through the company-wide/shared app passes neither, and
+    // upsertShopifyChannel's dotted-path $set leaves whatever this channel
+    // already had untouched in that case.
+    apiKey: config.pending ? config.apiKey : undefined,
+    apiSecret: config.pending ? config.apiSecret : undefined,
   });
+
+  if (config.pending) {
+    await deleteShopifyPendingAppConfig({ companyId: state.companyId, shop });
+  }
 
   // Automatically register real-time webhooks
   registerShopifyWebhooks(shop, accessToken, channel._id || channel.id, state.companyId).catch(console.error);

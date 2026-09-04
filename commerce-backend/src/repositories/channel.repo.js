@@ -1,5 +1,6 @@
 import { isMongoConnected } from "../config/database.js";
 import { Channel } from "../models/channel.model.js";
+import { ShopifyPendingAppConfig } from "../models/shopify-pending-app-config.model.js";
 import { memory, id, clone, now } from "./memory-store.js";
 
 function withoutCredentials(channel) {
@@ -80,9 +81,67 @@ export async function disconnectChannel({ channelId, companyId }) {
   return withoutCredentials(channel);
 }
 
+// Deliberately different from disconnectChannel above — "inactive" pauses
+// auto-sync (the daily sync job and webhook receiver both already filter
+// on status:"connected", so this alone is enough to stop both — see
+// shopify-sync.job.js and shopify-webhook.routes.js) while leaving the
+// access token and any per-channel app credentials completely intact, so
+// re-activating needs no reconnect. Only ever toggles between these two
+// values — a channel that's genuinely "disconnected" or "reconnect_required"
+// needs the real reconnect flow, not this.
+export async function setChannelActive({ channelId, companyId, active }) {
+  const status = active ? "connected" : "inactive";
+  if (isMongoConnected()) {
+    const channel = await Channel.findOne({ _id: channelId, companyId }).lean();
+    if (!channel) return null;
+    if (!["connected", "inactive"].includes(channel.status)) {
+      return { error: `Can't toggle a channel that's currently "${channel.status}" — reconnect it first` };
+    }
+    return Channel.findOneAndUpdate({ _id: channelId, companyId }, { $set: { status } }, { returnDocument: "after" }).lean();
+  }
+
+  const channel = memory.channels.get(channelId);
+  if (!channel || String(channel.companyId) !== String(companyId)) return null;
+  if (!["connected", "inactive"].includes(channel.status)) {
+    return { error: `Can't toggle a channel that's currently "${channel.status}" — reconnect it first` };
+  }
+  channel.status = status;
+  channel.updatedAt = now();
+  return withoutCredentials(channel);
+}
+
+// Sets a channel's Shopify app credentials directly, without any OAuth
+// round-trip — the access token already granted doesn't depend on the app
+// secret at all (that's only ever used to verify the OAuth callback, which
+// already happened, and incoming webhooks). This is what lets a company
+// re-attach the right app secret to an already-connected store if it was
+// ever lost (e.g. a shared/company-wide config getting overwritten by a
+// different store's setup) or is only now being split out into its own app.
+export async function updateChannelAppCredentials({ channelId, companyId, apiKey, apiSecret }) {
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate(
+      { _id: channelId, companyId },
+      { $set: { "credentials.apiKey": apiKey, "credentials.apiSecret": apiSecret } },
+      { returnDocument: "after" },
+    ).lean();
+  }
+
+  const channel = memory.channels.get(channelId);
+  if (!channel || String(channel.companyId) !== String(companyId)) return null;
+  channel.credentials = { ...channel.credentials, apiKey, apiSecret };
+  channel.updatedAt = now();
+  return withoutCredentials(channel);
+}
+
 // ─── Shopify Channel ────────────────────────────────────────────────────────
 
-export async function upsertShopifyChannel({ companyId, userId, shop, shopDetails, scopes, accessToken }) {
+// apiKey/apiSecret are optional — only passed when this specific connect
+// used a per-store custom Shopify app (see shopify-pending-app-config
+// model). Both branches below set credentials via dotted paths rather than
+// replacing the whole `credentials` object, specifically so a plain
+// reconnect (no new app credentials supplied) never wipes an apiKey/
+// apiSecret this channel already had stored from an earlier connect.
+export async function upsertShopifyChannel({ companyId, userId, shop, shopDetails, scopes, accessToken, apiKey, apiSecret }) {
   if (isMongoConnected()) {
     return Channel.findOneAndUpdate(
       { companyId, provider: "shopify", shop },
@@ -95,7 +154,9 @@ export async function upsertShopifyChannel({ companyId, userId, shop, shopDetail
           name: shopDetails.name || shop,
           status: "connected",
           scopes,
-          credentials: { accessToken },
+          "credentials.accessToken": accessToken,
+          ...(apiKey ? { "credentials.apiKey": apiKey } : {}),
+          ...(apiSecret ? { "credentials.apiSecret": apiSecret } : {}),
           external: {
             shopId:          shopDetails.id ? String(shopDetails.id) : undefined,
             email:           shopDetails.email,
@@ -125,7 +186,12 @@ export async function upsertShopifyChannel({ companyId, userId, shop, shopDetail
     name:        shopDetails.name || shop,
     status:      "connected",
     scopes,
-    credentials: { accessToken },
+    credentials: {
+      ...(existing?.credentials || {}),
+      accessToken,
+      ...(apiKey ? { apiKey } : {}),
+      ...(apiSecret ? { apiSecret } : {}),
+    },
     external: {
       shopId:          shopDetails.id ? String(shopDetails.id) : undefined,
       email:           shopDetails.email,
@@ -167,10 +233,35 @@ export async function addShopifyWebhookRecord({ channelId, companyId, topic, web
   return clone(channel);
 }
 
+// See shopify-pending-app-config.model.js for why this exists at all — a
+// short-lived bridge for a per-store custom Shopify app's credentials
+// across the OAuth redirect round-trip, keyed by {companyId, shop} rather
+// than a new opaque token since both already ride in the OAuth state.
+// Mongo-only (no memory-store fallback) — a real OAuth round-trip against
+// Shopify's own servers needs a real backend either way.
+export async function upsertShopifyPendingAppConfig({ companyId, shop, apiKey, apiSecret }) {
+  if (!isMongoConnected()) return null;
+  return ShopifyPendingAppConfig.findOneAndUpdate(
+    { companyId, shop },
+    { $set: { apiKey, apiSecret } },
+    { upsert: true, new: true },
+  ).lean();
+}
+
+export async function getShopifyPendingAppConfig({ companyId, shop }) {
+  if (!isMongoConnected()) return null;
+  return ShopifyPendingAppConfig.findOne({ companyId, shop }).select("+apiSecret").lean();
+}
+
+export async function deleteShopifyPendingAppConfig({ companyId, shop }) {
+  if (!isMongoConnected()) return;
+  await ShopifyPendingAppConfig.deleteOne({ companyId, shop });
+}
+
 export async function getShopifyChannelByShop(shop) {
   if (isMongoConnected()) {
     return Channel.findOne({ provider: "shopify", shop, status: "connected" })
-      .select("+credentials.accessToken")
+      .select("+credentials.accessToken +credentials.apiSecret")
       .lean();
   }
   return clone([...memory.channels.values()].find((ch) => ch.provider === "shopify" && ch.shop === shop) || null);

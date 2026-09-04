@@ -1,8 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, Loader2, PlugZap, RefreshCcw, Store, UploadCloud } from "lucide-react";
-import { listChannels, createShopifyConnection, copyStoreData, pushMigratedCustomersToShopify } from "@/lib/api";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, KeyRound, Loader2, PlugZap, RefreshCcw, Store, UploadCloud } from "lucide-react";
+import { listChannels, createShopifyConnection, saveShopifySetup, updateChannelAppCredentials, copyStoreData, pushMigratedCustomersToShopify } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
 // Store-to-store migration — for replacing an old Shopify store with a new
@@ -23,6 +23,16 @@ export function StoreMigrationTab() {
   const [newShop, setNewShop] = useState("");
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState("");
+  const [useCustomApp, setUseCustomApp] = useState(false);
+  const [customApiKey, setCustomApiKey] = useState("");
+  const [customApiSecret, setCustomApiSecret] = useState("");
+
+  const [editingCredsFor, setEditingCredsFor] = useState("");
+  const [credsApiKey, setCredsApiKey] = useState("");
+  const [credsApiSecret, setCredsApiSecret] = useState("");
+  const [savingCreds, setSavingCreds] = useState(false);
+  const [credsError, setCredsError] = useState("");
+  const [credsSavedFor, setCredsSavedFor] = useState("");
 
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
@@ -57,11 +67,47 @@ export function StoreMigrationTab() {
     setConnecting(true);
     setConnectError("");
     try {
+      // If this store has its own Shopify app, save it scoped to this shop
+      // BEFORE connecting — buildShopifyInstallUrl picks it up by shop, so
+      // order matters here (mirrors the existing single-store connect flow
+      // on the Channels page: save-then-connect).
+      if (useCustomApp) {
+        if (!customApiKey.trim() || !customApiSecret.trim()) {
+          throw new Error("Client ID and Client Secret are required for a custom app");
+        }
+        await saveShopifySetup({ shop: newShop.trim(), apiKey: customApiKey.trim(), apiSecret: customApiSecret.trim() });
+      }
       const result = await createShopifyConnection(newShop.trim());
       window.location.href = result.installUrl;
     } catch (err) {
       setConnectError(err.message);
       setConnecting(false);
+    }
+  }
+
+  function startEditCreds(channelId) {
+    setEditingCredsFor(channelId);
+    setCredsApiKey("");
+    setCredsApiSecret("");
+    setCredsError("");
+    setCredsSavedFor("");
+  }
+
+  async function saveCreds(channelId) {
+    if (!credsApiKey.trim() || !credsApiSecret.trim()) {
+      setCredsError("Client ID and Client Secret are required");
+      return;
+    }
+    setSavingCreds(true);
+    setCredsError("");
+    try {
+      await updateChannelAppCredentials(channelId, { apiKey: credsApiKey.trim(), apiSecret: credsApiSecret.trim() });
+      setEditingCredsFor("");
+      setCredsSavedFor(channelId);
+    } catch (err) {
+      setCredsError(err.message);
+    } finally {
+      setSavingCreds(false);
     }
   }
 
@@ -135,34 +181,107 @@ export function StoreMigrationTab() {
           <p className="text-sm text-slate-400">No Shopify stores connected yet.</p>
         ) : (
           <div className="mb-4 space-y-2">
-            {channels.map((c) => (
-              <div key={c._id || c.id} className="flex items-center justify-between rounded-lg border border-slate-100 bg-[var(--panel-soft)] px-3 py-2 text-sm">
-                <div className="flex items-center gap-2">
-                  <Store size={14} className="text-slate-400" />
-                  <span className="font-medium text-slate-800">{c.shop}</span>
+            {channels.map((c) => {
+              const channelId = c._id || c.id;
+              return (
+                <div key={channelId} className="rounded-lg border border-slate-100 bg-[var(--panel-soft)] px-3 py-2 text-sm">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Store size={14} className="text-slate-400" />
+                      <span className="font-medium text-slate-800">{c.shop}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${c.status === "connected" ? "bg-emerald-50 text-emerald-700" : c.status === "inactive" ? "bg-amber-50 text-amber-700" : "bg-slate-100 text-slate-500"}`}>
+                        {c.status}
+                      </span>
+                      <button
+                        onClick={() => (editingCredsFor === channelId ? setEditingCredsFor("") : startEditCreds(channelId))}
+                        className="flex items-center gap-1 text-[11px] font-semibold text-indigo-600 hover:text-indigo-800"
+                      >
+                        <KeyRound size={11} /> App credentials
+                        <ChevronDown size={11} className={editingCredsFor === channelId ? "rotate-180" : ""} />
+                      </button>
+                    </div>
+                  </div>
+
+                  {editingCredsFor === channelId && (
+                    <div className="mt-2 space-y-1.5 border-t border-slate-200 pt-2">
+                      <p className="text-[11px] text-slate-500">
+                        Set (or fix) this specific store&apos;s own Shopify app Client ID/Secret — used to verify its OAuth connect and incoming webhooks. Doesn&apos;t require reconnecting.
+                      </p>
+                      <input
+                        value={credsApiKey}
+                        onChange={(e) => setCredsApiKey(e.target.value)}
+                        placeholder="Client ID"
+                        className="h-8 w-full rounded-md border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-500"
+                      />
+                      <input
+                        value={credsApiSecret}
+                        onChange={(e) => setCredsApiSecret(e.target.value)}
+                        placeholder="Client Secret"
+                        type="password"
+                        className="h-8 w-full rounded-md border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-500"
+                      />
+                      <Button onClick={() => saveCreds(channelId)} disabled={savingCreds} className="h-7 px-2.5 text-xs">
+                        {savingCreds ? "Saving…" : "Save"}
+                      </Button>
+                      {credsError ? <p className="text-[11px] font-medium text-rose-600">{credsError}</p> : null}
+                    </div>
+                  )}
+                  {credsSavedFor === channelId && editingCredsFor !== channelId && (
+                    <p className="mt-1 text-[11px] font-medium text-emerald-600">App credentials updated.</p>
+                  )}
                 </div>
-                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${c.status === "connected" ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-500"}`}>
-                  {c.status}
-                </span>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
 
-        <form onSubmit={handleConnect} className="flex items-end gap-2 border-t border-slate-100 pt-4">
-          <label className="flex-1">
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Connect another Shopify store</span>
-            <input
-              value={newShop}
-              onChange={(e) => setNewShop(e.target.value)}
-              placeholder="your-new-store.myshopify.com"
-              className="h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-500"
-            />
-          </label>
-          <Button type="submit" disabled={connecting || !newShop.trim()} className="h-9">
-            {connecting ? <Loader2 size={14} className="animate-spin" /> : <PlugZap size={14} />}
-            {connecting ? "Opening Shopify…" : "Connect"}
-          </Button>
+        <form onSubmit={handleConnect} className="border-t border-slate-100 pt-4">
+          <div className="flex items-end gap-2">
+            <label className="flex-1">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Connect another Shopify store</span>
+              <input
+                value={newShop}
+                onChange={(e) => setNewShop(e.target.value)}
+                placeholder="your-new-store.myshopify.com"
+                className="h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-500"
+              />
+            </label>
+            <Button type="submit" disabled={connecting || !newShop.trim()} className="h-9">
+              {connecting ? <Loader2 size={14} className="animate-spin" /> : <PlugZap size={14} />}
+              {connecting ? "Opening Shopify…" : "Connect"}
+            </Button>
+          </div>
+
+          <button
+            type="button"
+            onClick={() => setUseCustomApp((v) => !v)}
+            className="mt-2 flex items-center gap-1 text-[11px] font-semibold text-slate-500 hover:text-slate-700"
+          >
+            <ChevronDown size={11} className={useCustomApp ? "rotate-180" : ""} />
+            This store uses its own Shopify app
+          </button>
+          {useCustomApp && (
+            <div className="mt-2 grid gap-1.5 sm:grid-cols-2">
+              <input
+                value={customApiKey}
+                onChange={(e) => setCustomApiKey(e.target.value)}
+                placeholder="Client ID"
+                className="h-8 w-full rounded-md border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-500"
+              />
+              <input
+                value={customApiSecret}
+                onChange={(e) => setCustomApiSecret(e.target.value)}
+                placeholder="Client Secret"
+                type="password"
+                className="h-8 w-full rounded-md border border-[var(--line)] px-2 text-xs outline-none focus:border-indigo-500"
+              />
+              <p className="col-span-full text-[11px] text-slate-500">
+                Whichever backend URL you connect from, make sure it's whitelisted as an "Allowed redirection URL" in this app's own Shopify Partner setup.
+              </p>
+            </div>
+          )}
         </form>
         {connectError ? <p className="mt-2 text-xs font-medium text-rose-600">{connectError}</p> : null}
       </div>
