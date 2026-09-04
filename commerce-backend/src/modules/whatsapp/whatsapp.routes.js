@@ -259,6 +259,10 @@ whatsappRoutes.post(
       templateName: req.body?.templateName,
       language: req.body?.language,
       bodyParams: Array.isArray(req.body?.bodyParams) ? req.body.bodyParams : [],
+      // The template's own raw BODY text (with {{1}}, {{2}}... placeholders)
+      // — used only to render what gets shown in our own chat history, see
+      // sendWhatsAppTemplateMessage's own comment.
+      bodyText: String(req.body?.bodyText || ""),
     });
     res.json(result);
   }),

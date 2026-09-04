@@ -508,7 +508,23 @@ export async function listMessageTemplates({ companyId }) {
   return rows.filter((t) => t.status === "APPROVED");
 }
 
-export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, templateName, language, bodyParams = [] }) {
+// bodyText is the template's own raw BODY component text (with {{1}},
+// {{2}}... placeholders) — the frontend already has this in scope right
+// where it collects bodyParams (TemplateSendForm), so it's passed straight
+// through rather than re-fetched from Meta here. Used only to build what
+// gets shown in our own chat history; the actual message Meta sends to the
+// customer is built separately below from templateName/language/bodyParams
+// and was always correct — this was a display-only bug (see the previous
+// `text: "Template: ${templateName}"` this replaces).
+function renderTemplateText(bodyText, bodyParams) {
+  if (!bodyText) return null;
+  return bodyText.replace(/\{\{(\d+)\}\}/g, (_match, n) => {
+    const value = bodyParams[Number(n) - 1];
+    return value !== undefined && value !== "" ? String(value) : `{{${n}}}`;
+  });
+}
+
+export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, templateName, language, bodyParams = [], bodyText = "" }) {
   const channel = await getChannelForSync({ channelId, companyId });
   if (!channel || channel.channelType !== "whatsapp") throw new HttpError(404, "WhatsApp channel not found");
   if (!to) throw new HttpError(400, "Recipient phone number is required");
@@ -529,8 +545,9 @@ export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, te
   });
 
   const waMessageId = body.messages?.[0]?.id;
+  const renderedText = renderTemplateText(bodyText, bodyParams);
   const conversation = await upsertConversation({
-    companyId, waId, lastMessageAt: new Date(), lastMessagePreview: `Template: ${templateName}`, incrementUnread: false,
+    companyId, waId, lastMessageAt: new Date(), lastMessagePreview: renderedText || `Template: ${templateName}`, incrementUnread: false,
   });
 
   const message = await createMessage({
@@ -539,7 +556,7 @@ export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, te
     waMessageId,
     direction: "outbound",
     type: "template",
-    text: `Template: ${templateName}`,
+    text: renderedText || `Template: ${templateName}`,
     status: "sent",
     timestamp: new Date(),
   });

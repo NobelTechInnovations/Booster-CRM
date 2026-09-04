@@ -51,7 +51,7 @@ export function TemplateSendForm({ to, onSent }) {
     setSending(true);
     setSendError("");
     try {
-      const res = await startWhatsAppTemplateConversation(to.trim(), selected.name, selected.language, params);
+      const res = await startWhatsAppTemplateConversation(to.trim(), selected.name, selected.language, params, bodyText);
       onSent(res.conversation);
     } catch (err) {
       setSendError(err.message);
