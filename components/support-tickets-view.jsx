@@ -1,11 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, Headset, Loader2, Mail, MessageSquareText, Phone, RefreshCw, Send, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { listSupportTickets, getSupportTicket, replySupportTicket, updateSupportTicketStatus } from "@/lib/api";
+import { useSilentPoll } from "@/lib/public-page";
 
 const STATUS_TABS = [
   { key: "", label: "All" },
@@ -40,19 +42,28 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
   const [error, setError] = useState("");
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  async function load() {
-    setIsLoading(true);
-    try {
-      const res = await getSupportTicket(ticketId);
-      setTicket(res.ticket);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!silent) setIsLoading(true);
+      try {
+        const res = await getSupportTicket(ticketId);
+        setTicket(res.ticket);
+      } catch (err) {
+        if (!silent) setError(err.message);
+      } finally {
+        if (!silent) setIsLoading(false);
+      }
+    },
+    [ticketId],
+  );
 
   useEffect(() => { load(); }, [ticketId]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Silently pick up a customer's own comment/close/reopen action made
+  // from the public ticket page — no need to close and reopen the drawer
+  // to see it. Paused while a reply/status change is in flight so it
+  // never races a write with a read.
+  useSilentPoll(() => load({ silent: true }), { intervalMs: 15000, enabled: !sending && !updatingStatus });
 
   async function handleReply(e) {
     e.preventDefault();
@@ -178,26 +189,58 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
 }
 
 export function SupportTicketsView() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const statusFilter = searchParams.get("status") || "";
+  const openTicketId = searchParams.get("ticket") || "";
+
   const [tickets, setTickets] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [openTicketId, setOpenTicketId] = useState(null);
 
-  async function load() {
-    setIsLoading(true);
-    setError("");
-    try {
-      const res = await listSupportTickets(statusFilter || undefined);
-      setTickets(res.tickets || []);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setIsLoading(false);
-    }
-  }
+  const load = useCallback(
+    async ({ silent = false } = {}) => {
+      if (!silent) { setIsLoading(true); setError(""); }
+      try {
+        const res = await listSupportTickets(statusFilter || undefined);
+        setTickets(res.tickets || []);
+      } catch (err) {
+        if (!silent) setError(err.message);
+      } finally {
+        if (!silent) setIsLoading(false);
+      }
+    },
+    [statusFilter],
+  );
 
   useEffect(() => { load(); }, [statusFilter]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Silently refresh the list every ~20s while no drawer is open — a new
+  // ticket, or a status/reply-count change, shows up without needing the
+  // manual Refresh button.
+  useSilentPoll(() => load({ silent: true }), { intervalMs: 20000, enabled: !openTicketId && !isLoading });
+
+  // Filter and the open ticket both live in the URL — a refresh (or a
+  // shared link) lands back on the same filter tab and the same open
+  // ticket instead of resetting to the plain list.
+  function setStatusFilter(key) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (key) params.set("status", key); else params.delete("status");
+    router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname);
+  }
+
+  function openTicket(id) {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("ticket", id);
+    router.push(`${pathname}?${params.toString()}`);
+  }
+
+  function closeTicket() {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("ticket");
+    router.push(params.toString() ? `${pathname}?${params.toString()}` : pathname);
+  }
 
   function handleUpdated(updatedTicket) {
     setTickets((prev) => prev.map((t) => (t._id === updatedTicket._id ? { ...t, status: updatedTicket.status, replies: updatedTicket.replies } : t)));
@@ -213,7 +256,7 @@ export function SupportTicketsView() {
             Every ticket customers submit from your public support page — reply here and it emails them automatically if they gave an address.
           </p>
         </div>
-        <button onClick={load} disabled={isLoading} className="flex h-9 items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+        <button onClick={() => load()} disabled={isLoading} className="flex h-9 items-center gap-1.5 rounded-lg border border-[var(--line)] px-3 text-xs font-semibold text-slate-600 hover:bg-slate-50 disabled:opacity-50">
           <RefreshCw size={13} className={isLoading ? "animate-spin" : ""} /> Refresh
         </button>
       </section>
@@ -247,7 +290,7 @@ export function SupportTicketsView() {
               {tickets.map((t) => (
                 <button
                   key={t._id}
-                  onClick={() => setOpenTicketId(t._id)}
+                  onClick={() => openTicket(t._id)}
                   className="flex w-full items-center justify-between gap-3 p-4 text-left hover:bg-slate-50/60"
                 >
                   <div className="min-w-0">
@@ -271,7 +314,7 @@ export function SupportTicketsView() {
       </Card>
 
       {openTicketId ? (
-        <TicketDrawer ticketId={openTicketId} onClose={() => setOpenTicketId(null)} onUpdated={handleUpdated} />
+        <TicketDrawer ticketId={openTicketId} onClose={closeTicket} onUpdated={handleUpdated} />
       ) : null}
     </div>
   );

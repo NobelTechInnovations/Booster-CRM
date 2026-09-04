@@ -18,7 +18,12 @@ import {
 // support-specific about it, no need to duplicate that route here.
 export const publicSupportRoutes = Router();
 
-const lookupLimiter = simpleRateLimit({ windowMs: 10 * 60 * 1000, max: 30 });
+// 60/10min (bumped up from 30) — the ticket detail page now silently
+// polls itself every ~25s while open (see support-ticket-view.jsx) so a
+// staff-side status change or reply shows up without a manual refresh;
+// the old 30/10min budget left no headroom for that alongside the
+// initial branding/list/detail calls a normal visit already makes.
+const lookupLimiter = simpleRateLimit({ windowMs: 10 * 60 * 1000, max: 60 });
 // A bit tighter than lookup — this writes data and can trigger an email
 // send, not just a read.
 const createLimiter = simpleRateLimit({ windowMs: 10 * 60 * 1000, max: 10 });

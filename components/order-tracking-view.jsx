@@ -1,9 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, ExternalLink, Loader2, MapPin, Package, Phone, Search, ShoppingBag, Truck } from "lucide-react";
-import { getPublicCompanyBranding, listPublicOrdersByPhone, getPublicOrderDetail } from "@/lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ArrowLeft, CheckCircle2, ExternalLink, Loader2, MapPin, Package, Search, ShoppingBag, Truck } from "lucide-react";
+import { getPublicCompanyBranding, listPublicOrdersByContact, getPublicOrderDetail } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
+import { parseContact, contactDisplayValue, hasContact, loadStoredContact, saveStoredContact, clearStoredContact, useSilentPoll } from "@/lib/public-page";
+
+const PAGE_KEY = "track";
 
 // Customer-friendly labels — deliberately different wording from the panel's
 // own internal STAGE_META in orders-view.jsx (e.g. "fulfillment_assigned"
@@ -42,8 +46,14 @@ function fmtDate(date) {
 }
 
 export function OrderTrackingView({ companySlug }) {
-  const [phone, setPhone] = useState("");
-  const [searchedPhone, setSearchedPhone] = useState("");
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const orderIdParam = searchParams.get("order") || "";
+
+  const [contactInput, setContactInput] = useState("");
+  const [contact, setContact] = useState(null); // { phone, email } once submitted/restored
+  const [hydrated, setHydrated] = useState(false);
   const [storeName, setStoreName] = useState("");
   const [storeLogo, setStoreLogo] = useState("");
   const [orders, setOrders] = useState(null);
@@ -67,37 +77,101 @@ export function OrderTrackingView({ companySlug }) {
       .catch(() => { }); // Not fatal — the header just falls back to the generic placeholder
   }, [companySlug]);
 
+  // Restore the contact from this tab's own session on mount — so a page
+  // refresh (or a deep link with ?order=... from an email) picks straight
+  // back up instead of dumping the visitor back on the phone/email screen.
+  useEffect(() => {
+    const stored = loadStoredContact(PAGE_KEY, companySlug);
+    if (stored && hasContact(stored)) {
+      setContact(stored);
+      setContactInput(contactDisplayValue(stored));
+    }
+    setHydrated(true);
+  }, [companySlug]);
+
+  const runSearch = useCallback(
+    async (contactValue, { silent = false } = {}) => {
+      if (!silent) { setLoading(true); setError(""); }
+      try {
+        const res = await listPublicOrdersByContact(companySlug, contactValue);
+        setStoreName(res.company?.name || storeName);
+        setStoreLogo(res.company?.logoUrl || storeLogo);
+        setOrders(res.orders || []);
+      } catch (err) {
+        if (!silent) setError(err.message);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [companySlug, storeName, storeLogo],
+  );
+
+  // Once a contact is known (freshly submitted or restored from this tab's
+  // session), load the order list for it.
+  useEffect(() => {
+    if (!hydrated || !contact) return;
+    runSearch(contact);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, contact]);
+
+  const openOrderDetail = useCallback(
+    async (orderId, contactValue, { silent = false } = {}) => {
+      if (!silent) { setDetailLoading(true); setError(""); }
+      try {
+        const res = await getPublicOrderDetail(companySlug, orderId, contactValue);
+        setSelectedOrder(res.order);
+      } catch (err) {
+        if (!silent) setError(err.message);
+      } finally {
+        if (!silent) setDetailLoading(false);
+      }
+    },
+    [companySlug],
+  );
+
+  // The order shown is driven by the URL's own ?order= param, not local
+  // state alone — a refresh keeps the browser on the same order instead of
+  // bouncing back to the list (or the phone/email screen).
+  useEffect(() => {
+    if (!hydrated) return;
+    if (orderIdParam && contact) {
+      openOrderDetail(orderIdParam, contact);
+    } else if (!orderIdParam) {
+      setSelectedOrder(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, orderIdParam, contact]);
+
+  // Silently refresh the open order every ~25s — a shipment moving from
+  // "Shipped" to "Delivered" (or any other status change made elsewhere)
+  // should show up here on its own, not require a manual refresh.
+  useSilentPoll(
+    () => { if (orderIdParam && contact) openOrderDetail(orderIdParam, contact, { silent: true }); },
+    { intervalMs: 25000, enabled: !!(orderIdParam && contact) && !detailLoading },
+  );
+
   async function handleSearch(e) {
     e.preventDefault();
-    if (!phone.trim()) return;
-    setLoading(true);
-    setError("");
-    setOrders(null);
-    setSelectedOrder(null);
-    try {
-      const res = await listPublicOrdersByPhone(companySlug, phone.trim());
-      setStoreName(res.company?.name || "");
-      setStoreLogo(res.company?.logoUrl || "");
-      setOrders(res.orders || []);
-      setSearchedPhone(phone.trim());
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
-    }
+    const parsed = parseContact(contactInput);
+    if (!hasContact(parsed)) return;
+    saveStoredContact(PAGE_KEY, companySlug, parsed);
+    setContact(parsed);
   }
 
-  async function openOrder(orderId) {
-    setDetailLoading(true);
-    setError("");
-    try {
-      const res = await getPublicOrderDetail(companySlug, orderId, searchedPhone);
-      setSelectedOrder(res.order);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setDetailLoading(false);
-    }
+  function openOrder(orderId) {
+    router.push(`${pathname}?order=${encodeURIComponent(orderId)}`);
+  }
+
+  function backToList() {
+    router.push(pathname);
+  }
+
+  function startOver() {
+    clearStoredContact(PAGE_KEY, companySlug);
+    setContact(null);
+    setContactInput("");
+    setOrders(null);
+    router.push(pathname);
   }
 
   return (
@@ -113,24 +187,24 @@ export function OrderTrackingView({ companySlug }) {
           )}
           <h1 className="mt-3 text-xl font-bold text-slate-900">{storeName || "Track Your Order"}</h1>
           <p className="mt-0.5 text-xs font-medium text-slate-400">Powered by Wokbook</p>
-          <p className="mt-2 text-sm text-slate-500">Enter your phone number to see your orders</p>
+          <p className="mt-2 text-sm text-slate-500">Enter your phone number or email to see your orders</p>
         </div>
 
-        {!selectedOrder && (
+        {!contact && (
           <form onSubmit={handleSearch} className="mb-6 flex gap-2">
             <div className="relative flex-1">
-              <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
-                type="tel"
-                value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="Your phone number"
+                type="text"
+                value={contactInput}
+                onChange={(e) => setContactInput(e.target.value)}
+                placeholder="Phone number or email"
                 className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
               />
             </div>
             <button
               type="submit"
-              disabled={loading || !phone.trim()}
+              disabled={loading || !contactInput.trim()}
               className="flex h-11 items-center gap-1.5 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white transition hover:bg-indigo-800 disabled:opacity-50"
             >
               {loading ? <Loader2 size={15} className="animate-spin" /> : <Search size={15} />}
@@ -145,13 +219,19 @@ export function OrderTrackingView({ companySlug }) {
           </div>
         )}
 
+        {contact && !selectedOrder ? (
+          <button onClick={startOver} className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-900">
+            <ArrowLeft size={15} /> Start over
+          </button>
+        ) : null}
+
         {/* Order list */}
         {!selectedOrder && orders && (
           orders.length === 0 ? (
             <div className="rounded-xl border border-slate-200 bg-white p-8 text-center">
               <Package size={28} className="mx-auto text-slate-300" />
-              <p className="mt-3 text-sm font-medium text-slate-600">No orders found for this phone number</p>
-              <p className="mt-1 text-xs text-slate-400">Check the number and try again</p>
+              <p className="mt-3 text-sm font-medium text-slate-600">No orders found</p>
+              <p className="mt-1 text-xs text-slate-400">Check the phone number or email and try again</p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -181,14 +261,14 @@ export function OrderTrackingView({ companySlug }) {
         )}
 
         {/* Order detail */}
-        {detailLoading && (
+        {detailLoading && !selectedOrder && (
           <div className="flex justify-center py-10"><Loader2 size={22} className="animate-spin text-indigo-600" /></div>
         )}
 
-        {selectedOrder && !detailLoading && (
+        {selectedOrder && (
           <div>
             <button
-              onClick={() => setSelectedOrder(null)}
+              onClick={backToList}
               className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-900"
             >
               <ArrowLeft size={15} /> Back to orders

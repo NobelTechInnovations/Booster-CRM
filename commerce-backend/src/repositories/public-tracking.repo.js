@@ -108,22 +108,26 @@ export async function getPublicCompanyBranding({ companySlug }) {
 
 // Never returns drafts (isDraft:true) — a draft isn't a real, committed
 // order yet, so a customer has no business seeing it on a public page.
-export async function listPublicOrdersByPhone({ companySlug, phone }) {
+// Phone or email — same "either one, whichever the customer has handy"
+// flexibility as the support-ticket lookup (listPublicTicketsByContact).
+export async function listPublicOrdersByContact({ companySlug, phone, email }) {
   const company = await getActiveCompanyBySlug(companySlug);
   if (!company) return { error: "not_found" };
 
   const candidates = phoneCandidates(phone);
-  if (!candidates.length) return { error: "invalid_phone" };
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!candidates.length && !cleanEmail) return { error: "contact_required" };
+
+  const or = [];
+  if (candidates.length) or.push({ phone: { $in: candidates } }, { "shippingAddress.phone": { $in: candidates } });
+  if (cleanEmail) or.push({ email: cleanEmail });
 
   let orders;
   if (isMongoConnected()) {
     orders = await SyncedOrder.find({
       companyId: companyIdFilter(company._id),
       isDraft: { $ne: true },
-      $or: [
-        { phone: { $in: candidates } },
-        { "shippingAddress.phone": { $in: candidates } },
-      ],
+      $or: or,
     })
       .sort({ shopifyCreatedAt: -1 })
       .limit(100)
@@ -133,7 +137,7 @@ export async function listPublicOrdersByPhone({ companySlug, phone }) {
       (o) =>
         String(o.companyId) === String(company._id) &&
         !o.isDraft &&
-        (candidates.includes(o.phone) || candidates.includes(o.shippingAddress?.phone)),
+        (candidates.includes(o.phone) || candidates.includes(o.shippingAddress?.phone) || (cleanEmail && o.email?.toLowerCase() === cleanEmail)),
     );
   }
 
@@ -143,16 +147,17 @@ export async function listPublicOrdersByPhone({ companySlug, phone }) {
   };
 }
 
-// Re-validates the phone against the specific order (not just "some order
-// in this company matched the phone at list time") so an order id can
-// never be opened without also knowing the phone it belongs to — a stolen
-// or guessed order id alone reveals nothing.
-export async function getPublicOrderDetail({ companySlug, phone, orderId }) {
+// Re-validates the phone/email against the specific order (not just "some
+// order in this company matched at list time") so an order id can never be
+// opened without also knowing the contact it belongs to — a stolen or
+// guessed order id alone reveals nothing.
+export async function getPublicOrderDetail({ companySlug, phone, email, orderId }) {
   const company = await getActiveCompanyBySlug(companySlug);
   if (!company) return { error: "not_found" };
 
   const candidates = phoneCandidates(phone);
-  if (!candidates.length) return { error: "invalid_phone" };
+  const cleanEmail = String(email || "").trim().toLowerCase();
+  if (!candidates.length && !cleanEmail) return { error: "contact_required" };
 
   let order;
   if (isMongoConnected()) {
@@ -164,8 +169,11 @@ export async function getPublicOrderDetail({ companySlug, phone, orderId }) {
   }
 
   if (!order) return { error: "not_found" };
-  const orderPhoneMatches = candidates.includes(order.phone) || candidates.includes(order.shippingAddress?.phone);
-  if (!orderPhoneMatches) return { error: "not_found" };
+  const orderMatches =
+    candidates.includes(order.phone) ||
+    candidates.includes(order.shippingAddress?.phone) ||
+    (cleanEmail && order.email?.toLowerCase() === cleanEmail);
+  if (!orderMatches) return { error: "not_found" };
 
   return { company: { name: company.name, slug: company.slug, logoUrl: company.logoUrl || "" }, order: publicOrderDetail(order) };
 }

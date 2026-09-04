@@ -2,7 +2,7 @@ import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { simpleRateLimit } from "../../utils/simple-rate-limit.js";
-import { listPublicOrdersByPhone, getPublicOrderDetail, getPublicCompanyBranding } from "../../repositories/public-tracking.repo.js";
+import { listPublicOrdersByContact, getPublicOrderDetail, getPublicCompanyBranding } from "../../repositories/public-tracking.repo.js";
 
 // Deliberately no requireAuth anywhere in this file — this is the public,
 // customer-facing "track my order" surface (see public-tracking.repo.js's
@@ -11,7 +11,12 @@ import { listPublicOrdersByPhone, getPublicOrderDetail, getPublicCompanyBranding
 // stranger can search by phone number with no login at all.
 export const publicTrackingRoutes = Router();
 
-const trackingLimiter = simpleRateLimit({ windowMs: 10 * 60 * 1000, max: 30 });
+// 60/10min (bumped up from 30) — the order-detail page now silently polls
+// itself every ~25s while open (see order-tracking-view.jsx) so it reflects
+// a status change (e.g. shipped → delivered) without the customer having
+// to refresh; the old 30/10min budget left no headroom for that on top of
+// the initial branding/list/detail calls a normal visit already makes.
+const trackingLimiter = simpleRateLimit({ windowMs: 10 * 60 * 1000, max: 60 });
 // Looser than the phone-search limiter above — this loads once per page
 // view with no phone number involved, so there's nothing sensitive to
 // brute-force here, just the page's own branding.
@@ -33,12 +38,11 @@ publicTrackingRoutes.get(
   trackingLimiter,
   asyncHandler(async (req, res) => {
     const { companySlug } = req.params;
-    const { phone } = req.query;
-    if (!phone) throw new HttpError(400, "Phone number is required");
+    const { phone, email } = req.query;
 
-    const result = await listPublicOrdersByPhone({ companySlug, phone: String(phone) });
+    const result = await listPublicOrdersByContact({ companySlug, phone: phone ? String(phone) : "", email: email ? String(email) : "" });
     if (result.error === "not_found") throw new HttpError(404, "Store not found");
-    if (result.error === "invalid_phone") throw new HttpError(400, "Enter a valid phone number");
+    if (result.error === "contact_required") throw new HttpError(400, "Enter a phone number or email");
 
     res.json(result);
   }),
@@ -49,12 +53,11 @@ publicTrackingRoutes.get(
   trackingLimiter,
   asyncHandler(async (req, res) => {
     const { companySlug, orderId } = req.params;
-    const { phone } = req.query;
-    if (!phone) throw new HttpError(400, "Phone number is required");
+    const { phone, email } = req.query;
 
-    const result = await getPublicOrderDetail({ companySlug, phone: String(phone), orderId });
+    const result = await getPublicOrderDetail({ companySlug, phone: phone ? String(phone) : "", email: email ? String(email) : "", orderId });
     if (result.error === "not_found") throw new HttpError(404, "Order not found");
-    if (result.error === "invalid_phone") throw new HttpError(400, "Enter a valid phone number");
+    if (result.error === "contact_required") throw new HttpError(400, "Enter a phone number or email");
 
     res.json(result);
   }),

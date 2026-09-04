@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Headset, Loader2, Mail, MessageSquareText, Phone, Plus, RotateCcw, Send, XCircle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Headset, Loader2, MessageSquareText, Plus, RotateCcw, Search, Send, XCircle } from "lucide-react";
 import {
   getPublicCompanyBranding,
   listPublicTicketsByContact,
@@ -11,6 +12,9 @@ import {
   closePublicTicket,
   reopenPublicTicket,
 } from "@/lib/api";
+import { parseContact, contactDisplayValue, hasContact, loadStoredContact, saveStoredContact, clearStoredContact, useSilentPoll } from "@/lib/public-page";
+
+const PAGE_KEY = "support";
 
 // Same fixed category set the backend validates against (support-ticket.repo.js's
 // CATEGORIES) — sub-categories are display-only, folded into the message
@@ -267,11 +271,16 @@ function TicketDetail({ ticket, companySlug, phone, email, onBack, onUpdated }) 
 // ─── Main view ───────────────────────────────────────────────────────────────
 
 export function SupportTicketView({ companySlug }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const ticketIdParam = searchParams.get("ticket") || "";
+
   const [storeName, setStoreName] = useState("");
   const [storeLogo, setStoreLogo] = useState("");
-  const [phone, setPhone] = useState("");
-  const [email, setEmail] = useState("");
-  const [searchedContact, setSearchedContact] = useState(null); // { phone, email }
+  const [contactInput, setContactInput] = useState("");
+  const [contact, setContact] = useState(null); // { phone, email } once submitted/restored — blank/blank means "general inquiry, no lookup"
+  const [hydrated, setHydrated] = useState(false);
   const [tickets, setTickets] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -286,44 +295,120 @@ export function SupportTicketView({ companySlug }) {
       .catch(() => { });
   }, [companySlug]);
 
-  async function handleCheck(e) {
-    e.preventDefault();
-    setLoading(true);
-    setError("");
-    setTickets(null);
-    setJustCreated(null);
-    try {
-      // No contact given at all — nothing to look up, go straight to a new
-      // (general-inquiry) ticket instead of a pointless empty search.
-      if (!phone.trim() && !email.trim()) {
-        setSearchedContact({ phone: "", email: "" });
-        setShowNewForm(true);
-        return;
-      }
-      const res = await listPublicTicketsByContact(companySlug, phone.trim(), email.trim());
-      setStoreName(res.company?.name || storeName);
-      setStoreLogo(res.company?.logoUrl || storeLogo);
-      setTickets(res.tickets || []);
-      setSearchedContact({ phone: phone.trim(), email: email.trim() });
-      setShowNewForm((res.tickets || []).length === 0);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setLoading(false);
+  // Restore the contact from this tab's own session on mount — so a page
+  // refresh (or a link with ?ticket=... from an email) picks straight back
+  // up instead of dumping the visitor back on the phone/email screen.
+  useEffect(() => {
+    const stored = loadStoredContact(PAGE_KEY, companySlug);
+    if (stored && hasContact(stored)) {
+      setContact(stored);
+      setContactInput(contactDisplayValue(stored));
     }
+    setHydrated(true);
+  }, [companySlug]);
+
+  const runSearch = useCallback(
+    async (contactValue, { silent = false } = {}) => {
+      if (!silent) { setLoading(true); setError(""); }
+      try {
+        const res = await listPublicTicketsByContact(companySlug, contactValue.phone, contactValue.email);
+        setStoreName(res.company?.name || storeName);
+        setStoreLogo(res.company?.logoUrl || storeLogo);
+        setTickets(res.tickets || []);
+        if (!silent) setShowNewForm((res.tickets || []).length === 0);
+      } catch (err) {
+        if (!silent) setError(err.message);
+      } finally {
+        if (!silent) setLoading(false);
+      }
+    },
+    [companySlug, storeName, storeLogo],
+  );
+
+  // Once a contact is known (freshly submitted or restored from this tab's
+  // session), load its tickets — unless it's the blank "general inquiry"
+  // path, which skips straight to the new-ticket form with nothing to
+  // look up.
+  useEffect(() => {
+    if (!hydrated || !contact) return;
+    if (!hasContact(contact)) { setShowNewForm(true); return; }
+    runSearch(contact);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, contact]);
+
+  const openTicketDetail = useCallback(
+    async (ticketId, contactValue, { silent = false } = {}) => {
+      if (!silent) { setDetailLoading(true); setError(""); }
+      try {
+        const res = await getPublicTicketDetail(companySlug, ticketId, contactValue.phone, contactValue.email);
+        setSelectedTicket(res.ticket);
+      } catch (err) {
+        if (!silent) setError(err.message);
+      } finally {
+        if (!silent) setDetailLoading(false);
+      }
+    },
+    [companySlug],
+  );
+
+  // The ticket shown is driven by the URL's own ?ticket= param, not local
+  // state alone — a refresh keeps the browser on the same ticket instead
+  // of bouncing back to the list (or the phone/email screen).
+  useEffect(() => {
+    if (!hydrated) return;
+    if (ticketIdParam && contact && hasContact(contact)) {
+      openTicketDetail(ticketIdParam, contact);
+    } else if (!ticketIdParam) {
+      setSelectedTicket(null);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hydrated, ticketIdParam, contact]);
+
+  // Silently refresh the open ticket every ~25s — a status change or a
+  // staff reply made from the company panel should show up here on its
+  // own, not require the visitor to hit refresh.
+  useSilentPoll(
+    () => { if (ticketIdParam && contact && hasContact(contact)) openTicketDetail(ticketIdParam, contact, { silent: true }); },
+    { intervalMs: 25000, enabled: !!(ticketIdParam && contact && hasContact(contact)) && !detailLoading },
+  );
+
+  // Lighter background refresh for the list itself (new tickets, status/
+  // reply-count changes) while it's the thing on screen.
+  useSilentPoll(
+    () => { if (contact && hasContact(contact) && !ticketIdParam) runSearch(contact, { silent: true }); },
+    { intervalMs: 45000, enabled: !!(contact && hasContact(contact)) && !ticketIdParam && !loading },
+  );
+
+  function handleCheck(e) {
+    e.preventDefault();
+    setError("");
+    setJustCreated(null);
+    const parsed = parseContact(contactInput);
+    if (!hasContact(parsed)) {
+      setContact({ phone: "", email: "" });
+      return;
+    }
+    saveStoredContact(PAGE_KEY, companySlug, parsed);
+    setContact(parsed);
   }
 
-  async function openTicket(ticketId) {
-    setDetailLoading(true);
-    setError("");
-    try {
-      const res = await getPublicTicketDetail(companySlug, ticketId, searchedContact.phone, searchedContact.email);
-      setSelectedTicket(res.ticket);
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setDetailLoading(false);
-    }
+  function openTicket(ticketId) {
+    router.push(`${pathname}?ticket=${encodeURIComponent(ticketId)}`);
+  }
+
+  function backToList() {
+    setSelectedTicket(null);
+    router.push(pathname);
+  }
+
+  function startOver() {
+    clearStoredContact(PAGE_KEY, companySlug);
+    setContact(null);
+    setContactInput("");
+    setTickets(null);
+    setShowNewForm(false);
+    setJustCreated(null);
+    router.push(pathname);
   }
 
   function handleCreated(ticket) {
@@ -340,7 +425,7 @@ export function SupportTicketView({ companySlug }) {
     setTickets((prev) => (prev ? prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)) : prev));
   }
 
-  const showResults = searchedContact && !selectedTicket;
+  const showResults = contact && !selectedTicket;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -358,16 +443,20 @@ export function SupportTicketView({ companySlug }) {
           <p className="mt-2 text-sm text-slate-500">Have an issue? We&apos;re here to help.</p>
         </div>
 
-        {!searchedContact && !selectedTicket ? (
+        {!contact ? (
           <form onSubmit={handleCheck} className="mb-6 space-y-3 rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Enter your phone or email to check an existing ticket, or leave both blank to submit a general inquiry</p>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+              {ticketIdParam ? "Enter your phone or email to view your ticket" : "Enter your phone or email to check an existing ticket, or leave it blank to submit a general inquiry"}
+            </p>
             <div className="relative">
-              <Phone size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="Phone number" className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
-            </div>
-            <div className="relative">
-              <Mail size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-              <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email address" className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100" />
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={contactInput}
+                onChange={(e) => setContactInput(e.target.value)}
+                placeholder="Phone number or email (optional)"
+                className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-9 pr-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+              />
             </div>
             <button type="submit" disabled={loading} className="flex h-11 w-full items-center justify-center gap-1.5 rounded-xl bg-indigo-700 text-sm font-semibold text-white transition hover:bg-indigo-800 disabled:opacity-50">
               {loading ? <Loader2 size={15} className="animate-spin" /> : <MessageSquareText size={15} />}
@@ -384,17 +473,14 @@ export function SupportTicketView({ companySlug }) {
           <TicketDetail
             ticket={selectedTicket}
             companySlug={companySlug}
-            phone={searchedContact?.phone}
-            email={searchedContact?.email}
-            onBack={() => setSelectedTicket(null)}
+            phone={contact?.phone}
+            email={contact?.email}
+            onBack={backToList}
             onUpdated={handleTicketUpdated}
           />
         ) : showResults ? (
           <div>
-            <button
-              onClick={() => { setSearchedContact(null); setTickets(null); setShowNewForm(false); setJustCreated(null); setPhone(""); setEmail(""); }}
-              className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-900"
-            >
+            <button onClick={startOver} className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-900">
               <ArrowLeft size={15} /> Start over
             </button>
 
@@ -441,8 +527,8 @@ export function SupportTicketView({ companySlug }) {
             {showNewForm ? (
               <NewTicketForm
                 companySlug={companySlug}
-                phone={searchedContact.phone}
-                email={searchedContact.email}
+                phone={contact.phone}
+                email={contact.email}
                 onCreated={handleCreated}
                 onCancel={tickets && tickets.length > 0 ? () => setShowNewForm(false) : null}
               />
