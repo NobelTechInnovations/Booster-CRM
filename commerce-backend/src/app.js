@@ -92,12 +92,21 @@ export function createApp() {
     res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });
   });
 
-  app.use((error, _req, res, _next) => {
+  app.use((error, _req, res, next) => {
     const statusCode = error.statusCode || 500;
 
     if (statusCode >= 500) {
       console.error(error);
     }
+
+    // A streaming response (e.g. platform-admin backup/download's zip
+    // archive) can fail partway through, after headers and some body bytes
+    // are already on the wire — res.status()/.json() would throw "Cannot
+    // set headers after they are sent" at that point, which is worse than
+    // the original error. Delegate to Express's default handler, which
+    // just destroys the connection, same as it does for every framework
+    // that hits this exact situation.
+    if (res.headersSent) return next(error);
 
     res.status(statusCode).json({
       message: error.message || "Internal server error",

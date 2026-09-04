@@ -23,6 +23,7 @@ import {
   ShoppingCart,
   Sparkles,
   Truck,
+  Unplug,
   Users,
   UserRound,
   Workflow,
@@ -81,6 +82,7 @@ import {
   saveAmazonSetup,
   saveProductMapping,
   syncChannel,
+  disconnectChannel,
   updateSyncedRecord,
   cancelFulfillmentOrder,
   listAssets,
@@ -828,7 +830,7 @@ const PROVIDER_COLORS = {
   default: { bg: "bg-slate-500", ring: "ring-slate-200", label: "?" },
 };
 
-function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
+function ChannelCard({ channel, connectedChannel, onSyncChannel, onDisconnectChannel }) {
   const isShopify = channel.provider === "shopify";
   const isAmazon = channel.provider === "amazon";
   const isConnected = Boolean(connectedChannel);
@@ -836,6 +838,14 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
   const colors = PROVIDER_COLORS[channel.provider] || PROVIDER_COLORS.default;
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [reconnectError, setReconnectError] = useState("");
+  const [isDisconnecting, setIsDisconnecting] = useState(false);
+
+  function handleDisconnect() {
+    const label = connectedChannel?.shop || channel.name;
+    if (!window.confirm(`Disconnect ${label}? Orders and products already synced stay put — you can reconnect any time, but automatic syncing stops until you do.`)) return;
+    setIsDisconnecting(true);
+    Promise.resolve(onDisconnectChannel?.(connectedChannel._id || connectedChannel.id)).finally(() => setIsDisconnecting(false));
+  }
   const canEditShopify =
     !isShopify ||
     ["write_products", "write_orders", "write_customers"].every((scope) => connectedChannel?.scopes?.includes(scope));
@@ -939,6 +949,14 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel }) {
                 {reconnectError ? <p className="text-xs font-medium text-rose-700">{reconnectError}</p> : null}
               </>
             ) : null}
+            <button
+              onClick={handleDisconnect}
+              disabled={isDisconnecting}
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-rose-200 py-2 text-xs font-semibold text-rose-600 transition hover:bg-rose-50 disabled:opacity-50"
+            >
+              <Unplug size={13} />
+              {isDisconnecting ? "Disconnecting…" : `Disconnect ${channel.name}`}
+            </button>
           </div>
         ) : isShopify ? (
           <ShopifyConnectForm compact />
@@ -973,6 +991,22 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
     }
   }
 
+  // Soft-disconnect — clears the stored access token server-side but keeps
+  // every order/product already synced from this channel intact. Dropped
+  // from connectedChannels here (status flips to "disconnected" so the
+  // ChannelCard's own connectedChannel lookup, which only matches
+  // status:"connected", no longer finds it) so the card reverts to its
+  // "Connect" state immediately without a full page reload.
+  async function disconnectOne(channelId) {
+    setChannelsError("");
+    try {
+      await disconnectChannel(channelId);
+      setConnectedChannels((current) => current.filter((channel) => String(channel._id || channel.id) !== String(channelId)));
+    } catch (error) {
+      setChannelsError(error.message);
+    }
+  }
+
   return (
     <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
@@ -996,6 +1030,7 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
             channel={channel}
             connectedChannel={connectedChannels.find((entry) => entry.provider === channel.provider && entry.status === "connected") || null}
             onSyncChannel={syncOne}
+            onDisconnectChannel={disconnectOne}
           />
         ))}
       </section>

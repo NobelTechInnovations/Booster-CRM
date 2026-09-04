@@ -18,6 +18,7 @@ import {
   adjustCompanyWallet,
 } from "../../repositories/platform-admin.repo.js";
 import { listAllPaymentTransactions, getFulfillmentEarnings } from "../../repositories/billing.repo.js";
+import { getBackupSummary, streamDatabaseBackup } from "../../repositories/backup.repo.js";
 
 export const platformAdminRoutes = Router();
 
@@ -203,5 +204,31 @@ platformAdminRoutes.get(
   asyncHandler(async (_req, res) => {
     const earnings = await getFulfillmentEarnings();
     res.json(earnings);
+  }),
+);
+
+// ─── Database backup ─────────────────────────────────────────────────────────
+// Whole-database export — every Mongoose collection, one JSON file per
+// collection inside a single .zip (see backup.repo.js for exactly what is
+// and isn't included — secret-bearing fields are excluded by default).
+
+platformAdminRoutes.get(
+  "/backup/summary",
+  requirePlatformAdmin,
+  asyncHandler(async (_req, res) => {
+    const result = await getBackupSummary();
+    if (result.error) throw new HttpError(503, result.error);
+    res.json(result);
+  }),
+);
+
+platformAdminRoutes.get(
+  "/backup/download",
+  requirePlatformAdmin,
+  asyncHandler(async (_req, res) => {
+    const filename = `wokbook-backup-${new Date().toISOString().slice(0, 10)}.zip`;
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    await streamDatabaseBackup(res);
   }),
 );
