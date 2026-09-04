@@ -938,6 +938,11 @@ export async function listPendingOrders(companyId, { page = 1, limit = 100 } = {
       // Drafts aren't committed orders yet (never synced to Shopify) — they
       // don't belong in the "ready to ship" queue until finalized.
       isDraft: { $ne: true },
+      // Same reasoning as isRevenueOrder() — once this order has been
+      // copied to a different Shopify channel (migration.service.js), its
+      // copy is the live one; the original shouldn't still show as
+      // actionable here too.
+      migratedToOrderId: null,
     })
       .sort({ shopifyCreatedAt: -1 })
       .skip((page - 1) * limit)
@@ -952,7 +957,8 @@ export async function listPendingOrders(companyId, { page = 1, limit = 100 } = {
         ["pending", "awaiting_shipment"].includes(o.omsStatus) &&
         !o.cancelledAt &&
         !["fulfilled", "partial"].includes(o.fulfillmentStatus) &&
-        !o.isDraft,
+        !o.isDraft &&
+        !o.migratedToOrderId,
       )
       .sort((a, b) => new Date(b.shopifyCreatedAt || 0) - new Date(a.shopifyCreatedAt || 0)),
   );
@@ -1357,7 +1363,11 @@ export function isRevenueOrder(order) {
     && !order.isRTO
     // A draft isn't a committed sale — it's never even reached Shopify —
     // so it can't count toward revenue until it's finalized.
-    && !order.isDraft;
+    && !order.isDraft
+    // Once an order has been copied to a different (newer) Shopify channel
+    // by migration.service.js, its own copy is what counts from then on —
+    // this stops the same sale being counted here AND on the copy.
+    && !order.migratedToOrderId;
 }
 
 // Same historical/manually-imported fallback labels as channelReport() in

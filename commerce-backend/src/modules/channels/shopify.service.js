@@ -7,6 +7,7 @@ import {
   upsertShopifyChannel,
   addShopifyWebhookRecord,
   getConnectedShopifyChannel,
+  getShopifyChannelByShop,
 } from "../../repositories/channel.repo.js";
 import { saveSyncedShopifyData, getCommerceRecordForUpdate } from "../../repositories/order.repo.js";
 import { getShopifyConfig } from "../../repositories/company.repo.js";
@@ -517,8 +518,14 @@ export async function createShopifyOrderDirect({ companyId, customerId, lineItem
  * "create there, sync the response back" pattern createShopifyOrderDirect
  * already uses for orders, kept consistent rather than inventing a new one.
  */
-export async function createShopifyCustomerDirect({ companyId, userId, firstName, lastName, email, phone, tags, note, acceptsMarketing, address }) {
-  const channel = await getConnectedShopifyChannel(companyId);
+// `shop` is optional and only needed when a company might have more than
+// one connected Shopify channel (see migration.service.js) — without it,
+// getConnectedShopifyChannel(companyId) resolves "the" Shopify channel with
+// no shop filter at all, which is ambiguous once there's more than one.
+// Every pre-existing caller omits it and keeps its old (single-store)
+// behavior unchanged.
+export async function createShopifyCustomerDirect({ companyId, userId, firstName, lastName, email, phone, tags, note, acceptsMarketing, address, shop }) {
+  const channel = shop ? await getShopifyChannelByShop(shop) : await getConnectedShopifyChannel(companyId);
   if (!channel) {
     throw new HttpError(400, "No connected Shopify channel found. Connect Shopify first.");
   }

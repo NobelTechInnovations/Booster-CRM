@@ -23,6 +23,7 @@ import {
   RefreshCw,
   ShieldCheck,
   ShoppingCart,
+  Store,
   Trash2,
   Truck,
   User,
@@ -37,6 +38,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { cn, formatMoney } from "@/lib/utils";
 import { SendWhatsAppModal } from "@/components/send-whatsapp-modal";
 import { BillingSettingsTab } from "@/components/billing-settings-tab";
+import { StoreMigrationTab } from "@/components/store-migration-tab";
 import {
   getCompanyProfile,
   updateTaxSettings,
@@ -973,6 +975,7 @@ const SETTINGS_TABS = [
   { key: "general", label: "General", icon: Building2 },
   { key: "billing", label: "Plan & Billing", icon: CreditCard },
   { key: "webhooks", label: "Webhooks", icon: Webhook },
+  { key: "migration", label: "Store Migration", icon: Store },
 ];
 
 export function SettingsView() {
@@ -1088,6 +1091,7 @@ export function SettingsView() {
 
       {activeTab === "webhooks" ? <WebhooksTab /> : null}
       {activeTab === "billing" ? <BillingSettingsTab /> : null}
+      {activeTab === "migration" ? <StoreMigrationTab /> : null}
 
       {activeTab !== "general" ? null : isLoading ? (
         <div className="rounded-xl border border-[var(--line)] bg-white p-10 text-center text-sm text-[var(--muted)]">Loading settings…</div>

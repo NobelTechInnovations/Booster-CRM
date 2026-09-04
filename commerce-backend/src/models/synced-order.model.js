@@ -79,6 +79,20 @@ const syncedOrderSchema = new mongoose.Schema(
     // synced order. Never true for provider !== "local".
     isDraft: { type: Boolean, default: false, index: true },
 
+    // Store-to-store migration (migration.service.js) — a one-time copy of
+    // an order onto a different (newer) Shopify channel for the same
+    // company, e.g. replacing an old store with a new one while keeping
+    // continuous history. Dual pointer: migratedFromOrderId lives on the
+    // COPY and points back at the original; migratedToOrderId lives on the
+    // ORIGINAL and points at its copy, set only once the copy actually
+    // exists — this is what makes the copy idempotent (an order with
+    // migratedToOrderId already set is skipped on a re-run) and is also
+    // what isRevenueOrder() checks to stop counting the original's revenue
+    // once its copy exists, so the same sale is never counted twice.
+    migratedFromOrderId: { type: mongoose.Schema.Types.ObjectId, ref: "SyncedOrder", index: true, sparse: true },
+    migratedToOrderId:   { type: mongoose.Schema.Types.ObjectId, ref: "SyncedOrder", sparse: true },
+    migratedAt: Date,
+
     // COD detection
     isCOD:     { type: Boolean, default: false },
     codAmount:  { type: Number, default: 0 },

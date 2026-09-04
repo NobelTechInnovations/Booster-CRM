@@ -45,6 +45,19 @@ const syncedCustomerSchema = new mongoose.Schema(
     shopifyUpdatedAt: Date,
     raw: mongoose.Schema.Types.Mixed,
 
+    // Store-to-store migration (migration.service.js) — same dual-pointer
+    // pattern as SyncedOrder's migratedFrom/ToOrderId, see that model's
+    // comment for the full rationale. pushedToShopifyAt is separate: a
+    // migrated customer copy lives only in our own database (synthetic
+    // externalId) until/unless someone explicitly runs "Push Customers to
+    // Shopify", at which point this is set and externalId is swapped to
+    // the real Shopify customer id that now backs it — orders are never
+    // part of this push, only customers.
+    migratedFromCustomerId: { type: mongoose.Schema.Types.ObjectId, ref: "SyncedCustomer", index: true, sparse: true },
+    migratedToCustomerId:   { type: mongoose.Schema.Types.ObjectId, ref: "SyncedCustomer", sparse: true },
+    migratedAt: Date,
+    pushedToShopifyAt: Date,
+
     // ─── Follow-up CRM fields ─────────────────────────────────────
     followUpStatus: {
       type: String,

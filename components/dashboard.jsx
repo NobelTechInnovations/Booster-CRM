@@ -1024,15 +1024,44 @@ export function ChannelsView({ connectedChannels, channelsError, isLoadingChanne
       </section>
 
       <section className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
-        {channelCatalog.map((channel) => (
-          <ChannelCard
-            key={channel.provider}
-            channel={channel}
-            connectedChannel={connectedChannels.find((entry) => entry.provider === channel.provider && entry.status === "connected") || null}
-            onSyncChannel={syncOne}
-            onDisconnectChannel={disconnectOne}
-          />
-        ))}
+        {channelCatalog.flatMap((channel) => {
+          if (channel.provider !== "shopify") {
+            return [
+              <ChannelCard
+                key={channel.provider}
+                channel={channel}
+                connectedChannel={connectedChannels.find((entry) => entry.provider === channel.provider && entry.status === "connected") || null}
+                onSyncChannel={syncOne}
+                onDisconnectChannel={disconnectOne}
+              />,
+            ];
+          }
+          // Shopify: one card per connected store — a company migrating
+          // between stores (Settings → Store Migration) can have more than
+          // one connected at once, and the single-match lookup above would
+          // only ever have been able to show whichever one Mongo happened
+          // to return first — plus a trailing "connect another" card so
+          // there's always a way to add one more.
+          const connectedShopifyChannels = connectedChannels.filter((entry) => entry.provider === "shopify" && entry.status === "connected");
+          return [
+            ...connectedShopifyChannels.map((entry) => (
+              <ChannelCard
+                key={entry._id || entry.id}
+                channel={channel}
+                connectedChannel={entry}
+                onSyncChannel={syncOne}
+                onDisconnectChannel={disconnectOne}
+              />
+            )),
+            <ChannelCard
+              key="shopify-connect-another"
+              channel={channel}
+              connectedChannel={null}
+              onSyncChannel={syncOne}
+              onDisconnectChannel={disconnectOne}
+            />,
+          ];
+        })}
       </section>
 
       <section className="mt-6 grid gap-4 xl:grid-cols-[minmax(0,1fr)_420px]">

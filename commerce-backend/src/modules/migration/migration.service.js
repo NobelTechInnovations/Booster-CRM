@@ -1,0 +1,205 @@
+import { isMongoConnected } from "../../config/database.js";
+import { SyncedOrder } from "../../models/synced-order.model.js";
+import { SyncedCustomer } from "../../models/synced-customer.model.js";
+import { getChannelById } from "../../repositories/channel.repo.js";
+import { createShopifyCustomerDirect } from "../channels/shopify.service.js";
+import { HttpError } from "../../utils/http-error.js";
+
+// Strips Mongo/Mongoose identity fields from a .lean() document and swaps
+// in the target channel's identity, so the result can be inserted as a
+// brand-new document that is unmistakably a copy, not a mutation of the
+// original. `externalId: migrated-<sourceId>` is what actually guarantees
+// no collision — it's derived from the source document's own _id, which is
+// already unique, so it can never clash with a real Shopify id or with any
+// other migrated copy.
+function stripIdentity(doc, { targetChannelId, targetShop }) {
+  const copy = { ...doc };
+  delete copy._id;
+  delete copy.__v;
+  delete copy.createdAt;
+  delete copy.updatedAt;
+  copy.channelId = targetChannelId;
+  copy.shop = targetShop;
+  copy.provider = "shopify";
+  copy.externalId = `migrated-${doc._id}`;
+  copy.migratedAt = new Date();
+  return copy;
+}
+
+async function loadAndValidateChannels({ companyId, sourceChannelId, targetChannelId }) {
+  if (String(sourceChannelId) === String(targetChannelId)) {
+    throw new HttpError(400, "Source and target must be different channels");
+  }
+  const [source, target] = await Promise.all([
+    getChannelById({ channelId: sourceChannelId, companyId }),
+    getChannelById({ channelId: targetChannelId, companyId }),
+  ]);
+  if (!source || !target) {
+    throw new HttpError(404, "Channel not found");
+  }
+  if (source.provider !== "shopify" || target.provider !== "shopify") {
+    throw new HttpError(400, "Store migration only supports Shopify channels");
+  }
+  return { source, target };
+}
+
+// Copies every not-yet-migrated order and customer from the source
+// Shopify channel onto the target Shopify channel, entirely inside our own
+// database — no Shopify API call is made here at all, this never touches
+// either real store. Safe to re-run any number of times: a source document
+// that already has migratedTo*Id set is skipped, so a second run only
+// picks up whatever landed on the source channel since the first run.
+export async function copyStoreData({ companyId, sourceChannelId, targetChannelId }) {
+  if (!isMongoConnected()) {
+    throw new HttpError(503, "Database is not connected");
+  }
+
+  const { source, target } = await loadAndValidateChannels({ companyId, sourceChannelId, targetChannelId });
+
+  const [pendingCustomers, alreadyMigratedCustomers] = await Promise.all([
+    SyncedCustomer.find({ companyId, channelId: source._id, migratedToCustomerId: null }).lean(),
+    SyncedCustomer.countDocuments({ companyId, channelId: source._id, migratedToCustomerId: { $ne: null } }),
+  ]);
+
+  let customersCopied = 0;
+  for (const customer of pendingCustomers) {
+    const copyDoc = stripIdentity(customer, { targetChannelId: target._id, targetShop: target.shop });
+    copyDoc.migratedFromCustomerId = customer._id;
+
+    const created = await SyncedCustomer.findOneAndUpdate(
+      { companyId, channelId: target._id, externalId: copyDoc.externalId },
+      { $setOnInsert: copyDoc },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    await SyncedCustomer.updateOne(
+      { _id: customer._id },
+      { $set: { migratedToCustomerId: created._id, migratedAt: new Date() } },
+    );
+    customersCopied += 1;
+  }
+
+  const [pendingOrders, alreadyMigratedOrders] = await Promise.all([
+    // Drafts never belong in a store migration — they aren't committed,
+    // real orders yet (see synced-order.model.js's isDraft).
+    SyncedOrder.find({ companyId, channelId: source._id, migratedToOrderId: null, isDraft: { $ne: true } }).lean(),
+    SyncedOrder.countDocuments({ companyId, channelId: source._id, migratedToOrderId: { $ne: null } }),
+  ]);
+
+  let ordersCopied = 0;
+  for (const order of pendingOrders) {
+    const copyDoc = stripIdentity(order, { targetChannelId: target._id, targetShop: target.shop });
+    copyDoc.migratedFromOrderId = order._id;
+
+    const created = await SyncedOrder.findOneAndUpdate(
+      { companyId, channelId: target._id, externalId: copyDoc.externalId },
+      { $setOnInsert: copyDoc },
+      { upsert: true, new: true, setDefaultsOnInsert: true },
+    );
+    await SyncedOrder.updateOne(
+      { _id: order._id },
+      { $set: { migratedToOrderId: created._id, migratedAt: new Date() } },
+    );
+    ordersCopied += 1;
+  }
+
+  return {
+    source: { channelId: source._id, shop: source.shop, name: source.name },
+    target: { channelId: target._id, shop: target.shop, name: target.name },
+    customersCopied,
+    customersSkipped: alreadyMigratedCustomers,
+    ordersCopied,
+    ordersSkipped: alreadyMigratedOrders,
+  };
+}
+
+// The one step that DOES write to a real, live Shopify store — deliberately
+// separate from copyStoreData, its own explicit action, customers only
+// (never orders — see the plan/commit message for why: this keeps the
+// target store's own order-numbering sequence untouched by migrated data).
+// For each migrated customer copy not yet pushed: first check whether a
+// real customer already independently exists on the target store (matched
+// by phone/email among that channel's OWN synced customers, i.e. one that
+// was never itself a migration copy) so this never creates a Shopify-side
+// duplicate for someone who's already ordered on the new store; only calls
+// out to Shopify when nothing matches. One customer's failure is recorded
+// and the batch continues — never aborts the rest over one bad record.
+export async function pushMigratedCustomersToShopify({ companyId, targetChannelId }) {
+  if (!isMongoConnected()) {
+    throw new HttpError(503, "Database is not connected");
+  }
+
+  const target = await getChannelById({ channelId: targetChannelId, companyId });
+  if (!target) throw new HttpError(404, "Channel not found");
+  if (target.provider !== "shopify") throw new HttpError(400, "Only Shopify channels can be pushed to");
+
+  const candidates = await SyncedCustomer.find({
+    companyId,
+    channelId: target._id,
+    migratedFromCustomerId: { $ne: null },
+    pushedToShopifyAt: null,
+  }).lean();
+
+  let pushed = 0;
+  let alreadyExisted = 0;
+  const failed = [];
+
+  for (const customer of candidates) {
+    try {
+      const existing = customer.email || customer.phone
+        ? await SyncedCustomer.findOne({
+            companyId,
+            channelId: target._id,
+            migratedFromCustomerId: null, // a genuinely-synced customer, not another migration copy
+            $or: [
+              ...(customer.email ? [{ email: customer.email }] : []),
+              ...(customer.phone ? [{ phone: customer.phone }] : []),
+            ],
+          }).lean()
+        : null;
+
+      // Either branch below ends with a real, non-migrated SyncedCustomer
+      // doc holding the true Shopify externalId — the migrated copy's own
+      // synthetic externalId can never be renamed onto that value without
+      // colliding with the {companyId, channelId, externalId} unique index
+      // (the real doc already occupies it), so the copy is retired instead
+      // of mutated. Any CRM work already logged on the copy (follow-ups,
+      // note, tags) is carried over first so it isn't lost.
+      let realDocId;
+      if (existing) {
+        realDocId = existing._id;
+        alreadyExisted += 1;
+      } else {
+        const [firstName, ...rest] = String(customer.name || customer.firstName || "Customer").trim().split(/\s+/);
+        const { customer: created } = await createShopifyCustomerDirect({
+          companyId,
+          shop: target.shop,
+          firstName: customer.firstName || firstName,
+          lastName: customer.lastName || rest.join(" "),
+          email: customer.email || undefined,
+          phone: customer.phone || undefined,
+          address: customer.defaultAddress,
+        });
+        realDocId = created._id;
+        pushed += 1;
+      }
+
+      const crmUpdate = {};
+      if (customer.followUps?.length) crmUpdate.$push = { followUps: { $each: customer.followUps } };
+      if (customer.followUpStatus && customer.followUpStatus !== "new") crmUpdate.$set = { ...crmUpdate.$set, followUpStatus: customer.followUpStatus, nextFollowUpAt: customer.nextFollowUpAt };
+      if (customer.note) crmUpdate.$set = { ...crmUpdate.$set, note: customer.note };
+      if (Object.keys(crmUpdate).length) await SyncedCustomer.updateOne({ _id: realDocId }, crmUpdate);
+
+      // Repoint the original source customer's migratedToCustomerId at the
+      // real doc that now exists in the copy's place, so the chain stays
+      // resolvable end-to-end instead of pointing at a deleted document.
+      if (customer.migratedFromCustomerId) {
+        await SyncedCustomer.updateOne({ _id: customer.migratedFromCustomerId }, { $set: { migratedToCustomerId: realDocId } });
+      }
+      await SyncedCustomer.deleteOne({ _id: customer._id });
+    } catch (err) {
+      failed.push({ customerId: String(customer._id), name: customer.name || customer.email || customer.phone || "Unknown", reason: err.message });
+    }
+  }
+
+  return { pushed, alreadyExisted, failed, total: candidates.length };
+}
