@@ -167,18 +167,27 @@ export async function listMessagesForConversation({ companyId, conversationId, l
     .map(clone);
 }
 
-export async function updateMessageStatus({ companyId, waMessageId, status }) {
+// error is optional — Meta's status webhook only ever includes an
+// `errors` array when status is "failed"; passing it through here (rather
+// than discarding it, as before) is what lets a failed send show a real,
+// diagnosable reason in the panel instead of just the bare word "failed".
+export async function updateMessageStatus({ companyId, waMessageId, status, error }) {
+  const update = { status };
+  if (error) {
+    update.errorCode = error.code;
+    update.errorMessage = error.title || error.message || "";
+  }
+
   if (isMongoConnected()) {
     return WhatsAppMessage.findOneAndUpdate(
       { companyId: mixedIdFilter(companyId), waMessageId },
-      { $set: { status } },
+      { $set: update },
       { new: true },
     ).lean();
   }
   for (const msg of memory.whatsappMessages.values()) {
     if (String(msg.companyId) === String(companyId) && msg.waMessageId === waMessageId) {
-      msg.status = status;
-      msg.updatedAt = now();
+      Object.assign(msg, update, { updatedAt: now() });
       return clone(msg);
     }
   }

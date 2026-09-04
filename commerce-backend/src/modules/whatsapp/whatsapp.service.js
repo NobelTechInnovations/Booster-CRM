@@ -621,7 +621,11 @@ export async function handleIncomingWebhook(payload) {
       }
 
       for (const status of value.statuses || []) {
-        await updateMessageStatus({ companyId, waMessageId: status.id, status: status.status });
+        // Meta only ever includes `errors` alongside a "failed" status —
+        // this is the one place that information exists at all, so
+        // capturing it here is what makes a failed send diagnosable later
+        // instead of just the bare word "failed".
+        await updateMessageStatus({ companyId, waMessageId: status.id, status: status.status, error: status.errors?.[0] });
       }
     }
   }

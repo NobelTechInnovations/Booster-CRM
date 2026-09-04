@@ -36,6 +36,8 @@ export function StoreMigrationTab() {
 
   const [sourceId, setSourceId] = useState("");
   const [targetId, setTargetId] = useState("");
+  const [includeCustomers, setIncludeCustomers] = useState(true);
+  const [includeOrders, setIncludeOrders] = useState(true);
   const [copying, setCopying] = useState(false);
   const [copyResult, setCopyResult] = useState(null);
   const [copyError, setCopyError] = useState("");
@@ -115,8 +117,11 @@ export function StoreMigrationTab() {
     const source = connectedStores.find((c) => (c._id || c.id) === sourceId);
     const target = connectedStores.find((c) => (c._id || c.id) === targetId);
     if (!source || !target) return;
+    if (!includeCustomers && !includeOrders) return;
+
+    const what = includeCustomers && includeOrders ? "every order and customer" : includeCustomers ? "every customer" : "every order";
     if (!window.confirm(
-      `Copy every order and customer from ${source.shop} into the panel under ${target.shop}?\n\n` +
+      `Copy ${what} from ${source.shop} into the panel under ${target.shop}?\n\n` +
       `This only updates this panel's own database — nothing is sent to either real Shopify store. ` +
       `Safe to run again later: anything already copied is skipped, only new records get added.`,
     )) return;
@@ -125,7 +130,7 @@ export function StoreMigrationTab() {
     setCopyError("");
     setCopyResult(null);
     try {
-      const result = await copyStoreData({ sourceChannelId: sourceId, targetChannelId: targetId });
+      const result = await copyStoreData({ sourceChannelId: sourceId, targetChannelId: targetId, includeCustomers, includeOrders });
       setCopyResult(result);
     } catch (err) {
       setCopyError(err.message);
@@ -319,9 +324,28 @@ export function StoreMigrationTab() {
             Panel database only — nothing is written to either real Shopify store by this step. Once copied, the new store's copy is what counts toward your revenue totals going forward; the old store's original is kept as history but excluded from revenue so nothing doubles.
           </div>
 
-          <Button onClick={handleCopy} disabled={copying || !sourceId || !targetId} className="h-10">
+          <div className="mb-4 flex items-center gap-4">
+            <label className="flex items-center gap-1.5 text-sm text-slate-700">
+              <input type="checkbox" checked={includeCustomers} onChange={(e) => setIncludeCustomers(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              Customers
+            </label>
+            <label className="flex items-center gap-1.5 text-sm text-slate-700">
+              <input type="checkbox" checked={includeOrders} onChange={(e) => setIncludeOrders(e.target.checked)} className="h-4 w-4 rounded border-slate-300" />
+              Orders
+            </label>
+          </div>
+
+          <Button onClick={handleCopy} disabled={copying || !sourceId || !targetId || (!includeCustomers && !includeOrders)} className="h-10">
             {copying ? <Loader2 size={15} className="animate-spin" /> : <RefreshCcw size={15} />}
-            {copying ? "Copying…" : "Copy Order & Customer Data"}
+            {copying
+              ? "Copying…"
+              : includeCustomers && includeOrders
+              ? "Copy Order & Customer Data"
+              : includeCustomers
+              ? "Copy Customer Data"
+              : includeOrders
+              ? "Copy Order Data"
+              : "Select customers or orders"}
           </Button>
           {copyError ? <p className="mt-2 text-xs font-medium text-rose-600">{copyError}</p> : null}
           {copyResult ? (
@@ -336,18 +360,26 @@ export function StoreMigrationTab() {
             </div>
           ) : null}
 
-          {/* Push customers — separate, own confirmation, only meaningful once a target is picked */}
+          {/* Push customers — separate, own confirmation, only meaningful once a target is picked. This is
+              the one action here that writes to the real target store, which is why it stays a distinct step
+              from the checkboxes above rather than folding "orders" into it too — orders are never pushed to
+              Shopify, only copied into the panel's own database (the step above). */}
           <div className="mt-5 border-t border-slate-100 pt-4">
             <h4 className="mb-1 text-sm font-semibold text-slate-900">Push Migrated Customers to Shopify</h4>
             <p className="mb-3 text-xs text-slate-500">
               Creates the copied customers for real in the new store's own Shopify admin. Orders are never pushed — this keeps that store's order numbering untouched so you can monitor it manually.
+              Run &quot;Copy Customer Data&quot; above first — this step only pushes customers that have already been copied into the panel.
             </p>
             <Button variant="secondary" onClick={handlePush} disabled={pushing || !targetId} className="h-10">
               {pushing ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
               {pushing ? "Pushing…" : "Push Customers to Shopify"}
             </Button>
             {pushError ? <p className="mt-2 text-xs font-medium text-rose-600">{pushError}</p> : null}
-            {pushResult ? (
+            {pushResult && pushResult.total === 0 ? (
+              <p className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                Nothing to push yet — copy customer data from the old store first (above), then try this again.
+              </p>
+            ) : pushResult ? (
               <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
                 Pushed {pushResult.pushed} new, linked {pushResult.alreadyExisted} already on Shopify
                 {pushResult.failed.length > 0 && <>, {pushResult.failed.length} failed</>}.

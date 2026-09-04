@@ -43,72 +43,83 @@ async function loadAndValidateChannels({ companyId, sourceChannelId, targetChann
   return { source, target };
 }
 
-// Copies every not-yet-migrated order and customer from the source
-// Shopify channel onto the target Shopify channel, entirely inside our own
+// Copies not-yet-migrated orders and/or customers from the source Shopify
+// channel onto the target Shopify channel, entirely inside our own
 // database — no Shopify API call is made here at all, this never touches
 // either real store. Safe to re-run any number of times: a source document
 // that already has migratedTo*Id set is skipped, so a second run only
 // picks up whatever landed on the source channel since the first run.
-export async function copyStoreData({ companyId, sourceChannelId, targetChannelId }) {
+// includeCustomers/includeOrders (both default true) let the caller copy
+// just one kind at a time — the one button on the Store Migration tab has
+// a checkbox for each.
+export async function copyStoreData({ companyId, sourceChannelId, targetChannelId, includeCustomers = true, includeOrders = true }) {
   if (!isMongoConnected()) {
     throw new HttpError(503, "Database is not connected");
   }
 
   const { source, target } = await loadAndValidateChannels({ companyId, sourceChannelId, targetChannelId });
 
-  const [pendingCustomers, alreadyMigratedCustomers] = await Promise.all([
-    SyncedCustomer.find({ companyId, channelId: source._id, migratedToCustomerId: null }).lean(),
-    SyncedCustomer.countDocuments({ companyId, channelId: source._id, migratedToCustomerId: { $ne: null } }),
-  ]);
-
   let customersCopied = 0;
-  for (const customer of pendingCustomers) {
-    const copyDoc = stripIdentity(customer, { targetChannelId: target._id, targetShop: target.shop });
-    copyDoc.migratedFromCustomerId = customer._id;
+  let customersSkipped = 0;
+  if (includeCustomers) {
+    const [pendingCustomers, alreadyMigratedCustomers] = await Promise.all([
+      SyncedCustomer.find({ companyId, channelId: source._id, migratedToCustomerId: null }).lean(),
+      SyncedCustomer.countDocuments({ companyId, channelId: source._id, migratedToCustomerId: { $ne: null } }),
+    ]);
+    customersSkipped = alreadyMigratedCustomers;
 
-    const created = await SyncedCustomer.findOneAndUpdate(
-      { companyId, channelId: target._id, externalId: copyDoc.externalId },
-      { $setOnInsert: copyDoc },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    await SyncedCustomer.updateOne(
-      { _id: customer._id },
-      { $set: { migratedToCustomerId: created._id, migratedAt: new Date() } },
-    );
-    customersCopied += 1;
+    for (const customer of pendingCustomers) {
+      const copyDoc = stripIdentity(customer, { targetChannelId: target._id, targetShop: target.shop });
+      copyDoc.migratedFromCustomerId = customer._id;
+
+      const created = await SyncedCustomer.findOneAndUpdate(
+        { companyId, channelId: target._id, externalId: copyDoc.externalId },
+        { $setOnInsert: copyDoc },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+      await SyncedCustomer.updateOne(
+        { _id: customer._id },
+        { $set: { migratedToCustomerId: created._id, migratedAt: new Date() } },
+      );
+      customersCopied += 1;
+    }
   }
 
-  const [pendingOrders, alreadyMigratedOrders] = await Promise.all([
-    // Drafts never belong in a store migration — they aren't committed,
-    // real orders yet (see synced-order.model.js's isDraft).
-    SyncedOrder.find({ companyId, channelId: source._id, migratedToOrderId: null, isDraft: { $ne: true } }).lean(),
-    SyncedOrder.countDocuments({ companyId, channelId: source._id, migratedToOrderId: { $ne: null } }),
-  ]);
-
   let ordersCopied = 0;
-  for (const order of pendingOrders) {
-    const copyDoc = stripIdentity(order, { targetChannelId: target._id, targetShop: target.shop });
-    copyDoc.migratedFromOrderId = order._id;
+  let ordersSkipped = 0;
+  if (includeOrders) {
+    const [pendingOrders, alreadyMigratedOrders] = await Promise.all([
+      // Drafts never belong in a store migration — they aren't committed,
+      // real orders yet (see synced-order.model.js's isDraft).
+      SyncedOrder.find({ companyId, channelId: source._id, migratedToOrderId: null, isDraft: { $ne: true } }).lean(),
+      SyncedOrder.countDocuments({ companyId, channelId: source._id, migratedToOrderId: { $ne: null } }),
+    ]);
+    ordersSkipped = alreadyMigratedOrders;
 
-    const created = await SyncedOrder.findOneAndUpdate(
-      { companyId, channelId: target._id, externalId: copyDoc.externalId },
-      { $setOnInsert: copyDoc },
-      { upsert: true, new: true, setDefaultsOnInsert: true },
-    );
-    await SyncedOrder.updateOne(
-      { _id: order._id },
-      { $set: { migratedToOrderId: created._id, migratedAt: new Date() } },
-    );
-    ordersCopied += 1;
+    for (const order of pendingOrders) {
+      const copyDoc = stripIdentity(order, { targetChannelId: target._id, targetShop: target.shop });
+      copyDoc.migratedFromOrderId = order._id;
+
+      const created = await SyncedOrder.findOneAndUpdate(
+        { companyId, channelId: target._id, externalId: copyDoc.externalId },
+        { $setOnInsert: copyDoc },
+        { upsert: true, new: true, setDefaultsOnInsert: true },
+      );
+      await SyncedOrder.updateOne(
+        { _id: order._id },
+        { $set: { migratedToOrderId: created._id, migratedAt: new Date() } },
+      );
+      ordersCopied += 1;
+    }
   }
 
   return {
     source: { channelId: source._id, shop: source.shop, name: source.name },
     target: { channelId: target._id, shop: target.shop, name: target.name },
     customersCopied,
-    customersSkipped: alreadyMigratedCustomers,
+    customersSkipped,
     ordersCopied,
-    ordersSkipped: alreadyMigratedOrders,
+    ordersSkipped,
   };
 }
 

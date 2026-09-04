@@ -417,6 +417,11 @@ function MessageThread({ conversation, channelName, onDeleted }) {
               >
                 <MessageMedia message={m} />
                 {m.text ? <p className="whitespace-pre-wrap">{m.text}</p> : null}
+                {m.status === "failed" && m.errorMessage ? (
+                  <p className="mt-1 text-[11px] font-medium text-rose-600">
+                    Failed: {m.errorMessage}{m.errorCode ? ` (${m.errorCode})` : ""}
+                  </p>
+                ) : null}
                 <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-slate-400">
                   {fmt(m.timestamp)}
                   {m.direction === "outbound" ? statusIcon(m.status) : null}

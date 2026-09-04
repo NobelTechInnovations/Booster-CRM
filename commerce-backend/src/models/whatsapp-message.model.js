@@ -26,6 +26,13 @@ const whatsappMessageSchema = new mongoose.Schema(
     // as Meta's status webhook events arrive; inbound messages are just
     // "received" and never get a status update.
     status: { type: String, enum: ["received", "sent", "delivered", "read", "failed"], default: "received" },
+    // Meta's own error code/title/message from the status webhook's
+    // `errors` array — only ever set when status is "failed". Previously
+    // discarded entirely (only the bare word "failed" was kept), making a
+    // failed send undiagnosable from inside the panel. See
+    // updateMessageStatus (whatsapp.repo.js).
+    errorCode: { type: Number },
+    errorMessage: { type: String, default: "" },
 
     timestamp: { type: Date, required: true },
     sentByUserName: { type: String, default: "" }, // which panel user sent it, for outbound only

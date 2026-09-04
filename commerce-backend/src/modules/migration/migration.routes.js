@@ -15,11 +15,20 @@ migrationRoutes.post(
   requireAuth,
   requirePermission("channels:manage"),
   asyncHandler(async (req, res) => {
-    const { sourceChannelId, targetChannelId } = req.body || {};
+    const { sourceChannelId, targetChannelId, includeCustomers, includeOrders } = req.body || {};
     if (!sourceChannelId || !targetChannelId) {
       return res.status(400).json({ message: "sourceChannelId and targetChannelId are required" });
     }
-    const result = await copyStoreData({ companyId: req.auth.companyId, sourceChannelId, targetChannelId });
+    if (includeCustomers === false && includeOrders === false) {
+      return res.status(400).json({ message: "Select at least one of customers or orders to copy" });
+    }
+    const result = await copyStoreData({
+      companyId: req.auth.companyId,
+      sourceChannelId,
+      targetChannelId,
+      includeCustomers: includeCustomers !== false,
+      includeOrders: includeOrders !== false,
+    });
     res.json(result);
   }),
 );
