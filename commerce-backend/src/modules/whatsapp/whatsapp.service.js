@@ -23,6 +23,18 @@ import { buildInvoicePdf } from "../../utils/invoice-pdf.js";
 
 const GRAPH_BASE = () => `https://graph.facebook.com/${env.whatsapp.apiVersion}`;
 
+// Sending from Leads/Customers passes whatever phone number is on file —
+// often a bare 10-digit Indian mobile number with no country code, which
+// Meta's API either mis-routes or rejects. A bare 10-digit number (once
+// every non-digit is stripped) is assumed to be Indian and gets "91"
+// prepended; anything else (already has a country code, a landline-style
+// length, whatever) is passed through unchanged — this only ever adds,
+// never strips or rewrites, an existing country code.
+function normalizeIndianWaId(to) {
+  const digits = String(to || "").replace(/\D/g, "");
+  return digits.length === 10 ? `91${digits}` : digits;
+}
+
 // ─── Connect (credential entry, not OAuth) ─────────────────────────────────
 // WhatsApp Cloud API has no simple end-user OAuth consent screen for
 // provisioning a business phone number the way Ads/Social do — the company
@@ -371,7 +383,7 @@ export async function sendWhatsAppMessage({ companyId, channelId, to, text, medi
   const hasMedia = Boolean(mediaId || mediaUrl?.trim());
   if (!text?.trim() && !hasMedia) throw new HttpError(400, "Message text or attachment is required");
 
-  const waId = String(to).replace(/\D/g, "");
+  const waId = normalizeIndianWaId(to);
   const type = hasMedia ? (mediaType || guessMediaType(mediaUrl || "")) : "text";
 
   const payload = hasMedia
@@ -530,7 +542,7 @@ export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, te
   if (!to) throw new HttpError(400, "Recipient phone number is required");
   if (!templateName) throw new HttpError(400, "Template name is required");
 
-  const waId = String(to).replace(/\D/g, "");
+  const waId = normalizeIndianWaId(to);
   const components = bodyParams.length
     ? [{ type: "body", parameters: bodyParams.map((value) => ({ type: "text", text: String(value ?? "") })) }]
     : [];
