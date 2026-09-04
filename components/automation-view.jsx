@@ -45,6 +45,7 @@ import {
   deleteEmailTemplate,
   testSendEmailTemplate,
   listEmailLogs,
+  getSession,
 } from "@/lib/api";
 
 // Built-in triggers with a display label/icon — order_delivered/refund_processed/
@@ -96,7 +97,7 @@ function iconFor(list, key) {
 
 const EMPTY_EMAIL_FORM = { host: "", port: "587", secure: false, username: "", password: "", fromEmail: "", fromName: "" };
 
-function EmailSetupSection({ channel, isLoading, onConnected }) {
+function EmailSetupSection({ channel, isLoading, companyName, onConnected }) {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState(EMPTY_EMAIL_FORM);
   const [showPassword, setShowPassword] = useState(false);
@@ -123,7 +124,10 @@ function EmailSetupSection({ channel, isLoading, onConnected }) {
         fromName: channel.external?.fromName || "",
       });
     } else {
-      setForm(EMPTY_EMAIL_FORM);
+      // First-ever connect — prefill "From Name" with the brand name
+      // that's already set in Company Profile, so it doesn't need typing
+      // twice; still fully editable if a different sender name is wanted.
+      setForm({ ...EMPTY_EMAIL_FORM, fromName: companyName || "" });
     }
     setShowPassword(false);
     setConnectError("");
@@ -267,7 +271,17 @@ function EmailSetupSection({ channel, isLoading, onConnected }) {
 // where one makes sense. A starting point to customize, not meant to be
 // the final word — every field stays fully editable after picking one.
 
-function emailShell({ accent, eyebrow, heading, bodyParagraphs, details, cta }) {
+// logoUrl/companyName are baked in as real values at generation time (from
+// the company's own already-set brand logo/name in Company Profile), not
+// left as {{}} placeholders — a company's own logo is known the moment
+// they click a preset, and rendering an {{companyLogoUrl}} placeholder at
+// actual send time would need to fall back to something for a company
+// with no logo set, which risks a broken-image icon in the sent email.
+// Baking it in here means: logo set → real <img>, no logo → the plain
+// text brand-name eyebrow, decided once, correctly, with nothing to break
+// later. {{companyName}} in the footer stays a live placeholder — it's
+// plain text, so there's no equivalent broken-render risk if it changes.
+function emailShell({ accent, heading, bodyParagraphs, details, cta, logoUrl, companyName }) {
   const detailsRows = details
     ? `<table style="width:100%;border-collapse:collapse;">${details
         .map(([label, value]) => `<tr><td style="padding:6px 0;color:#64748b;font-size:13px;">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:13px;font-weight:600;text-align:right;">${value}</td></tr>`)
@@ -278,11 +292,14 @@ function emailShell({ accent, eyebrow, heading, bodyParagraphs, details, cta }) 
     ? `<div style="text-align:center;margin:26px 0 8px;"><a href="${cta.href}" style="display:inline-block;background:${accent};color:#ffffff;text-decoration:none;padding:12px 30px;border-radius:8px;font-size:14px;font-weight:600;">${cta.label}</a></div>`
     : "";
   const paragraphs = bodyParagraphs.map((p) => `<p style="margin:0 0 14px;color:#334155;font-size:15px;line-height:1.65;">${p}</p>`).join("");
+  const brandMark = logoUrl
+    ? `<img src="${logoUrl}" alt="${companyName || "Logo"}" style="max-height:36px;max-width:160px;display:block;margin:0 auto;" />`
+    : `<p style="margin:0;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">{{companyName}}</p>`;
 
   return `<div style="background:#f1f5f9;padding:36px 16px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
   <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.08);">
     <div style="background:${accent};padding:30px 32px;text-align:center;">
-      <p style="margin:0;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">{{companyName}}</p>
+      ${brandMark}
       <h1 style="margin:10px 0 0;color:#ffffff;font-size:22px;font-weight:700;">${heading}</h1>
     </div>
     <div style="padding:32px;">
@@ -298,56 +315,59 @@ function emailShell({ accent, eyebrow, heading, bodyParagraphs, details, cta }) 
 </div>`;
 }
 
-const TEMPLATE_PRESETS = [
-  {
-    key: "order_confirmed", label: "Order Confirmed", trigger: "order_placed", name: "Order Confirmation",
-    subject: "Your order {{orderNumber}} is confirmed 🎉",
-    bodyHtml: emailShell({
-      accent: "#4361ee", heading: "✅ Order Confirmed",
-      bodyParagraphs: ["Thanks for your order — we've got it and we're getting it ready.", "We'll email you again the moment it ships."],
-      details: [["Order", "{{orderNumber}}"], ["Total", "{{orderTotal}} {{currency}}"]],
-    }),
-  },
-  {
-    key: "order_shipped", label: "Order Shipped", trigger: "order_fulfilled", name: "Order Shipped",
-    subject: "Your order {{orderNumber}} is on its way 🚚",
-    bodyHtml: emailShell({
-      accent: "#0ea5e9", heading: "🚚 It's On Its Way",
-      bodyParagraphs: ["Good news — your order has shipped and is headed your way."],
-      details: [["Order", "{{orderNumber}}"], ["Courier", "{{courierName}}"], ["Tracking No.", "{{trackingNumber}}"]],
-      cta: { href: "{{trackingUrl}}", label: "Track Your Order" },
-    }),
-  },
-  {
-    key: "order_delivered", label: "Order Delivered", trigger: "order_delivered", name: "Order Delivered",
-    subject: "Delivered! Your order {{orderNumber}} has arrived 📦",
-    bodyHtml: emailShell({
-      accent: "#16a34a", heading: "📦 Delivered!",
-      bodyParagraphs: ["Your order has been delivered — we hope you love it!", "If anything's not right, just reply to this email and we'll sort it out."],
-      details: [["Order", "{{orderNumber}}"]],
-    }),
-  },
-  {
-    key: "refund_processed", label: "Refund Processed", trigger: "refund_processed", name: "Refund Processed",
-    subject: "Your refund for order {{orderNumber}} is on its way 💳",
-    bodyHtml: emailShell({
-      accent: "#f59e0b", heading: "💳 Refund Processed",
-      bodyParagraphs: ["We've processed your refund — it should reflect in your original payment method within a few business days."],
-      details: [["Order", "{{orderNumber}}"], ["Refund Amount", "{{refundAmount}} {{currency}}"]],
-    }),
-  },
-  {
-    key: "cod_reminder", label: "COD Payment Reminder", trigger: "cod_payment_reminder", name: "COD Payment Reminder",
-    subject: "Reminder: payment due on delivery for order {{orderNumber}}",
-    bodyHtml: emailShell({
-      accent: "#e11d48", heading: "⏰ Payment Reminder",
-      bodyParagraphs: ["Just a friendly reminder — your order was placed as Cash on Delivery. Please keep the amount ready for the courier."],
-      details: [["Order", "{{orderNumber}}"], ["Amount Due", "{{orderTotal}} {{currency}}"]],
-    }),
-  },
-];
+function buildTemplatePresets({ logoUrl, companyName }) {
+  const shell = (opts) => emailShell({ ...opts, logoUrl, companyName });
+  return [
+    {
+      key: "order_confirmed", label: "Order Confirmed", trigger: "order_placed", name: "Order Confirmation",
+      subject: "Your order {{orderNumber}} is confirmed 🎉",
+      bodyHtml: shell({
+        accent: "#4361ee", heading: "✅ Order Confirmed",
+        bodyParagraphs: ["Thanks for your order — we've got it and we're getting it ready.", "We'll email you again the moment it ships."],
+        details: [["Order", "{{orderNumber}}"], ["Total", "{{orderTotal}} {{currency}}"]],
+      }),
+    },
+    {
+      key: "order_shipped", label: "Order Shipped", trigger: "order_fulfilled", name: "Order Shipped",
+      subject: "Your order {{orderNumber}} is on its way 🚚",
+      bodyHtml: shell({
+        accent: "#0ea5e9", heading: "🚚 It's On Its Way",
+        bodyParagraphs: ["Good news — your order has shipped and is headed your way."],
+        details: [["Order", "{{orderNumber}}"], ["Courier", "{{courierName}}"], ["Tracking No.", "{{trackingNumber}}"]],
+        cta: { href: "{{trackingUrl}}", label: "Track Your Order" },
+      }),
+    },
+    {
+      key: "order_delivered", label: "Order Delivered", trigger: "order_delivered", name: "Order Delivered",
+      subject: "Delivered! Your order {{orderNumber}} has arrived 📦",
+      bodyHtml: shell({
+        accent: "#16a34a", heading: "📦 Delivered!",
+        bodyParagraphs: ["Your order has been delivered — we hope you love it!", "If anything's not right, just reply to this email and we'll sort it out."],
+        details: [["Order", "{{orderNumber}}"]],
+      }),
+    },
+    {
+      key: "refund_processed", label: "Refund Processed", trigger: "refund_processed", name: "Refund Processed",
+      subject: "Your refund for order {{orderNumber}} is on its way 💳",
+      bodyHtml: shell({
+        accent: "#f59e0b", heading: "💳 Refund Processed",
+        bodyParagraphs: ["We've processed your refund — it should reflect in your original payment method within a few business days."],
+        details: [["Order", "{{orderNumber}}"], ["Refund Amount", "{{refundAmount}} {{currency}}"]],
+      }),
+    },
+    {
+      key: "cod_reminder", label: "COD Payment Reminder", trigger: "cod_payment_reminder", name: "COD Payment Reminder",
+      subject: "Reminder: payment due on delivery for order {{orderNumber}}",
+      bodyHtml: shell({
+        accent: "#e11d48", heading: "⏰ Payment Reminder",
+        bodyParagraphs: ["Just a friendly reminder — your order was placed as Cash on Delivery. Please keep the amount ready for the courier."],
+        details: [["Order", "{{orderNumber}}"], ["Amount Due", "{{orderTotal}} {{currency}}"]],
+      }),
+    },
+  ];
+}
 
-function TemplateEditorModal({ template, triggers, onClose, onSaved }) {
+function TemplateEditorModal({ template, triggers, companyName, logoUrl, onClose, onSaved }) {
   const [name, setName] = useState(template?.name || "");
   const [trigger, setTrigger] = useState(template?.trigger || triggers[0] || "order_placed");
   const [customTrigger, setCustomTrigger] = useState(triggers.includes(template?.trigger) ? "" : (template?.trigger || ""));
@@ -357,8 +377,13 @@ function TemplateEditorModal({ template, triggers, onClose, onSaved }) {
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
+  // Built with the company's own already-set brand name/logo baked in
+  // (see buildTemplatePresets's own comment on why) — recomputed only if
+  // those actually change, not on every keystroke in the form below.
+  const presets = useMemo(() => buildTemplatePresets({ logoUrl, companyName }), [logoUrl, companyName]);
+
   function applyPreset(presetKey) {
-    const preset = TEMPLATE_PRESETS.find((p) => p.key === presetKey);
+    const preset = presets.find((p) => p.key === presetKey);
     if (!preset) return;
     setName(preset.name);
     if (triggers.includes(preset.trigger)) {
@@ -404,7 +429,7 @@ function TemplateEditorModal({ template, triggers, onClose, onSaved }) {
             <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
               <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-indigo-700">Start from a modern preset (optional)</span>
               <div className="flex flex-wrap gap-1.5">
-                {TEMPLATE_PRESETS.map((p) => (
+                {presets.map((p) => (
                   <button
                     key={p.key}
                     type="button"
@@ -460,7 +485,7 @@ function TemplateEditorModal({ template, triggers, onClose, onSaved }) {
   );
 }
 
-function EmailTemplatesSection({ templates, triggers, onRefresh, hasEmailChannel }) {
+function EmailTemplatesSection({ templates, triggers, companyName, logoUrl, onRefresh, hasEmailChannel }) {
   const [showEditor, setShowEditor] = useState(false);
   const [editing, setEditing] = useState(null);
   const [testingId, setTestingId] = useState("");
@@ -546,6 +571,8 @@ function EmailTemplatesSection({ templates, triggers, onRefresh, hasEmailChannel
         <TemplateEditorModal
           template={editing}
           triggers={triggers}
+          companyName={companyName}
+          logoUrl={logoUrl}
           onClose={() => setShowEditor(false)}
           onSaved={() => { setShowEditor(false); onRefresh(); }}
         />
@@ -722,23 +749,52 @@ export function AutomationView() {
   const [showCreate, setShowCreate] = useState(false);
   const [runningId, setRunningId] = useState("");
   const [activeTab, setActiveTab] = useState("rules");
+  // The company's own already-set brand name/logo (Company Profile) — used
+  // to prefill the SMTP "From Name" on first connect and to bake the real
+  // logo into generated preset templates, so this stays whatever's really
+  // configured instead of asking the user to retype it here.
+  const [companyName, setCompanyName] = useState("");
+  const [companyLogoUrl, setCompanyLogoUrl] = useState("");
+
+  useEffect(() => {
+    const session = getSession();
+    setCompanyName(session?.company?.name || "");
+    setCompanyLogoUrl(session?.company?.logoUrl || "");
+  }, []);
+
+  // Split into one function per piece of data, each callable on its own —
+  // saving a template or reconnecting email used to call the same loadAll()
+  // that the very first page mount does, which reset the shared isLoading
+  // flag to true every time and made EmailSetupSection flash back to
+  // "Checking connection…" over something that had nothing to do with the
+  // email connection at all. Only the initial mount (loadAll below) now
+  // touches isLoading; every other refresh is quiet.
+  async function refreshRules() {
+    const res = await listAutomationRules();
+    setRules(res.rules || []);
+  }
+  async function refreshEmailChannel() {
+    const res = await listChannels();
+    setEmailChannel((res.channels || []).find((c) => c.channelType === "email" && c.status === "connected") || null);
+  }
+  async function refreshTemplates() {
+    const res = await listEmailTemplates();
+    setEmailTemplates(res.templates || []);
+  }
+  async function refreshTriggers() {
+    const res = await listAutomationTriggers();
+    setTriggers(res.triggers || TRIGGERS.map((t) => t.key));
+  }
+  async function refreshLogs() {
+    const res = await listEmailLogs();
+    setLogs(res.logs || []);
+  }
 
   async function loadAll() {
     setIsLoading(true);
     setError("");
     try {
-      const [rulesRes, channelsRes, templatesRes, triggersRes, logsRes] = await Promise.all([
-        listAutomationRules(),
-        listChannels(),
-        listEmailTemplates(),
-        listAutomationTriggers(),
-        listEmailLogs(),
-      ]);
-      setRules(rulesRes.rules || []);
-      setEmailChannel((channelsRes.channels || []).find((c) => c.channelType === "email" && c.status === "connected") || null);
-      setEmailTemplates(templatesRes.templates || []);
-      setTriggers(triggersRes.triggers || TRIGGERS.map((t) => t.key));
-      setLogs(logsRes.logs || []);
+      await Promise.all([refreshRules(), refreshEmailChannel(), refreshTemplates(), refreshTriggers(), refreshLogs()]);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -746,7 +802,24 @@ export function AutomationView() {
     }
   }
 
-  useEffect(() => { loadAll(); }, []);
+  useEffect(() => { loadAll(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Quiet wrappers for the two child components that used to trigger a
+  // full loadAll() on every save — same data, no isLoading flash.
+  async function handleEmailConnected() {
+    try {
+      await refreshEmailChannel();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+  async function handleTemplatesChanged() {
+    try {
+      await refreshTemplates();
+    } catch (err) {
+      setError(err.message);
+    }
+  }
 
   async function handleToggle(rule) {
     const next = !rule.isActive;
@@ -807,7 +880,7 @@ export function AutomationView() {
         <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
       ) : null}
 
-      <EmailSetupSection channel={emailChannel} isLoading={isLoading} onConnected={loadAll} />
+      <EmailSetupSection channel={emailChannel} isLoading={isLoading} companyName={companyName} onConnected={handleEmailConnected} />
 
       <section className="mb-6 grid gap-4 sm:grid-cols-3">
         <Card className="p-4">
@@ -839,7 +912,7 @@ export function AutomationView() {
       {isLoading ? (
         <div className="p-10 text-center text-sm text-[var(--muted)]">Loading…</div>
       ) : activeTab === "templates" ? (
-        <EmailTemplatesSection templates={emailTemplates} triggers={triggers} onRefresh={loadAll} hasEmailChannel={Boolean(emailChannel)} />
+        <EmailTemplatesSection templates={emailTemplates} triggers={triggers} companyName={companyName} logoUrl={companyLogoUrl} onRefresh={handleTemplatesChanged} hasEmailChannel={Boolean(emailChannel)} />
       ) : activeTab === "logs" ? (
         <SendLogSection logs={logs} />
       ) : (

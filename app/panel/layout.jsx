@@ -41,6 +41,7 @@ import {
   MessageCircle,
   Webhook,
   Headset,
+  BookOpen,
 } from "lucide-react";
 import {
   clearSession,
@@ -350,6 +351,23 @@ function Sidebar({ open, setOpen, session, onLogout }) {
             );
           })}
         </nav>
+
+        {/* Help & Guides — a persistent footer link, not tucked inside a
+            settings tab, so "how does X work" always has one obvious place
+            to go regardless of which page someone's currently on. */}
+        <div className="border-t border-[var(--line)] px-3 py-2">
+          <Link
+            href="/panel/guide"
+            onClick={() => setOpen(false)}
+            className={cn(
+              "flex items-center gap-3 rounded-lg px-3 py-2 text-[13px] font-medium transition-colors",
+              pathname === "/panel/guide" ? "bg-indigo-50 text-indigo-700" : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
+            )}
+          >
+            <BookOpen size={16} strokeWidth={pathname === "/panel/guide" ? 2.25 : 1.75} className="shrink-0" />
+            <span className="flex-1">Help &amp; Guides</span>
+          </Link>
+        </div>
 
         {/* User footer */}
         <div className="border-t border-[var(--line)] p-3">
