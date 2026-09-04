@@ -264,6 +264,7 @@ export async function enableMarketingForPushedCustomers({ companyId, targetChann
         externalId: customer.externalId,
         acceptsMarketing: true,
         hasPhone: Boolean(customer.phone),
+        hasEmail: Boolean(customer.email),
       });
       updated += 1;
     } catch (err) {
