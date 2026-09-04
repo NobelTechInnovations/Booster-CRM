@@ -98,6 +98,9 @@ export function createApp() {
     const statusCode = error.statusCode || 500;
 
     if (statusCode >= 500) {
+      // Always logged server-side (Vercel function logs) regardless of what
+      // the client sees below — this is where the real message/stack for a
+      // 500 belongs, not the response body.
       console.error(error);
     }
 
@@ -110,9 +113,19 @@ export function createApp() {
     // that hits this exact situation.
     if (res.headersSent) return next(error);
 
+    // Every intentional error in this app is thrown as an HttpError with its
+    // own real statusCode (400/403/404/...) and a message written to be
+    // shown to the user — those pass through as-is below. A bare 500 means
+    // something unhandled blew up instead — a raw MongoDB/network driver
+    // exception (a TLS handshake failure talking to Atlas, a timeout, ...),
+    // a genuine code bug, whatever — and its .message is an implementation
+    // detail (often a cryptic OpenSSL/driver string) that was leaking
+    // straight to the browser. The full error is already console.error'd
+    // above for whoever needs to actually debug it; the client just gets a
+    // clear, generic "something went wrong, try again."
     res.status(statusCode).json({
-      message: error.message || "Internal server error",
-      details: error.details,
+      message: statusCode >= 500 ? "Something went wrong on our end — please try again in a moment." : (error.message || "Internal server error"),
+      details: statusCode >= 500 ? undefined : error.details,
     });
   });
 

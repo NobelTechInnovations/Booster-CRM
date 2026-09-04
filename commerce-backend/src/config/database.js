@@ -15,7 +15,7 @@ export async function connectDatabase() {
   try {
     // 8s, not 3s: on Vercel this is a cold TLS handshake to Atlas over the public
     // internet on every new container, which is slower than a local/same-region dev run.
-    await mongoose.connect(env.mongoUri, { serverSelectionTimeoutMS: 8000 });
+    await connectWithOneRetry({ serverSelectionTimeoutMS: 8000 });
     await dropLegacyIndexes();
     console.log(`MongoDB connected: ${mongoose.connection.name}`);
   } catch (error) {
@@ -25,6 +25,24 @@ export async function connectDatabase() {
 
     console.warn("MongoDB not available. Running backend with in-memory development store.");
     console.warn(error.message);
+  }
+}
+
+// A cold TLS handshake to Atlas occasionally fails with a low-level,
+// transient network/TLS error (an OpenSSL "internal_error" alert, a reset
+// connection, etc) that has nothing to do with credentials or the cluster
+// actually being down — retrying the same connect a moment later almost
+// always just works. One retry only: if Atlas is genuinely unreachable
+// (wrong URI, IP not allowlisted, cluster paused), a second attempt won't
+// fix that either, and the real error from that second attempt is what
+// propagates to the caller.
+async function connectWithOneRetry(options) {
+  try {
+    await mongoose.connect(env.mongoUri, options);
+  } catch (firstError) {
+    console.warn(`MongoDB connect failed, retrying once: ${firstError.message}`);
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    await mongoose.connect(env.mongoUri, options);
   }
 }
 
