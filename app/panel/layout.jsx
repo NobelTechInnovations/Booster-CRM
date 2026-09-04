@@ -193,9 +193,13 @@ function BrandSwitcher({ session, variant = "sidebar" }) {
             : "w-full rounded-lg px-2.5 py-2 hover:bg-slate-100",
         )}
       >
-        <div className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px]  text-white">
-          {name[0]?.toUpperCase() || "W"}
-        </div>
+        {session?.company?.logoUrl ? (
+          <img src={session.company.logoUrl} alt={name} className="h-6 w-6 shrink-0 rounded-md object-contain" />
+        ) : (
+          <div className="grid h-6 w-6 shrink-0 place-items-center rounded-md bg-indigo-600 text-[11px]  text-white">
+            {name[0]?.toUpperCase() || "W"}
+          </div>
+        )}
         {/* Below `sm` the topbar is tight (hamburger + this + right-side
             icons) — show just the avatar+chevron there, full name from
             `sm` up. Never fully hidden, so it's still reachable on phones. */}
@@ -285,14 +289,27 @@ function Sidebar({ open, setOpen, session, onLogout }) {
           "transition-transform duration-200",
         )}
       >
-        {/* Logo */}
+        {/* Logo — the company's own brand logo once uploaded (Company
+            settings), with "Powered by Wokbook" underneath as a small
+            attribution; falls back to plain Wokbook branding when no
+            logo is set, unchanged from before. */}
         <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-[var(--line)] px-4">
-          <div className="flex items-center gap-2.5">
-            <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-600 text-white">
-              <Layers3 size={15} />
+          {session?.company?.logoUrl ? (
+            <div className="flex min-w-0 items-center gap-2.5">
+              <img src={session.company.logoUrl} alt={session.company.name} className="h-8 w-8 shrink-0 rounded-lg object-contain" />
+              <div className="min-w-0 leading-tight">
+                <p className="truncate text-[13px] font-semibold text-slate-900">{session.company.name}</p>
+                <p className="text-[10px] text-slate-400">Powered by Wokbook</p>
+              </div>
             </div>
-            <span className="text-[15px]  tracking-tight text-slate-900">Wokbook</span>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2.5">
+              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-600 text-white">
+                <Layers3 size={15} />
+              </div>
+              <span className="text-[15px]  tracking-tight text-slate-900">Wokbook</span>
+            </div>
+          )}
           <button className="rounded-md p-1 text-slate-400 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)}>
             <X size={16} />
           </button>

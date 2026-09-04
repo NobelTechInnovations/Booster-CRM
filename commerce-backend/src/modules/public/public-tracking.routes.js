@@ -2,7 +2,7 @@ import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { simpleRateLimit } from "../../utils/simple-rate-limit.js";
-import { listPublicOrdersByPhone, getPublicOrderDetail } from "../../repositories/public-tracking.repo.js";
+import { listPublicOrdersByPhone, getPublicOrderDetail, getPublicCompanyBranding } from "../../repositories/public-tracking.repo.js";
 
 // Deliberately no requireAuth anywhere in this file — this is the public,
 // customer-facing "track my order" surface (see public-tracking.repo.js's
@@ -12,6 +12,21 @@ import { listPublicOrdersByPhone, getPublicOrderDetail } from "../../repositorie
 export const publicTrackingRoutes = Router();
 
 const trackingLimiter = simpleRateLimit({ windowMs: 10 * 60 * 1000, max: 30 });
+// Looser than the phone-search limiter above — this loads once per page
+// view with no phone number involved, so there's nothing sensitive to
+// brute-force here, just the page's own branding.
+const brandingLimiter = simpleRateLimit({ windowMs: 10 * 60 * 1000, max: 120 });
+
+publicTrackingRoutes.get(
+  "/:companySlug/branding",
+  brandingLimiter,
+  asyncHandler(async (req, res) => {
+    const { companySlug } = req.params;
+    const result = await getPublicCompanyBranding({ companySlug });
+    if (result.error === "not_found") throw new HttpError(404, "Store not found");
+    res.json(result);
+  }),
+);
 
 publicTrackingRoutes.get(
   "/:companySlug/orders",

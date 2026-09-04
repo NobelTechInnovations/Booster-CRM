@@ -93,6 +93,16 @@ function publicOrderDetail(order) {
   };
 }
 
+// Just the brand identity (name + logo) for a store's public tracking
+// page — no phone number needed, so the page can show the real brand
+// immediately on load instead of only after a search. Same narrow,
+// hand-picked shape as everywhere else in this file.
+export async function getPublicCompanyBranding({ companySlug }) {
+  const company = await getActiveCompanyBySlug(companySlug);
+  if (!company) return { error: "not_found" };
+  return { company: { name: company.name, slug: company.slug, logoUrl: company.logoUrl || "" } };
+}
+
 // Never returns drafts (isDraft:true) — a draft isn't a real, committed
 // order yet, so a customer has no business seeing it on a public page.
 export async function listPublicOrdersByPhone({ companySlug, phone }) {

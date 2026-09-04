@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ArrowLeft, CheckCircle2, ExternalLink, Loader2, MapPin, Package, Phone, Search, ShoppingBag, Truck } from "lucide-react";
-import { listPublicOrdersByPhone, getPublicOrderDetail } from "@/lib/api";
+import { getPublicCompanyBranding, listPublicOrdersByPhone, getPublicOrderDetail } from "@/lib/api";
 import { formatMoney } from "@/lib/utils";
 
 // Customer-friendly labels — deliberately different wording from the panel's
@@ -52,6 +52,21 @@ export function OrderTrackingView({ companySlug }) {
   const [selectedOrder, setSelectedOrder] = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
+  // Loads the brand's own name/logo immediately on page load — before this,
+  // the header showed a generic placeholder until a phone search returned
+  // company info, so the page carried no real brand identity on first
+  // paint. handleSearch's own setStoreName/setStoreLogo calls still run on
+  // search too, but are redundant with this in practice (same values) —
+  // harmless, and keeps that codepath working even if this fetch fails.
+  useEffect(() => {
+    getPublicCompanyBranding(companySlug)
+      .then((res) => {
+        setStoreName(res.company?.name || "");
+        setStoreLogo(res.company?.logoUrl || "");
+      })
+      .catch(() => {}); // Not fatal — the header just falls back to the generic placeholder
+  }, [companySlug]);
+
   async function handleSearch(e) {
     e.preventDefault();
     if (!phone.trim()) return;
@@ -97,7 +112,8 @@ export function OrderTrackingView({ companySlug }) {
             </div>
           )}
           <h1 className="mt-3 text-xl font-bold text-slate-900">{storeName || "Track Your Order"}</h1>
-          <p className="mt-1 text-sm text-slate-500">Enter your phone number to see your orders</p>
+          <p className="mt-0.5 text-xs font-medium text-slate-400">Powered by Wokbook</p>
+          <p className="mt-2 text-sm text-slate-500">Enter your phone number to see your orders</p>
         </div>
 
         {!selectedOrder && (
