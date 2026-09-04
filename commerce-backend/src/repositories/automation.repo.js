@@ -2,13 +2,31 @@ import { isMongoConnected } from "../config/database.js";
 import { AutomationRule } from "../models/automation-rule.model.js";
 import { memory, id, clone, now } from "./memory-store.js";
 
-const TRIGGERS = ["order_placed", "order_fulfilled", "order_cancelled", "low_stock", "repeat_customer", "abandoned_checkout"];
+// The built-in order-lifecycle triggers — order_delivered/refund_processed/
+// cod_payment_reminder added alongside the pre-existing three once real
+// event wiring (automation-dispatcher.js) actually needed them. A company
+// can also invent its own trigger name entirely (see the free-form
+// fallback below) and fire it externally via a WebhookEndpoint's
+// automationTriggerKey — that's what BUILT_IN_TRIGGERS being a known list
+// rather than a hard enum on the schema itself makes possible.
+export const BUILT_IN_TRIGGERS = [
+  "order_placed", "order_fulfilled", "order_delivered", "order_cancelled",
+  "refund_processed", "cod_payment_reminder",
+  "low_stock", "repeat_customer", "abandoned_checkout",
+];
 const ACTIONS = ["send_whatsapp", "send_email", "tag_order", "notify_team", "webhook"];
+
+// A valid trigger is either one of the built-ins above, or any other real,
+// non-empty string a company typed in as its own custom trigger name.
+function cleanTrigger(trigger) {
+  const value = String(trigger || "").trim();
+  return value ? value : null;
+}
 
 function cleanPayload(payload = {}) {
   const clean = {
     name: String(payload.name || "").trim(),
-    trigger: TRIGGERS.includes(payload.trigger) ? payload.trigger : null,
+    trigger: cleanTrigger(payload.trigger),
     action: ACTIONS.includes(payload.action) ? payload.action : null,
     config: payload.config && typeof payload.config === "object" ? payload.config : {},
     isActive: payload.isActive !== false,

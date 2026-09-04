@@ -11,9 +11,12 @@ const channelSchema = new mongoose.Schema(
     // "whatsapp" = WhatsApp Business API (Cloud API) — each company connects
     // its own WhatsApp Business Account, so this is per-company like every
     // other channel here, not a single app-wide number.
+    // "email" = a company's own SMTP (Gmail app-password, or any other
+    // provider) — powers the email automation system (order confirmations,
+    // shipped/delivered, refunds, ...), per-company like everything else here.
     channelType: {
       type: String,
-      enum: ["sales", "shipping", "ads", "social", "whatsapp"],
+      enum: ["sales", "shipping", "ads", "social", "whatsapp", "email"],
       required: true,
       default: "sales",
       index: true,
@@ -28,6 +31,10 @@ const channelSchema = new mongoose.Schema(
         "velocity", "shiprocket", "shipmozo", "shipway", "ithink", "nimbuspost", "pickrr", "delhivery",
         // Ads / Social / WhatsApp providers (same Meta platform, distinguished by channelType + shop)
         "meta",
+        // Email — one generic SMTP provider (host/port/username/password
+        // covers Gmail, Outlook, Zoho, or any other mail provider a company
+        // already has, no per-provider integration needed).
+        "smtp",
       ],
       required: true,
       index: true,
@@ -66,6 +73,11 @@ const channelSchema = new mongoose.Schema(
       apiKey:         { type: String, select: false },
       apiSecret:      { type: String, select: false },
       longLivedTokenExpiresAt: { type: Date, select: false },
+      // SMTP (channelType: "email") — username/password above are reused
+      // as-is (SMTP auth username + app-password/password).
+      host:           { type: String, select: false },
+      port:           { type: Number, select: false },
+      secure:         { type: Boolean, select: false }, // true = TLS on connect (port 465), false = STARTTLS (587)
     },
 
     external: {
@@ -98,6 +110,9 @@ const channelSchema = new mongoose.Schema(
       whatsappBusinessAccountId: String,
       whatsappDisplayName: String,
       whatsappPhoneNumber: String,
+      // Email (SMTP) fields — the "From" header on every automated email.
+      fromEmail: String,
+      fromName:  String,
     },
 
     // Sales channel sync state

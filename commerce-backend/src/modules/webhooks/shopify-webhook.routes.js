@@ -2,9 +2,28 @@ import crypto from "node:crypto";
 import { Router } from "express";
 import { env } from "../../config/env.js";
 import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
-import { upsertSingleOrder, updateOrderOmsStatus } from "../../repositories/order.repo.js";
+import { upsertSingleOrder, updateOrderOmsStatus, getOrderByExternalId } from "../../repositories/order.repo.js";
 import { chargeWalletForFulfillment } from "../../repositories/wallet.repo.js";
+import { getCompany } from "../../repositories/store.js";
+import { runAutomationsForTrigger, buildOrderEmailContext } from "../automation/automation-dispatcher.js";
 import { asyncHandler } from "../../utils/async-handler.js";
+
+// Every automation trigger call below is wrapped the same way: never let a
+// failure here affect the webhook's own response to Shopify (which would
+// make Shopify think the webhook itself failed and retry it) — the real
+// order/fulfillment/refund write already succeeded by this point, the
+// automation email is a side effect on top of it, same "never break the
+// real feature over a non-critical notification" contract as
+// chargeWalletForFulfillment below.
+async function fireOrderTrigger({ trigger, companyId, order, extra }) {
+  if (!order) return;
+  try {
+    const company = await getCompany(companyId);
+    await runAutomationsForTrigger({ companyId, trigger, context: buildOrderEmailContext({ order, company, extra }) });
+  } catch (err) {
+    console.warn(`[Shopify Webhook] Automation trigger "${trigger}" failed for order ${order.externalId}:`, err.message);
+  }
+}
 
 export const shopifyWebhookRoutes = Router();
 
@@ -88,6 +107,8 @@ shopifyWebhookRoutes.post(
       order: orderData,
     });
 
+    await fireOrderTrigger({ trigger: "order_placed", companyId, order: savedOrder });
+
     console.log(`[Shopify Webhook] Order created: ${savedOrder.name} (${savedOrder.externalId}) for company ${companyId}`);
     res.status(200).json({ status: "received", orderId: savedOrder.externalId });
   }),
@@ -120,7 +141,7 @@ shopifyWebhookRoutes.post(
     const { companyId } = req.webhookContext;
     const orderData = req.body;
 
-    await updateOrderOmsStatus({
+    const updatedOrder = await updateOrderOmsStatus({
       companyId,
       shopifyOrderId: String(orderData.id),
       update: {
@@ -128,6 +149,8 @@ shopifyWebhookRoutes.post(
         omsStatus: "cancelled",
       },
     });
+
+    await fireOrderTrigger({ trigger: "order_cancelled", companyId, order: updatedOrder });
 
     console.log(`[Shopify Webhook] Order cancelled: ${orderData.name} for company ${companyId}`);
     res.status(200).json({ status: "received" });
@@ -161,9 +184,50 @@ shopifyWebhookRoutes.post(
         } catch (err) {
           console.warn(`[Shopify Webhook] Wallet charge failed for order ${fulfillment.order_id}:`, err.message);
         }
+
+        await fireOrderTrigger({
+          trigger: "order_fulfilled",
+          companyId,
+          order: updatedOrder,
+          // Shopify's fulfillment payload carries its own tracking fields
+          // that updateOrderOmsStatus's update object above doesn't set —
+          // they've already landed on the order via the sync pipeline by
+          // the time this fires in practice, but pass through what this
+          // exact payload has too, so a template's {{trackingUrl}} is
+          // never blank on the very first fulfillment webhook.
+        });
       }
     }
 
+    res.status(200).json({ status: "received" });
+  }),
+);
+
+shopifyWebhookRoutes.post(
+  "/refunds/create",
+  getWebhookContext,
+  asyncHandler(async (req, res) => {
+    const { companyId } = req.webhookContext;
+    const refund = req.body;
+
+    if (refund.order_id) {
+      // Shopify's refund payload only carries the refund's own line items/
+      // transactions, not the order's resulting financial_status — re-read
+      // the order (orders/updated already fires alongside this and will
+      // have synced it moments before or after) rather than guessing
+      // "refunded" vs "partially_refunded" from the refund payload alone.
+      const order = await getOrderByExternalId({ companyId, shopifyOrderId: String(refund.order_id) });
+      const refundedAmount = (refund.transactions || []).reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      await fireOrderTrigger({
+        trigger: "refund_processed",
+        companyId,
+        order,
+        extra: { refundAmount: refundedAmount || undefined },
+      });
+    }
+
+    console.log(`[Shopify Webhook] Refund processed for order ${refund.order_id} (company ${companyId})`);
     res.status(200).json({ status: "received" });
   }),
 );

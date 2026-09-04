@@ -2,7 +2,7 @@ import { isMongoConnected } from "../config/database.js";
 import { Shipment } from "../models/shipment.model.js";
 import { memory, clone } from "../repositories/memory-store.js";
 import { getShippingProvider } from "../modules/shipping/shipping-registry.js";
-import { syncShipmentCancelledElsewhere } from "../modules/fulfillment/fulfillment.service.js";
+import { syncShipmentCancelledElsewhere, syncShipmentDeliveredElsewhere } from "../modules/fulfillment/fulfillment.service.js";
 
 // A courier reporting any of these tracking states means the shipment is
 // dead and the order needs to come back to "To Ship" — cancelled directly
@@ -11,6 +11,15 @@ import { syncShipmentCancelledElsewhere } from "../modules/fulfillment/fulfillme
 // courier phrases this slightly differently ("cancelled", "CANCELLED_BY_...",
 // "shipment cancelled").
 const DEAD_STATUS_PATTERN = /cancel/i;
+
+// A courier reporting the shipment delivered — matched the same
+// substring-against-free-text way as DEAD_STATUS_PATTERN above (no
+// provider returns a normalized enum here, see each provider's own
+// trackOrders()). Explicitly excludes "out for delivery" — every provider
+// seen so far phrases the not-yet-delivered "on its way" state that way,
+// and it legitimately contains the substring "delivery".
+const DELIVERED_STATUS_PATTERN = /delivered/i;
+const NOT_YET_DELIVERED_PATTERN = /out.*for.*delivery/i;
 
 /**
  * Periodically polls tracking status for all active/in-transit shipments
@@ -56,12 +65,21 @@ export async function runTrackingUpdateJob() {
           : [...memory.shipments.values()].filter((s) => String(s.companyId) === String(companyId) && s.provider === providerName && awbs.includes(s.awbCode)).map(clone);
 
         for (const s of updated) {
-          if (s.status === "cancelled") continue;
-          if (!s.trackingStatus || !DEAD_STATUS_PATTERN.test(s.trackingStatus)) continue;
-          try {
-            await syncShipmentCancelledElsewhere({ companyId, shipment: s });
-          } catch (err) {
-            console.error(`[Job] Failed to sync cancelled shipment ${s.awbCode} (${providerName}, Company: ${companyId}):`, err.message);
+          if (s.status === "cancelled" || s.status === "delivered") continue;
+          if (!s.trackingStatus) continue;
+
+          if (DEAD_STATUS_PATTERN.test(s.trackingStatus)) {
+            try {
+              await syncShipmentCancelledElsewhere({ companyId, shipment: s });
+            } catch (err) {
+              console.error(`[Job] Failed to sync cancelled shipment ${s.awbCode} (${providerName}, Company: ${companyId}):`, err.message);
+            }
+          } else if (DELIVERED_STATUS_PATTERN.test(s.trackingStatus) && !NOT_YET_DELIVERED_PATTERN.test(s.trackingStatus)) {
+            try {
+              await syncShipmentDeliveredElsewhere({ companyId, shipment: s });
+            } catch (err) {
+              console.error(`[Job] Failed to sync delivered shipment ${s.awbCode} (${providerName}, Company: ${companyId}):`, err.message);
+            }
           }
         }
       } catch (err) {

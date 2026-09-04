@@ -37,6 +37,8 @@ export const memory = {
   plans: new Map(),
   walletTransactions: new Map(),
   paymentTransactions: new Map(),
+  emailTemplates: new Map(),
+  emailLogs: new Map(),
 };
 
 export function id() {

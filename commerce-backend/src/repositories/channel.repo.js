@@ -4,6 +4,7 @@ import { Company } from "../models/company.model.js";
 import { ShopifyPendingAppConfig } from "../models/shopify-pending-app-config.model.js";
 import { memory, id, clone, now } from "./memory-store.js";
 import { assertLimitNotExceeded } from "../utils/feature-gate.js";
+import { verifySmtpCredentials } from "../utils/smtp-mailer.js";
 
 // Only asserted when this upsert would create a genuinely NEW channel
 // (existingChannel is falsy) — reconnecting/updating an already-connected
@@ -760,6 +761,84 @@ export async function getWhatsAppChannelByPhoneNumberId(phoneNumberId) {
     (ch) => ch.channelType === "whatsapp" && ch.external?.phoneNumberId === phoneNumberId,
   );
   return found ? clone(found) : null;
+}
+
+// ─── Email (SMTP) Channel ────────────────────────────────────────────────────
+// One per company, not gated by any plan limit (channelType "email" is its
+// own bucket, distinct from "sales"/"shipping" — see assertNewChannelWithinLimit
+// above, which only ever checks those two). Verified live (a real SMTP
+// connection via verifySmtpCredentials) before saving — same "verify before
+// save" philosophy as connectWhatsAppChannel (whatsapp.service.js): a bad
+// host/port/app-password should fail loudly right here, not silently on the
+// first real automated send weeks later.
+
+export async function upsertEmailChannel({ companyId, userId, host, port, secure, username, password, fromEmail, fromName }) {
+  await verifySmtpCredentials({ host, port, secure, username, password });
+
+  if (isMongoConnected()) {
+    return Channel.findOneAndUpdate(
+      { companyId, channelType: "email", provider: "smtp" },
+      {
+        $set: {
+          channelType: "email",
+          provider: "smtp",
+          companyId,
+          // Channel.shop is a required field with no real SMTP equivalent —
+          // the mailbox address is unique enough per company to stand in.
+          shop: String(username).toLowerCase(),
+          name: fromName || "Email",
+          status: "connected",
+          "credentials.host": host,
+          "credentials.port": Number(port),
+          "credentials.secure": Boolean(secure),
+          "credentials.username": username,
+          "credentials.password": password,
+          "external.fromEmail": fromEmail || username,
+          "external.fromName": fromName || "",
+          connectedBy: userId,
+          disconnectedAt: null,
+        },
+      },
+      { new: true, upsert: true },
+    ).lean();
+  }
+
+  const existing = [...memory.channels.values()].find(
+    (ch) => String(ch.companyId) === String(companyId) && ch.channelType === "email",
+  );
+  const channel = {
+    _id: existing?._id || id(),
+    channelType: "email",
+    provider: "smtp",
+    companyId,
+    shop: String(username).toLowerCase(),
+    name: fromName || "Email",
+    status: "connected",
+    credentials: { host, port: Number(port), secure: Boolean(secure), username, password },
+    external: { fromEmail: fromEmail || username, fromName: fromName || "" },
+    connectedBy: userId,
+    disconnectedAt: null,
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+  memory.channels.set(channel._id, channel);
+  return clone(channel);
+}
+
+// Used both by the dispatcher (to actually send) and by the Automation
+// page (to show connect status) — the latter via withoutCredentials(),
+// same as every other channel list.
+export async function getConnectedEmailChannel(companyId) {
+  if (isMongoConnected()) {
+    return Channel.findOne({ companyId, channelType: "email", status: "connected" })
+      .select("+credentials.host +credentials.port +credentials.secure +credentials.username +credentials.password")
+      .lean();
+  }
+  return clone(
+    [...memory.channels.values()].find(
+      (ch) => String(ch.companyId) === String(companyId) && ch.channelType === "email" && ch.status === "connected",
+    ) || null,
+  );
 }
 
 // ─── Dashboard ───────────────────────────────────────────────────────────────

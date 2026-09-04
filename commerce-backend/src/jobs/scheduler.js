@@ -5,6 +5,7 @@ import { runTokenRefreshJob } from "./token-refresh.job.js";
 import { runShopifySyncJob } from "./shopify-sync.job.js";
 import { runMetaAdsSyncJob } from "./meta-ads-sync.job.js";
 import { runUpgradeReminderJob } from "./upgrade-reminder.job.js";
+import { runCodPaymentReminderJob } from "./cod-payment-reminder.job.js";
 
 /**
  * Initializes and schedules all OMS background automation jobs.
@@ -43,6 +44,11 @@ export function startScheduler() {
     runUpgradeReminderJob().catch(console.error);
   });
 
+  // 7. COD payment reminder emails once daily at 10:30 AM IST (05:00 UTC)
+  cron.schedule("0 5 * * *", () => {
+    runCodPaymentReminderJob().catch(console.error);
+  });
+
   // Run immediate initial checks on startup (non-blocking)
   setTimeout(() => {
     runTokenRefreshJob().catch(console.error);
@@ -55,6 +61,7 @@ export function startScheduler() {
     "Warehouse Sync (daily 6:30am IST), " +
     "Tracking Update (daily 7:30am IST), " +
     "Shopify Sync (daily 8:30am IST), " +
-    "Meta Ads Sync (daily 8:00am IST)."
+    "Meta Ads Sync (daily 8:00am IST), " +
+    "COD Payment Reminders (daily 10:30am IST)."
   );
 }

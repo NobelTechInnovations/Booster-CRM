@@ -664,6 +664,26 @@ export async function deleteDraftOrder({ companyId, orderId }) {
   return { success: true };
 }
 
+// Plain read counterpart to updateOrderOmsStatus below (same filter logic)
+// — for a webhook that needs the order's current state without writing
+// anything itself, e.g. refunds/create reading the order's already-synced
+// financialStatus rather than guessing it from the refund payload alone.
+export async function getOrderByExternalId({ companyId, shopifyOrderId }) {
+  if (isMongoConnected()) {
+    const compIdStr = String(companyId || "");
+    const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
+      ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
+      : compIdStr;
+    return SyncedOrder.findOne({ companyId: compFilter, externalId: shopifyOrderId }).lean();
+  }
+  for (const order of memory.orders.values()) {
+    if (String(order.companyId) === String(companyId) && order.externalId === shopifyOrderId) {
+      return clone(order);
+    }
+  }
+  return null;
+}
+
 export async function updateOrderOmsStatus({ companyId, shopifyOrderId, update }) {
   if (isMongoConnected()) {
     const compIdStr = String(companyId || "");

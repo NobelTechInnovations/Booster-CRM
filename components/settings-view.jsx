@@ -156,6 +156,7 @@ function CopyField({ value, mono = true }) {
 function AddEndpointModal({ onClose, onCreated }) {
   const [provider, setProvider] = useState("razorpay");
   const [name, setName] = useState("");
+  const [automationTriggerKey, setAutomationTriggerKey] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
   const [created, setCreated] = useState(null); // holds { endpoint, inboundUrl } after successful create — one-time secret reveal
@@ -170,6 +171,7 @@ function AddEndpointModal({ onClose, onCreated }) {
         name: name.trim() || preset?.label || provider,
         provider,
         type: preset?.type || "other",
+        automationTriggerKey: automationTriggerKey.trim() || undefined,
       });
       setCreated(result);
     } catch (err) {
@@ -223,6 +225,18 @@ function AddEndpointModal({ onClose, onCreated }) {
             value={name}
             onChange={(e) => setName(e.target.value)}
           />
+        </label>
+        <label className="block text-sm font-semibold text-slate-700">
+          Automation trigger key (optional)
+          <input
+            className="mt-1 h-10 w-full rounded-md border border-[var(--line)] bg-white px-3 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            placeholder="e.g. loyalty_milestone"
+            value={automationTriggerKey}
+            onChange={(e) => setAutomationTriggerKey(e.target.value)}
+          />
+          <span className="mt-1 block text-[11px] font-normal text-slate-400">
+            When set, every call to this endpoint&apos;s URL also fires an email automation for this custom event — see Automation → Rules to build one.
+          </span>
         </label>
         {error ? <p className="rounded-md bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
         <Button type="submit" className="w-full" disabled={saving}>{saving ? "Creating…" : "Create Endpoint"}</Button>

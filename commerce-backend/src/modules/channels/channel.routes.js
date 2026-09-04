@@ -8,7 +8,11 @@ import {
   listChannels,
   setChannelActive,
   updateChannelAppCredentials,
+  upsertEmailChannel,
+  getConnectedEmailChannel,
+  withoutCredentials,
 } from "../../repositories/channel.repo.js";
+import { sendCompanySmtpEmail } from "../../utils/smtp-mailer.js";
 import {
   listCommerceRecords,
   listProductMappingOptions,
@@ -864,5 +868,56 @@ channelRoutes.patch(
 
     if (!channel) throw new HttpError(404, "Channel not found");
     res.json({ channel });
+  }),
+);
+
+// ─── Email (SMTP) ────────────────────────────────────────────────────────────
+// A generic SMTP connect — one form for Gmail (app password), Outlook, Zoho,
+// or any other provider a company already has, rather than a per-provider
+// OAuth integration. Powers the email automation system (see
+// modules/automation/automation-dispatcher.js).
+
+channelRoutes.post(
+  "/email/connect",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const { host, port, secure, username, password, fromEmail, fromName } = req.body || {};
+    if (!host || !port || !username || !password) {
+      throw new HttpError(400, "Host, port, username, and password are required");
+    }
+
+    let channel;
+    try {
+      channel = await upsertEmailChannel({
+        companyId: req.auth.companyId,
+        userId: req.auth.sub,
+        host, port, secure: Boolean(secure), username, password,
+        fromEmail, fromName,
+      });
+    } catch (err) {
+      throw new HttpError(400, `Could not connect to this SMTP server: ${err.message}`);
+    }
+
+    res.json({ message: "Email connected", channel: withoutCredentials(channel) });
+  }),
+);
+
+channelRoutes.post(
+  "/email/test",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const channel = await getConnectedEmailChannel(req.auth.companyId);
+    if (!channel) throw new HttpError(400, "Connect an email channel first");
+    if (!req.auth.email) throw new HttpError(400, "No email address on your account to send a test to");
+
+    const result = await sendCompanySmtpEmail({
+      channel,
+      to: req.auth.email,
+      subject: "Test email from your Wokbook automation setup",
+      html: "<p>This confirms your connected SMTP is working — automated order emails will send from this same address.</p>",
+    });
+    if (!result.success) throw new HttpError(400, `Test email failed: ${result.error}`);
+
+    res.json({ message: `Test email sent to ${req.auth.email}` });
   }),
 );

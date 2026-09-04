@@ -10,12 +10,23 @@ import {
   toggleAutomationRule,
   deleteAutomationRule,
   recordAutomationRun,
+  BUILT_IN_TRIGGERS,
 } from "../../repositories/automation.repo.js";
 
 export const automationRoutes = Router();
 
 automationRoutes.use(requireAuth);
 automationRoutes.use(requireFeature("automation"));
+
+// The known trigger keys, for the Automation page's trigger picker — a
+// company can still type its own custom name instead (see
+// automation-rule.model.js's own comment on why trigger isn't a hard enum).
+automationRoutes.get(
+  "/triggers",
+  asyncHandler(async (_req, res) => {
+    res.json({ triggers: BUILT_IN_TRIGGERS });
+  }),
+);
 
 automationRoutes.get(
   "/rules",

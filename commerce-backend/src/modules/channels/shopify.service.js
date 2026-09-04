@@ -782,6 +782,11 @@ export async function registerShopifyWebhooks(shop, accessToken, channelId, comp
     { topic: "orders/updated", path: "/api/webhooks/shopify/orders/updated" },
     { topic: "orders/cancelled", path: "/api/webhooks/shopify/orders/cancelled" },
     { topic: "fulfillments/create", path: "/api/webhooks/shopify/fulfillments/create" },
+    // Powers the "refund_processed" email automation trigger — only
+    // subscribed for stores that connect/reconnect after this was added;
+    // an already-connected store won't retroactively get this topic
+    // without reconnecting (a real limitation, not silently glossed over).
+    { topic: "refunds/create", path: "/api/webhooks/shopify/refunds/create" },
   ];
 
   for (const { topic, path } of webhookTopics) {

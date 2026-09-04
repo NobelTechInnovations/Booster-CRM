@@ -8,6 +8,22 @@ import { deductAssetsForOrder } from "../../repositories/asset.repo.js";
 import { chargeWalletForFulfillment } from "../../repositories/wallet.repo.js";
 import { HttpError } from "../../utils/http-error.js";
 import { env } from "../../config/env.js";
+import { getCompany } from "../../repositories/store.js";
+import { runAutomationsForTrigger, buildOrderEmailContext } from "../automation/automation-dispatcher.js";
+
+// Same "never let an automation email affect the real fulfillment action"
+// contract as every other best-effort side effect in this file (asset
+// deduction, wallet charge) — see shopify-webhook.routes.js's own copy of
+// this same helper for the webhook-side callers of the same two triggers.
+async function fireOrderTrigger({ trigger, companyId, order, extra }) {
+  if (!order) return;
+  try {
+    const company = await getCompany(companyId);
+    await runAutomationsForTrigger({ companyId, trigger, context: buildOrderEmailContext({ order, company, extra }) });
+  } catch (err) {
+    console.warn(`[Fulfillment] Automation trigger "${trigger}" failed for order ${order.externalId}:`, err.message);
+  }
+}
 
 /**
  * List orders ready for fulfillment in OMS
@@ -140,6 +156,8 @@ export async function markOrderShippedManually({ companyId, orderId, trackingNum
     console.warn(`[Fulfillment] Wallet charge failed for ${order.name}:`, err.message);
   }
 
+  await fireOrderTrigger({ trigger: "order_fulfilled", companyId, order: updatedOrder });
+
   return { order: finalizeOrder(updatedOrder), shopifyPushError };
 }
 
@@ -159,6 +177,11 @@ export async function updateOrderDeliveryStatus({ companyId, orderId, delivered 
     ? { omsStatus: "delivered", deliveredAt: new Date() }
     : { omsStatus: "shipped", deliveredAt: null };
   const updatedOrder = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update });
+
+  if (delivered) {
+    await fireOrderTrigger({ trigger: "order_delivered", companyId, order: updatedOrder });
+  }
+
   return finalizeOrder(updatedOrder);
 }
 
@@ -288,6 +311,8 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
   } catch (err) {
     console.warn(`[Fulfillment] Wallet charge failed for ${order.name}:`, err.message);
   }
+
+  await fireOrderTrigger({ trigger: "order_fulfilled", companyId, order: updatedOrder });
 
   return { shipment, order: updatedOrder, shopifyPushError };
 }
@@ -500,6 +525,26 @@ export async function syncShipmentCancelledElsewhere({ companyId, shipment }) {
 
   const updatedOrder = await revertOrderToUnfulfilled({ companyId, order });
   console.log(`[Fulfillment] ${order.name} shipment cancelled on ${shipment.provider}'s side — synced back to unfulfilled`);
+  return updatedOrder;
+}
+
+// Mirror of syncShipmentCancelledElsewhere just above, for the courier
+// reporting the shipment actually delivered instead — called from
+// tracking-update.job.js's own cron loop. Marks the Shipment itself
+// "delivered" too (not just the order) so it naturally drops out of that
+// job's activeStatuses query on the next run, rather than re-detecting
+// and re-processing the same already-delivered shipment forever.
+// updateOrderDeliveryStatus already fires the order_delivered automation
+// trigger — this is the one call site both the manual "mark delivered"
+// action and this automatic courier-tracking path share.
+export async function syncShipmentDeliveredElsewhere({ companyId, shipment }) {
+  const orderRefId = shipment.syncedOrderId || shipment.shopifyOrderId;
+  const order = await getOrderById({ companyId, orderId: orderRefId });
+  if (!order || order.omsStatus === "delivered") return null;
+
+  await updateShipmentById({ shipmentId: shipment._id, companyId, update: { status: "delivered" } });
+  const updatedOrder = await updateOrderDeliveryStatus({ companyId, orderId: orderRefId, delivered: true });
+  console.log(`[Fulfillment] ${order.name} shipment delivered per ${shipment.provider}'s tracking`);
   return updatedOrder;
 }
 

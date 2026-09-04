@@ -29,11 +29,12 @@ export async function listWebhookEndpoints(companyId) {
     .map(clone);
 }
 
-export async function createWebhookEndpoint({ companyId, name, provider, type }) {
+export async function createWebhookEndpoint({ companyId, name, provider, type, automationTriggerKey }) {
   const clean = {
     name: String(name || "").trim(),
     provider: String(provider || "").trim().toLowerCase(),
     type: ["payment", "cart-recovery", "shipping", "other"].includes(type) ? type : "other",
+    ...(automationTriggerKey !== undefined ? { automationTriggerKey: String(automationTriggerKey || "").trim() } : {}),
   };
   if (!clean.name || !clean.provider) return { error: "Name and provider are required" };
 
@@ -56,6 +57,7 @@ export async function updateWebhookEndpoint({ companyId, endpointId, payload }) 
   if (payload.name !== undefined) clean.name = String(payload.name).trim();
   if (payload.status !== undefined) clean.status = payload.status === "inactive" ? "inactive" : "active";
   if (payload.type !== undefined && ["payment", "cart-recovery", "shipping", "other"].includes(payload.type)) clean.type = payload.type;
+  if (payload.automationTriggerKey !== undefined) clean.automationTriggerKey = String(payload.automationTriggerKey || "").trim();
 
   if (isMongoConnected()) {
     const endpoint = await WebhookEndpoint.findOneAndUpdate(

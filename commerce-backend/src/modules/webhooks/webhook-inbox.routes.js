@@ -20,6 +20,7 @@ import {
   markLeadSeen,
 } from "../../repositories/webhook.repo.js";
 import { verifyWebhookSignature, extractEventSummary, extractLeadKey } from "./webhook.service.js";
+import { runAutomationsForTrigger } from "../automation/automation-dispatcher.js";
 
 export const webhookInboxRoutes = Router();
 
@@ -224,6 +225,23 @@ webhookInboxRoutes.post(
       verified,
       leadKey,
     });
+
+    // Custom automation trigger — reuses this endpoint's own secret-token
+    // URL as the auth mechanism, no separate one needed (see
+    // webhook-endpoint.model.js's own comment on automationTriggerKey).
+    // Never allowed to affect the response above: the lead/event is
+    // already durably recorded by this point regardless of what happens here.
+    if (endpoint.automationTriggerKey) {
+      try {
+        await runAutomationsForTrigger({
+          companyId: endpoint.companyId,
+          trigger: endpoint.automationTriggerKey,
+          context: req.body || {},
+        });
+      } catch (err) {
+        console.warn(`[Webhook Inbox] Automation trigger "${endpoint.automationTriggerKey}" failed:`, err.message);
+      }
+    }
 
     res.status(200).json({ status: "received" });
   }),

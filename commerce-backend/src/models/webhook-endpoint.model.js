@@ -26,6 +26,15 @@ const webhookEndpointSchema = new mongoose.Schema(
     status: { type: String, enum: ["active", "inactive"], default: "active" },
     lastEventAt: Date,
     eventCount: { type: Number, default: 0 },
+
+    // Optional — when set, every inbound call to this endpoint ALSO fires
+    // this custom-named automation trigger (see automation-dispatcher.js),
+    // passing the raw payload through as context, alongside this endpoint's
+    // existing webhook-lead logging. Lets a company's own external system
+    // (or a Zapier-style integration) trigger an email automation using the
+    // same secret-token URL it already has for this endpoint — no separate
+    // auth mechanism needed.
+    automationTriggerKey: { type: String, trim: true },
   },
   { timestamps: true },
 );
