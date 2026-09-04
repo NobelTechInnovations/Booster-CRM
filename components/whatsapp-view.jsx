@@ -66,6 +66,27 @@ function ReengagementHint({ conversation, onSent }) {
   );
 }
 
+// Meta error 131049 — "This message was not delivered to maintain healthy
+// ecosystem engagement." Meta itself throttles delivery of (typically
+// marketing-category) messages to a recipient who hasn't engaged with this
+// business recently, to keep WhatsApp from feeling spammy — a policy call
+// made entirely on Meta's side, at the recipient level. There's nothing an
+// API call from here can override; retrying the exact same send won't
+// help. Purely informational, no action button like the two hints above.
+function isEcosystemEngagementError(errorCode) {
+  return errorCode === 131049;
+}
+
+function EcosystemEngagementHint() {
+  return (
+    <p className="mt-1 max-w-xs text-[11px] leading-4 text-slate-500">
+      Meta is holding this back, not us — it throttles messages (usually marketing-category ones) to a customer who hasn&apos;t engaged
+      recently, to keep WhatsApp from feeling spammy. Retrying the same send won&apos;t change that; it should go through again once this
+      customer has replied to you, or if this template is really transactional rather than marketing, check its category in Meta&apos;s WhatsApp Manager.
+    </p>
+  );
+}
+
 function FixPermissionsHint() {
   const [fixing, setFixing] = useState(false);
   const [result, setResult] = useState("");
@@ -472,6 +493,7 @@ function MessageThread({ conversation, channelName, onDeleted }) {
                       Failed: {m.errorMessage}{m.errorCode ? ` (${m.errorCode})` : ""}
                     </p>
                     {isReengagementError(m.errorCode) ? <ReengagementHint conversation={conversation} onSent={load} /> : null}
+                    {isEcosystemEngagementError(m.errorCode) ? <EcosystemEngagementHint /> : null}
                   </div>
                 ) : null}
                 <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-slate-400">
