@@ -6,6 +6,8 @@ import {
   Ban,
   Bell,
   CheckCircle2,
+  Eye,
+  EyeOff,
   Loader2,
   Mail,
   MessageCircle,
@@ -92,13 +94,41 @@ function iconFor(list, key) {
 // A generic SMTP connect — one form for Gmail (app password), Outlook,
 // Zoho, or any other provider a company already has.
 
-function EmailSetupSection({ channel, onConnected }) {
+const EMPTY_EMAIL_FORM = { host: "", port: "587", secure: false, username: "", password: "", fromEmail: "", fromName: "" };
+
+function EmailSetupSection({ channel, isLoading, onConnected }) {
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ host: "", port: "587", secure: false, username: "", password: "", fromEmail: "", fromName: "" });
+  const [form, setForm] = useState(EMPTY_EMAIL_FORM);
+  const [showPassword, setShowPassword] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [connectError, setConnectError] = useState("");
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState("");
+
+  // "Update" prefills from what's already known and public about this
+  // channel (host/port/secure/fromEmail/fromName live in `external`, which
+  // a plain channel list always returns; username is mirrored onto
+  // `channel.shop` at connect time) — only the password is genuinely
+  // secret and can never be prefilled, since the backend never sends it
+  // back once set.
+  function openForm() {
+    if (channel) {
+      setForm({
+        host: channel.external?.host || "",
+        port: String(channel.external?.port || "587"),
+        secure: Boolean(channel.external?.secure),
+        username: channel.shop || "",
+        password: "",
+        fromEmail: channel.external?.fromEmail || "",
+        fromName: channel.external?.fromName || "",
+      });
+    } else {
+      setForm(EMPTY_EMAIL_FORM);
+    }
+    setShowPassword(false);
+    setConnectError("");
+    setShowForm((v) => !v);
+  }
 
   async function handleConnect(e) {
     e.preventDefault();
@@ -138,23 +168,30 @@ function EmailSetupSection({ channel, onConnected }) {
           <div>
             <h3 className="text-sm font-semibold text-slate-900">Email (SMTP)</h3>
             <p className="text-xs text-[var(--muted)]">
-              {channel
+              {isLoading
+                ? "Checking connection…"
+                : channel
                 ? <>Connected as <span className="font-semibold text-slate-700">{channel.shop}</span></>
                 : "Connect your own SMTP (Gmail app-password, Outlook, Zoho, or any other provider) to send automated order emails."}
             </p>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {channel ? (
-            <Button variant="secondary" className="h-9" onClick={handleTest} disabled={testing}>
-              {testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
-              {testing ? "Sending…" : "Send Test Email"}
+        {/* Nothing rendered while isLoading — showing "Connect" for an
+            already-connected channel just because the first fetch hasn't
+            resolved yet is worse than a brief blank space. */}
+        {!isLoading ? (
+          <div className="flex items-center gap-2">
+            {channel ? (
+              <Button variant="secondary" className="h-9" onClick={handleTest} disabled={testing}>
+                {testing ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />}
+                {testing ? "Sending…" : "Send Test Email"}
+              </Button>
+            ) : null}
+            <Button className="h-9" onClick={openForm}>
+              {channel ? "Update" : "Connect"}
             </Button>
-          ) : null}
-          <Button className="h-9" onClick={() => setShowForm((v) => !v)}>
-            {channel ? "Update" : "Connect"}
-          </Button>
-        </div>
+          </div>
+        ) : null}
       </div>
 
       {testResult ? (
@@ -176,8 +213,24 @@ function EmailSetupSection({ channel, onConnected }) {
             <input required value={form.username} onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))} placeholder="you@yourstore.com" className="h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-500" />
           </label>
           <label className="block">
-            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Password / App Password</span>
-            <input required type="password" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} className="h-9 w-full rounded-lg border border-[var(--line)] px-3 text-sm outline-none focus:border-indigo-500" />
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">Password / App Password{channel ? " (leave blank to keep the current one)" : ""}</span>
+            <div className="relative">
+              <input
+                required={!channel}
+                type={showPassword ? "text" : "password"}
+                value={form.password}
+                onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))}
+                className="h-9 w-full rounded-lg border border-[var(--line)] px-3 pr-9 text-sm outline-none focus:border-indigo-500"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword((v) => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+              >
+                {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
+              </button>
+            </div>
           </label>
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-slate-500">From Name (optional)</span>
@@ -207,6 +260,93 @@ function EmailSetupSection({ channel, onConnected }) {
 
 // ─── Email Templates ────────────────────────────────────────────────────────
 
+// ─── Modern preset templates ─────────────────────────────────────────────────
+// Real email clients (Gmail, Outlook) strip <style> blocks unreliably, so
+// every rule here is inline — a centered card, a solid-color header band,
+// a light "details" box for order/tracking data, and a button-style CTA
+// where one makes sense. A starting point to customize, not meant to be
+// the final word — every field stays fully editable after picking one.
+
+function emailShell({ accent, eyebrow, heading, bodyParagraphs, details, cta }) {
+  const detailsRows = details
+    ? `<table style="width:100%;border-collapse:collapse;">${details
+        .map(([label, value]) => `<tr><td style="padding:6px 0;color:#64748b;font-size:13px;">${label}</td><td style="padding:6px 0;color:#0f172a;font-size:13px;font-weight:600;text-align:right;">${value}</td></tr>`)
+        .join("")}</table>`
+    : "";
+  const detailsBox = details ? `<div style="background:#f8fafc;border-radius:12px;padding:18px 20px;margin:22px 0;">${detailsRows}</div>` : "";
+  const ctaButton = cta
+    ? `<div style="text-align:center;margin:26px 0 8px;"><a href="${cta.href}" style="display:inline-block;background:${accent};color:#ffffff;text-decoration:none;padding:12px 30px;border-radius:8px;font-size:14px;font-weight:600;">${cta.label}</a></div>`
+    : "";
+  const paragraphs = bodyParagraphs.map((p) => `<p style="margin:0 0 14px;color:#334155;font-size:15px;line-height:1.65;">${p}</p>`).join("");
+
+  return `<div style="background:#f1f5f9;padding:36px 16px;font-family:'Segoe UI',Helvetica,Arial,sans-serif;">
+  <div style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 1px 3px rgba(15,23,42,0.08);">
+    <div style="background:${accent};padding:30px 32px;text-align:center;">
+      <p style="margin:0;color:#ffffff;font-size:12px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;opacity:0.85;">{{companyName}}</p>
+      <h1 style="margin:10px 0 0;color:#ffffff;font-size:22px;font-weight:700;">${heading}</h1>
+    </div>
+    <div style="padding:32px;">
+      <p style="margin:0 0 16px;color:#0f172a;font-size:15px;line-height:1.6;">Hi {{customerName}},</p>
+      ${paragraphs}
+      ${detailsBox}
+      ${ctaButton}
+    </div>
+    <div style="padding:18px 32px;text-align:center;border-top:1px solid #e2e8f0;">
+      <p style="margin:0;color:#94a3b8;font-size:12px;">{{companyName}} · Powered by Wokbook</p>
+    </div>
+  </div>
+</div>`;
+}
+
+const TEMPLATE_PRESETS = [
+  {
+    key: "order_confirmed", label: "Order Confirmed", trigger: "order_placed", name: "Order Confirmation",
+    subject: "Your order {{orderNumber}} is confirmed 🎉",
+    bodyHtml: emailShell({
+      accent: "#4361ee", heading: "✅ Order Confirmed",
+      bodyParagraphs: ["Thanks for your order — we've got it and we're getting it ready.", "We'll email you again the moment it ships."],
+      details: [["Order", "{{orderNumber}}"], ["Total", "{{orderTotal}} {{currency}}"]],
+    }),
+  },
+  {
+    key: "order_shipped", label: "Order Shipped", trigger: "order_fulfilled", name: "Order Shipped",
+    subject: "Your order {{orderNumber}} is on its way 🚚",
+    bodyHtml: emailShell({
+      accent: "#0ea5e9", heading: "🚚 It's On Its Way",
+      bodyParagraphs: ["Good news — your order has shipped and is headed your way."],
+      details: [["Order", "{{orderNumber}}"], ["Courier", "{{courierName}}"], ["Tracking No.", "{{trackingNumber}}"]],
+      cta: { href: "{{trackingUrl}}", label: "Track Your Order" },
+    }),
+  },
+  {
+    key: "order_delivered", label: "Order Delivered", trigger: "order_delivered", name: "Order Delivered",
+    subject: "Delivered! Your order {{orderNumber}} has arrived 📦",
+    bodyHtml: emailShell({
+      accent: "#16a34a", heading: "📦 Delivered!",
+      bodyParagraphs: ["Your order has been delivered — we hope you love it!", "If anything's not right, just reply to this email and we'll sort it out."],
+      details: [["Order", "{{orderNumber}}"]],
+    }),
+  },
+  {
+    key: "refund_processed", label: "Refund Processed", trigger: "refund_processed", name: "Refund Processed",
+    subject: "Your refund for order {{orderNumber}} is on its way 💳",
+    bodyHtml: emailShell({
+      accent: "#f59e0b", heading: "💳 Refund Processed",
+      bodyParagraphs: ["We've processed your refund — it should reflect in your original payment method within a few business days."],
+      details: [["Order", "{{orderNumber}}"], ["Refund Amount", "{{refundAmount}} {{currency}}"]],
+    }),
+  },
+  {
+    key: "cod_reminder", label: "COD Payment Reminder", trigger: "cod_payment_reminder", name: "COD Payment Reminder",
+    subject: "Reminder: payment due on delivery for order {{orderNumber}}",
+    bodyHtml: emailShell({
+      accent: "#e11d48", heading: "⏰ Payment Reminder",
+      bodyParagraphs: ["Just a friendly reminder — your order was placed as Cash on Delivery. Please keep the amount ready for the courier."],
+      details: [["Order", "{{orderNumber}}"], ["Amount Due", "{{orderTotal}} {{currency}}"]],
+    }),
+  },
+];
+
 function TemplateEditorModal({ template, triggers, onClose, onSaved }) {
   const [name, setName] = useState(template?.name || "");
   const [trigger, setTrigger] = useState(template?.trigger || triggers[0] || "order_placed");
@@ -216,6 +356,21 @@ function TemplateEditorModal({ template, triggers, onClose, onSaved }) {
   const [bodyHtml, setBodyHtml] = useState(template?.bodyHtml || "");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  function applyPreset(presetKey) {
+    const preset = TEMPLATE_PRESETS.find((p) => p.key === presetKey);
+    if (!preset) return;
+    setName(preset.name);
+    if (triggers.includes(preset.trigger)) {
+      setUseCustomTrigger(false);
+      setTrigger(preset.trigger);
+    } else {
+      setUseCustomTrigger(true);
+      setCustomTrigger(preset.trigger);
+    }
+    setSubject(preset.subject);
+    setBodyHtml(preset.bodyHtml);
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -245,6 +400,23 @@ function TemplateEditorModal({ template, triggers, onClose, onSaved }) {
           <button onClick={onClose} className="grid h-8 w-8 place-items-center rounded-lg text-slate-400 hover:bg-slate-100"><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit} className="space-y-4 p-5">
+          {!template ? (
+            <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-3">
+              <span className="mb-2 block text-xs font-semibold uppercase tracking-wide text-indigo-700">Start from a modern preset (optional)</span>
+              <div className="flex flex-wrap gap-1.5">
+                {TEMPLATE_PRESETS.map((p) => (
+                  <button
+                    key={p.key}
+                    type="button"
+                    onClick={() => applyPreset(p.key)}
+                    className="rounded-full border border-indigo-200 bg-white px-3 py-1.5 text-xs font-semibold text-indigo-700 hover:bg-indigo-100"
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : null}
           <div className="grid gap-3 sm:grid-cols-2">
             <label className="block">
               <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-600">Template Name</span>
@@ -635,7 +807,7 @@ export function AutomationView() {
         <div className="mb-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-2.5 text-sm font-medium text-rose-700">{error}</div>
       ) : null}
 
-      <EmailSetupSection channel={emailChannel} onConnected={loadAll} />
+      <EmailSetupSection channel={emailChannel} isLoading={isLoading} onConnected={loadAll} />
 
       <section className="mb-6 grid gap-4 sm:grid-cols-3">
         <Card className="p-4">

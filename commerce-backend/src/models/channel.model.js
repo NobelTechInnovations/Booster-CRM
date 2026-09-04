@@ -113,6 +113,14 @@ const channelSchema = new mongoose.Schema(
       // Email (SMTP) fields — the "From" header on every automated email.
       fromEmail: String,
       fromName:  String,
+      // Non-secret mirrors of credentials.host/port/secure (which stay
+      // select:false since they sit alongside the real password field) —
+      // host/port/secure aren't sensitive on their own, and the "Update"
+      // connect form needs somewhere to actually read them back from to
+      // prefill itself, since a plain channel list never selects credentials.
+      host:   String,
+      port:   Number,
+      secure: Boolean,
     },
 
     // Sales channel sync state

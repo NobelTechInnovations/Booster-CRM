@@ -774,7 +774,18 @@ export async function getWhatsAppChannelByPhoneNumberId(phoneNumberId) {
 // first real automated send weeks later.
 
 export async function upsertEmailChannel({ companyId, userId, host, port, secure, username, password, fromEmail, fromName }) {
-  await verifySmtpCredentials({ host, port, secure, username, password });
+  // Updating an already-connected channel doesn't require re-typing the
+  // password — a blank one here means "keep the current one", so it's
+  // read back (select:false, needs an explicit +select) from whatever's
+  // already saved rather than overwriting it with nothing.
+  let effectivePassword = password;
+  if (!effectivePassword) {
+    const existing = await getConnectedEmailChannel(companyId);
+    effectivePassword = existing?.credentials?.password;
+    if (!effectivePassword) throw new Error("Password is required to connect for the first time");
+  }
+
+  await verifySmtpCredentials({ host, port, secure, username, password: effectivePassword });
 
   if (isMongoConnected()) {
     return Channel.findOneAndUpdate(
@@ -793,9 +804,15 @@ export async function upsertEmailChannel({ companyId, userId, host, port, secure
           "credentials.port": Number(port),
           "credentials.secure": Boolean(secure),
           "credentials.username": username,
-          "credentials.password": password,
+          "credentials.password": effectivePassword,
           "external.fromEmail": fromEmail || username,
           "external.fromName": fromName || "",
+          // Non-secret mirrors, readable from a plain channel list (see
+          // channel.model.js's own comment) — what the "Update" connect
+          // form prefills itself from.
+          "external.host": host,
+          "external.port": Number(port),
+          "external.secure": Boolean(secure),
           connectedBy: userId,
           disconnectedAt: null,
         },
@@ -815,8 +832,8 @@ export async function upsertEmailChannel({ companyId, userId, host, port, secure
     shop: String(username).toLowerCase(),
     name: fromName || "Email",
     status: "connected",
-    credentials: { host, port: Number(port), secure: Boolean(secure), username, password },
-    external: { fromEmail: fromEmail || username, fromName: fromName || "" },
+    credentials: { host, port: Number(port), secure: Boolean(secure), username, password: effectivePassword },
+    external: { fromEmail: fromEmail || username, fromName: fromName || "", host, port: Number(port), secure: Boolean(secure) },
     connectedBy: userId,
     disconnectedAt: null,
     createdAt: existing?.createdAt || now(),

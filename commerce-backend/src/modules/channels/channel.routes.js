@@ -882,9 +882,13 @@ channelRoutes.post(
   requireAuth,
   asyncHandler(async (req, res) => {
     const { host, port, secure, username, password, fromEmail, fromName } = req.body || {};
-    if (!host || !port || !username || !password) {
-      throw new HttpError(400, "Host, port, username, and password are required");
+    if (!host || !port || !username) {
+      throw new HttpError(400, "Host, port, and username are required");
     }
+    // password is optional on an update — blank means "keep the current
+    // one" (see upsertEmailChannel); a genuinely new connection still
+    // needs a real password, enforced there since only it knows whether
+    // a channel already exists to fall back to.
 
     let channel;
     try {
