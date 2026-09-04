@@ -2,7 +2,14 @@ import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { simpleRateLimit } from "../../utils/simple-rate-limit.js";
-import { createSupportTicket, listPublicTicketsByContact, getPublicTicketDetail } from "../../repositories/support-ticket.repo.js";
+import {
+  createSupportTicket,
+  listPublicTicketsByContact,
+  getPublicTicketDetail,
+  customerCommentOnTicket,
+  customerCloseTicket,
+  customerReopenTicket,
+} from "../../repositories/support-ticket.repo.js";
 
 // No-login, customer-facing support tickets — same shape as
 // public-tracking.routes.js (rate-limited per IP, scoped by company slug,
@@ -53,5 +60,52 @@ publicSupportRoutes.post(
     if (result.error === "message_required") throw new HttpError(400, "Please describe your issue");
     if (result.error === "invalid_category") throw new HttpError(400, "Select a valid category");
     res.status(201).json(result);
+  }),
+);
+
+// The three customer-side mutations added for the ticket lifecycle:
+// comment (also available while pending_close — cancels the hold; and
+// while closed — reopens into in_progress), close (covers both a direct
+// self-close and confirming a staff-requested pending_close), reopen
+// (only valid from closed, back to plain open — see support-ticket.repo.js
+// for why these two "reopen" paths are kept distinct).
+publicSupportRoutes.post(
+  "/:companySlug/tickets/:ticketId/comment",
+  createLimiter,
+  asyncHandler(async (req, res) => {
+    const { companySlug, ticketId } = req.params;
+    const { phone, email, message } = req.body || {};
+    const result = await customerCommentOnTicket({ companySlug, ticketId, phone, email, message });
+    if (result.error === "not_found") throw new HttpError(404, "Ticket not found");
+    if (result.error === "contact_required") throw new HttpError(400, "Enter a phone number or email");
+    if (result.error === "message_required") throw new HttpError(400, "Please enter a message");
+    res.json(result);
+  }),
+);
+
+publicSupportRoutes.post(
+  "/:companySlug/tickets/:ticketId/close",
+  createLimiter,
+  asyncHandler(async (req, res) => {
+    const { companySlug, ticketId } = req.params;
+    const { phone, email } = req.body || {};
+    const result = await customerCloseTicket({ companySlug, ticketId, phone, email });
+    if (result.error === "not_found") throw new HttpError(404, "Ticket not found");
+    if (result.error === "contact_required") throw new HttpError(400, "Enter a phone number or email");
+    res.json(result);
+  }),
+);
+
+publicSupportRoutes.post(
+  "/:companySlug/tickets/:ticketId/reopen",
+  createLimiter,
+  asyncHandler(async (req, res) => {
+    const { companySlug, ticketId } = req.params;
+    const { phone, email } = req.body || {};
+    const result = await customerReopenTicket({ companySlug, ticketId, phone, email });
+    if (result.error === "not_found") throw new HttpError(404, "Ticket not found");
+    if (result.error === "contact_required") throw new HttpError(400, "Enter a phone number or email");
+    if (result.error === "not_closed") throw new HttpError(400, "Only a closed ticket can be reopened");
+    res.json(result);
   }),
 );

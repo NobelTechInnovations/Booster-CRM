@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Headset, Loader2, Mail, MessageSquareText, Phone, RefreshCw, Send, X } from "lucide-react";
+import { AlertTriangle, Headset, Loader2, Mail, MessageSquareText, Phone, RefreshCw, Send, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,11 +11,18 @@ const STATUS_TABS = [
   { key: "", label: "All" },
   { key: "open", label: "Open" },
   { key: "in_progress", label: "In Progress" },
+  { key: "pending_close", label: "Pending Close" },
   { key: "resolved", label: "Resolved" },
   { key: "closed", label: "Closed" },
 ];
 
-const STATUS_TONE = { open: "blue", in_progress: "amber", resolved: "green", closed: "slate" };
+// Selecting "Closed" from the status dropdown below doesn't set this status
+// directly — the backend puts it on hold as "pending_close" instead (see
+// updateSupportTicketStatus in support-ticket.repo.js), so it's deliberately
+// left out of the assignable options: staff can ask to close, not force it.
+const ASSIGNABLE_STATUSES = STATUS_TABS.filter((t) => t.key && t.key !== "pending_close");
+
+const STATUS_TONE = { open: "blue", in_progress: "amber", pending_close: "gold", resolved: "green", closed: "slate" };
 
 function fmtDateTime(date) {
   if (!date) return "";
@@ -101,14 +108,24 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
             <div className="flex items-center gap-2 border-b border-[var(--line)] px-4 py-3">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">Status</span>
               <select
-                value={ticket.status}
+                value={ticket.status === "pending_close" ? "closed" : ticket.status}
                 onChange={(e) => handleStatusChange(e.target.value)}
                 disabled={updatingStatus}
                 className="h-8 rounded-md border border-[var(--line)] bg-white px-2 text-xs outline-none focus:border-indigo-500 disabled:opacity-50"
               >
-                {STATUS_TABS.filter((t) => t.key).map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
+                {ASSIGNABLE_STATUSES.map((t) => <option key={t.key} value={t.key}>{t.label}</option>)}
               </select>
+              {ticket.status === "pending_close" ? <span className="text-xs text-slate-400">Waiting on customer to confirm — auto-closes in 48h either way</span> : null}
             </div>
+
+            {ticket.status === "pending_close" ? (
+              <div className="mx-4 mt-3 flex items-start gap-2.5 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <AlertTriangle size={15} className="mt-0.5 shrink-0 text-amber-600" />
+                <p className="text-xs leading-5 text-amber-800">
+                  You asked to close this ticket. It stays open until the customer confirms, comments (which cancels the close), or 48 hours pass with no response.
+                </p>
+              </div>
+            ) : null}
 
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Original message</p>
@@ -117,15 +134,18 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Replies ({ticket.replies?.length || 0})</p>
               {ticket.replies?.length ? (
                 <div className="space-y-2.5">
-                  {ticket.replies.map((r) => (
-                    <div key={r._id} className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="font-semibold text-indigo-700">{r.authorName}</span>
-                        <span className="text-slate-400">{fmtDateTime(r.createdAt)}</span>
+                  {ticket.replies.map((r) => {
+                    const isCustomer = r.authorType === "customer";
+                    return (
+                      <div key={r._id} className={`rounded-lg border p-3 ${isCustomer ? "border-slate-200 bg-slate-50" : "border-indigo-100 bg-indigo-50/50"}`}>
+                        <div className="flex items-center justify-between text-xs">
+                          <span className={`font-semibold ${isCustomer ? "text-slate-600" : "text-indigo-700"}`}>{isCustomer ? `${r.authorName} (customer)` : r.authorName}</span>
+                          <span className="text-slate-400">{fmtDateTime(r.createdAt)}</span>
+                        </div>
+                        <p className="mt-1.5 text-sm text-slate-700">{r.message}</p>
                       </div>
-                      <p className="mt-1.5 text-sm text-slate-700">{r.message}</p>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-sm text-slate-400">No replies yet.</p>

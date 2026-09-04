@@ -1,13 +1,15 @@
 import mongoose from "mongoose";
 
-// A reply from company staff on one ticket — same embedded-subdocument
-// shape as SyncedCustomer.followUps (synced-customer.model.js), reused
-// here for the same reason: always read as part of the parent ticket,
-// never queried independently. Customer-side is read-only (see the
-// support-ticket-view.jsx frontend) — only company staff post here.
+// A reply on one ticket — same embedded-subdocument shape as
+// SyncedCustomer.followUps (synced-customer.model.js), reused here for the
+// same reason: always read as part of the parent ticket, never queried
+// independently. authorType distinguishes a company-staff reply from a
+// customer's own follow-up comment (both public-support.routes.js and
+// support.routes.js post here, on the two different auth models each uses).
 const ticketReplySchema = new mongoose.Schema(
   {
     authorName: { type: String, default: "Support" },
+    authorType: { type: String, enum: ["staff", "customer"], default: "staff" },
     message: { type: String, required: true },
   },
   { _id: true, timestamps: true },
@@ -40,7 +42,18 @@ const supportTicketSchema = new mongoose.Schema(
     subCategory: { type: String, trim: true },
     message: { type: String, required: true },
 
-    status: { type: String, enum: ["open", "in_progress", "resolved", "closed"], default: "open", index: true },
+    // "pending_close" — staff asked to close it, but it isn't closed yet:
+    // the customer gets a chance to confirm or object (by commenting,
+    // which cancels the pending close) before it closes on its own after
+    // 48h (see jobs/support-ticket-auto-close.job.js). A customer closing
+    // their OWN ticket skips this entirely and goes straight to "closed" —
+    // the hold is specifically for a close staff initiates on someone
+    // else's behalf.
+    status: { type: String, enum: ["open", "in_progress", "pending_close", "resolved", "closed"], default: "open", index: true },
+    // Set when status becomes "pending_close" — what the 48h auto-close
+    // job measures from. Cleared (left stale but harmless) once the
+    // ticket leaves that status either way.
+    pendingCloseAt: Date,
 
     replies: [ticketReplySchema],
   },

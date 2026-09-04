@@ -8,6 +8,7 @@ import { runShopifySyncJob } from "../../jobs/shopify-sync.job.js";
 import { runMetaAdsSyncJob } from "../../jobs/meta-ads-sync.job.js";
 import { runUpgradeReminderJob } from "../../jobs/upgrade-reminder.job.js";
 import { runCodPaymentReminderJob } from "../../jobs/cod-payment-reminder.job.js";
+import { runSupportTicketAutoCloseJob } from "../../jobs/support-ticket-auto-close.job.js";
 
 // Vercel serverless functions don't stay alive between requests, so the
 // in-process node-cron scheduler (jobs/scheduler.js, still used in local
@@ -69,3 +70,4 @@ cronRoutes.get("/sync-shopify", wrapJob("sync-shopify", runShopifySyncJob));
 cronRoutes.get("/sync-meta-ads", wrapJob("sync-meta-ads", runMetaAdsSyncJob));
 cronRoutes.get("/upgrade-reminders", wrapJob("upgrade-reminders", runUpgradeReminderJob));
 cronRoutes.get("/cod-payment-reminders", wrapJob("cod-payment-reminders", runCodPaymentReminderJob));
+cronRoutes.get("/support-ticket-auto-close", wrapJob("support-ticket-auto-close", runSupportTicketAutoCloseJob));

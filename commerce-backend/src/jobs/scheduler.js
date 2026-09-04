@@ -6,6 +6,7 @@ import { runShopifySyncJob } from "./shopify-sync.job.js";
 import { runMetaAdsSyncJob } from "./meta-ads-sync.job.js";
 import { runUpgradeReminderJob } from "./upgrade-reminder.job.js";
 import { runCodPaymentReminderJob } from "./cod-payment-reminder.job.js";
+import { runSupportTicketAutoCloseJob } from "./support-ticket-auto-close.job.js";
 
 /**
  * Initializes and schedules all OMS background automation jobs.
@@ -49,6 +50,14 @@ export function startScheduler() {
     runCodPaymentReminderJob().catch(console.error);
   });
 
+  // 8. Support ticket auto-close (48h-overdue pending_close tickets) once
+  // daily at 11:30 AM IST (06:00 UTC) — a daily sweep is fine even though
+  // the hold is measured in hours: worst case a ticket closes up to ~24h
+  // later than exactly 48h, never earlier.
+  cron.schedule("0 6 * * *", () => {
+    runSupportTicketAutoCloseJob().catch(console.error);
+  });
+
   // Run immediate initial checks on startup (non-blocking)
   setTimeout(() => {
     runTokenRefreshJob().catch(console.error);
@@ -62,6 +71,7 @@ export function startScheduler() {
     "Tracking Update (daily 7:30am IST), " +
     "Shopify Sync (daily 8:30am IST), " +
     "Meta Ads Sync (daily 8:00am IST), " +
-    "COD Payment Reminders (daily 10:30am IST)."
+    "COD Payment Reminders (daily 10:30am IST), " +
+    "Support Ticket Auto-Close (daily 11:30am IST)."
   );
 }

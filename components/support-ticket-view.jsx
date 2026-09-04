@@ -1,8 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ArrowLeft, CheckCircle2, Headset, Loader2, Mail, MessageSquareText, Phone, Plus, Send } from "lucide-react";
-import { getPublicCompanyBranding, listPublicTicketsByContact, getPublicTicketDetail, createSupportTicket } from "@/lib/api";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Headset, Loader2, Mail, MessageSquareText, Phone, Plus, RotateCcw, Send, XCircle } from "lucide-react";
+import {
+  getPublicCompanyBranding,
+  listPublicTicketsByContact,
+  getPublicTicketDetail,
+  createSupportTicket,
+  commentOnPublicTicket,
+  closePublicTicket,
+  reopenPublicTicket,
+} from "@/lib/api";
 
 // Same fixed category set the backend validates against (support-ticket.repo.js's
 // CATEGORIES) — sub-categories are display-only, folded into the message
@@ -19,6 +27,7 @@ const CATEGORIES = [
 const STATUS_META = {
   open: { label: "Open", tone: "bg-blue-100 text-blue-700" },
   in_progress: { label: "In Progress", tone: "bg-amber-100 text-amber-800" },
+  pending_close: { label: "Pending Close", tone: "bg-orange-100 text-orange-700" },
   resolved: { label: "Resolved", tone: "bg-emerald-100 text-emerald-700" },
   closed: { label: "Closed", tone: "bg-slate-100 text-slate-600" },
 };
@@ -114,39 +123,142 @@ function NewTicketForm({ companySlug, phone, email, onCreated, onCancel }) {
   );
 }
 
-// ─── Ticket detail (read-only history) ──────────────────────────────────────
+// ─── Ticket detail (fully dynamic — customer can comment/close/reopen) ─────
 
-function TicketDetail({ ticket, onBack }) {
+function TicketDetail({ ticket, companySlug, phone, email, onBack, onUpdated }) {
+  const [commentText, setCommentText] = useState("");
+  const [busy, setBusy] = useState(""); // "comment" | "close" | "reopen" | ""
+  const [actionError, setActionError] = useState("");
+
+  const isClosed = ticket.status === "closed";
+  const isPendingClose = ticket.status === "pending_close";
+
+  async function runAction(action, fn) {
+    setBusy(action);
+    setActionError("");
+    try {
+      const res = await fn();
+      onUpdated(res.ticket);
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  function handleClose() {
+    runAction("close", () => closePublicTicket(companySlug, ticket.id, { phone, email }));
+  }
+
+  function handleReopen() {
+    runAction("reopen", () => reopenPublicTicket(companySlug, ticket.id, { phone, email }));
+  }
+
+  async function handleComment(e) {
+    e.preventDefault();
+    const text = commentText.trim();
+    if (!text) return;
+    await runAction("comment", () => commentOnPublicTicket(companySlug, ticket.id, { phone, email, message: text }));
+    setCommentText("");
+  }
+
   return (
     <div>
       <button onClick={onBack} className="mb-4 flex items-center gap-1.5 text-sm font-semibold text-indigo-700 hover:text-indigo-900">
         <ArrowLeft size={15} /> Back
       </button>
       <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-2">
           <h2 className="font-mono text-sm font-bold text-slate-900">{ticket.ticketNumber}</h2>
-          <StatusChip status={ticket.status} />
+          <div className="flex shrink-0 items-center gap-2">
+            <StatusChip status={ticket.status} />
+            {!isClosed && !isPendingClose ? (
+              <button
+                onClick={handleClose}
+                disabled={busy === "close"}
+                className="flex items-center gap-1 rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50 disabled:opacity-50"
+              >
+                {busy === "close" ? <Loader2 size={12} className="animate-spin" /> : <XCircle size={12} />} Close
+              </button>
+            ) : null}
+            {isClosed ? (
+              <button
+                onClick={handleReopen}
+                disabled={busy === "reopen"}
+                className="flex items-center gap-1 rounded-lg border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-700 transition hover:bg-indigo-100 disabled:opacity-50"
+              >
+                {busy === "reopen" ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />} Reopen
+              </button>
+            ) : null}
+          </div>
         </div>
         <p className="mt-1 text-xs text-slate-400">{ticket.subCategory ? `${ticket.subCategory} · ` : ""}{fmtDateTime(ticket.createdAt)}</p>
 
         <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{ticket.message}</div>
 
+        {isPendingClose ? (
+          <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
+            <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600" />
+            <div>
+              <p className="text-sm font-semibold text-amber-800">Support has asked to close this ticket</p>
+              <p className="mt-0.5 text-xs leading-5 text-amber-700">
+                If everything&apos;s sorted, confirm below. If not, just add a comment and we&apos;ll keep it open — it&apos;ll also auto-close on its own after 48 hours if we don&apos;t hear back.
+              </p>
+              <button
+                onClick={handleClose}
+                disabled={busy === "close"}
+                className="mt-2.5 flex items-center gap-1.5 rounded-lg bg-amber-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-amber-700 disabled:opacity-50"
+              >
+                {busy === "close" ? <Loader2 size={12} className="animate-spin" /> : <CheckCircle2 size={12} />} Confirm Close
+              </button>
+            </div>
+          </div>
+        ) : null}
+
         {ticket.replies?.length ? (
           <div className="mt-4 space-y-3 border-t border-slate-100 pt-4">
-            <h3 className="text-xs font-semibold uppercase text-slate-500">Replies</h3>
-            {ticket.replies.map((r, idx) => (
-              <div key={idx} className="rounded-lg border border-indigo-100 bg-indigo-50/50 p-3">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-indigo-700">{r.authorName}</span>
-                  <span className="text-slate-400">{fmtDateTime(r.createdAt)}</span>
+            <h3 className="text-xs font-semibold uppercase text-slate-500">Conversation</h3>
+            {ticket.replies.map((r, idx) => {
+              const isCustomer = r.authorType === "customer";
+              return (
+                <div
+                  key={idx}
+                  className={`rounded-lg border p-3 ${isCustomer ? "border-slate-200 bg-slate-50" : "border-indigo-100 bg-indigo-50/50"}`}
+                >
+                  <div className="flex items-center justify-between text-xs">
+                    <span className={`font-semibold ${isCustomer ? "text-slate-600" : "text-indigo-700"}`}>{isCustomer ? "You" : r.authorName}</span>
+                    <span className="text-slate-400">{fmtDateTime(r.createdAt)}</span>
+                  </div>
+                  <p className="mt-1.5 text-sm text-slate-700">{r.message}</p>
                 </div>
-                <p className="mt-1.5 text-sm text-slate-700">{r.message}</p>
-              </div>
-            ))}
+              );
+            })}
           </div>
         ) : (
           <p className="mt-4 border-t border-slate-100 pt-4 text-xs text-slate-400">No replies yet — we&apos;ll get back to you soon.</p>
         )}
+
+        {actionError ? <p className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{actionError}</p> : null}
+
+        <form onSubmit={handleComment} className="mt-4 space-y-2 border-t border-slate-100 pt-4">
+          <label className="block text-xs font-semibold uppercase tracking-wide text-slate-500">
+            {isClosed ? "Add a comment — this reopens the ticket" : "Add a comment"}
+          </label>
+          <textarea
+            rows={3}
+            className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100"
+            placeholder="Type a message…"
+            value={commentText}
+            onChange={(e) => setCommentText(e.target.value)}
+          />
+          <button
+            type="submit"
+            disabled={busy === "comment" || !commentText.trim()}
+            className="flex h-10 items-center justify-center gap-1.5 rounded-xl bg-indigo-700 px-4 text-sm font-semibold text-white transition hover:bg-indigo-800 disabled:opacity-50"
+          >
+            {busy === "comment" ? <Loader2 size={14} className="animate-spin" /> : <Send size={14} />} Send
+          </button>
+        </form>
       </div>
     </div>
   );
@@ -220,6 +332,14 @@ export function SupportTicketView({ companySlug }) {
     setTickets((prev) => (prev ? [ticket, ...prev] : [ticket]));
   }
 
+  // After a comment/close/reopen action, refresh both the open detail
+  // view and its row in the list behind it — so "Back" shows the current
+  // status/reply-count instead of stale data from before the action.
+  function handleTicketUpdated(updatedTicket) {
+    setSelectedTicket(updatedTicket);
+    setTickets((prev) => (prev ? prev.map((t) => (t.id === updatedTicket.id ? updatedTicket : t)) : prev));
+  }
+
   const showResults = searchedContact && !selectedTicket;
 
   return (
@@ -261,7 +381,14 @@ export function SupportTicketView({ companySlug }) {
         {detailLoading ? (
           <div className="flex justify-center py-10"><Loader2 size={22} className="animate-spin text-indigo-600" /></div>
         ) : selectedTicket ? (
-          <TicketDetail ticket={selectedTicket} onBack={() => setSelectedTicket(null)} />
+          <TicketDetail
+            ticket={selectedTicket}
+            companySlug={companySlug}
+            phone={searchedContact?.phone}
+            email={searchedContact?.email}
+            onBack={() => setSelectedTicket(null)}
+            onUpdated={handleTicketUpdated}
+          />
         ) : showResults ? (
           <div>
             <button
