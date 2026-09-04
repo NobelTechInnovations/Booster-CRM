@@ -1,7 +1,7 @@
 import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
-import { copyStoreData, pushMigratedCustomersToShopify } from "./migration.service.js";
+import { copyStoreData, pushMigratedCustomersToShopify, enableMarketingForPushedCustomers } from "./migration.service.js";
 
 // Store-to-store migration (see migration.service.js) — copying historical
 // order/customer data from one connected Shopify channel to another,
@@ -43,6 +43,20 @@ migrationRoutes.post(
       return res.status(400).json({ message: "targetChannelId is required" });
     }
     const result = await pushMigratedCustomersToShopify({ companyId: req.auth.companyId, targetChannelId });
+    res.json(result);
+  }),
+);
+
+migrationRoutes.post(
+  "/enable-marketing",
+  requireAuth,
+  requirePermission("channels:manage"),
+  asyncHandler(async (req, res) => {
+    const { targetChannelId } = req.body || {};
+    if (!targetChannelId) {
+      return res.status(400).json({ message: "targetChannelId is required" });
+    }
+    const result = await enableMarketingForPushedCustomers({ companyId: req.auth.companyId, targetChannelId });
     res.json(result);
   }),
 );

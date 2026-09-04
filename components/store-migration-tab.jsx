@@ -1,12 +1,40 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, KeyRound, Loader2, PlugZap, RefreshCcw, Store, UploadCloud } from "lucide-react";
-import { listChannels, createShopifyConnection, saveShopifySetup, updateChannelAppCredentials, copyStoreData, pushMigratedCustomersToShopify } from "@/lib/api";
+import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, KeyRound, Loader2, Megaphone, PlugZap, RefreshCcw, Store, UploadCloud } from "lucide-react";
+import { listChannels, createShopifyConnection, saveShopifySetup, updateChannelAppCredentials, copyStoreData, pushMigratedCustomersToShopify, enableMarketingForPushedCustomers } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 
+// Self-contained indeterminate progress bar — shown under whichever button
+// below is mid-flight. These migration/push/marketing actions are plain
+// synchronous loops on the backend with no real progress-streaming
+// mechanism, so this is deliberately indeterminate (a sweeping bar, not a
+// percentage) rather than implying a false sense of precision. The
+// @keyframes rule is scoped to this component via an inline <style> tag
+// instead of a global CSS/Tailwind config change, so it works regardless of
+// what's already in app/globals.css.
+function ProgressBar({ label }) {
+  return (
+    <div className="mt-3">
+      <style>{`
+        @keyframes booster-progress-sweep {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(340%); }
+        }
+      `}</style>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-100">
+        <div
+          className="h-full w-1/3 rounded-full bg-indigo-500"
+          style={{ animation: "booster-progress-sweep 1.1s ease-in-out infinite" }}
+        />
+      </div>
+      {label ? <p className="mt-1.5 text-[11px] text-slate-500">{label}</p> : null}
+    </div>
+  );
+}
+
 // Store-to-store migration — for replacing an old Shopify store with a new
-// one while keeping continuous order/customer history in the panel. Two
+// one while keeping continuous order/customer history in the panel. Three
 // deliberately separate actions:
 //  1. "Copy Order & Customer Data" — panel database only, never touches
 //     either real Shopify store, safely re-runnable (see migration.repo.js
@@ -15,6 +43,11 @@ import { Button } from "@/components/ui/button";
 //     the real target store, customers only (never orders, so the target
 //     store's own order-numbering sequence is never touched by migrated
 //     data) — its own explicit confirmation, separate from step 1.
+//  3. "Turn On Marketing Subscription" — Shopify's Customer API has no
+//     "carry over consent from the old store" concept, so every customer
+//     landing on the target store via step 2 (or already there) starts
+//     with marketing consent off; this flips it on in bulk, its own
+//     explicit confirmation since it also writes to the real store.
 export function StoreMigrationTab() {
   const [channels, setChannels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -45,6 +78,10 @@ export function StoreMigrationTab() {
   const [pushing, setPushing] = useState(false);
   const [pushResult, setPushResult] = useState(null);
   const [pushError, setPushError] = useState("");
+
+  const [enablingMarketing, setEnablingMarketing] = useState(false);
+  const [marketingResult, setMarketingResult] = useState(null);
+  const [marketingError, setMarketingError] = useState("");
 
   async function load() {
     setIsLoading(true);
@@ -159,6 +196,29 @@ export function StoreMigrationTab() {
       setPushError(err.message);
     } finally {
       setPushing(false);
+    }
+  }
+
+  async function handleEnableMarketing() {
+    const target = connectedStores.find((c) => (c._id || c.id) === targetId);
+    if (!target) return;
+    if (!window.confirm(
+      `Turn ON marketing subscription for every real customer already on ${target.shop}'s own Shopify admin?\n\n` +
+      `This DOES write to the real store, same as "Push Customers" above. It covers email marketing consent ` +
+      `reliably; the WhatsApp/SMS subscription column is a best-effort mapping on Shopify's side, so double-check ` +
+      `a few customers there afterward to confirm it landed the way you expect.`,
+    )) return;
+
+    setEnablingMarketing(true);
+    setMarketingError("");
+    setMarketingResult(null);
+    try {
+      const result = await enableMarketingForPushedCustomers(targetId);
+      setMarketingResult(result);
+    } catch (err) {
+      setMarketingError(err.message);
+    } finally {
+      setEnablingMarketing(false);
     }
   }
 
@@ -347,6 +407,7 @@ export function StoreMigrationTab() {
               ? "Copy Order Data"
               : "Select customers or orders"}
           </Button>
+          {copying ? <ProgressBar label="Copying — a store with a lot of history can take a little while, this keeps running in the background." /> : null}
           {copyError ? <p className="mt-2 text-xs font-medium text-rose-600">{copyError}</p> : null}
           {copyResult ? (
             <div className="mt-3 flex items-start gap-2 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
@@ -374,6 +435,7 @@ export function StoreMigrationTab() {
               {pushing ? <Loader2 size={15} className="animate-spin" /> : <UploadCloud size={15} />}
               {pushing ? "Pushing…" : "Push Customers to Shopify"}
             </Button>
+            {pushing ? <ProgressBar label="Pushing customers to Shopify, one at a time — hang tight for a large list." /> : null}
             {pushError ? <p className="mt-2 text-xs font-medium text-rose-600">{pushError}</p> : null}
             {pushResult && pushResult.total === 0 ? (
               <p className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
@@ -386,6 +448,40 @@ export function StoreMigrationTab() {
                 {pushResult.failed.length > 0 && (
                   <ul className="mt-1.5 space-y-0.5 text-rose-700">
                     {pushResult.failed.map((f) => <li key={f.customerId}>• {f.name}: {f.reason}</li>)}
+                  </ul>
+                )}
+              </div>
+            ) : null}
+          </div>
+
+          {/* Turn on marketing subscription — a separate, own confirmation, real-store-writing
+              step, same shape as Push above. Every customer physically on the target channel is
+              covered (freshly pushed, matched-as-already-existing, or genuinely-synced normally),
+              see enableMarketingForPushedCustomers's own comment on the backend for exactly why. */}
+          <div className="mt-5 border-t border-slate-100 pt-4">
+            <h4 className="mb-1 text-sm font-semibold text-slate-900">Turn On Marketing Subscription</h4>
+            <p className="mb-3 text-xs text-slate-500">
+              Customers copied or pushed from the old store land with marketing consent switched off — Shopify has no way to carry
+              consent over from another store. This turns email marketing on for every real customer already on the new store.
+              The WhatsApp/SMS subscription column is a best-effort mapping on Shopify&apos;s side — worth a quick check in their admin afterward.
+            </p>
+            <Button variant="secondary" onClick={handleEnableMarketing} disabled={enablingMarketing || !targetId} className="h-10">
+              {enablingMarketing ? <Loader2 size={15} className="animate-spin" /> : <Megaphone size={15} />}
+              {enablingMarketing ? "Turning on…" : "Turn On Marketing Subscription"}
+            </Button>
+            {enablingMarketing ? <ProgressBar label="Updating marketing consent on Shopify, one customer at a time." /> : null}
+            {marketingError ? <p className="mt-2 text-xs font-medium text-rose-600">{marketingError}</p> : null}
+            {marketingResult && marketingResult.total === 0 ? (
+              <p className="mt-3 rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                No customers found yet on the new store — push or sync some customers first, then try this again.
+              </p>
+            ) : marketingResult ? (
+              <div className="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs text-emerald-800">
+                Turned on marketing for {marketingResult.updated} of {marketingResult.total} customer(s)
+                {marketingResult.failed.length > 0 && <>, {marketingResult.failed.length} failed</>}.
+                {marketingResult.failed.length > 0 && (
+                  <ul className="mt-1.5 space-y-0.5 text-rose-700">
+                    {marketingResult.failed.map((f) => <li key={f.customerId}>• {f.name}: {f.reason}</li>)}
                   </ul>
                 )}
               </div>

@@ -2,7 +2,7 @@ import { isMongoConnected } from "../../config/database.js";
 import { SyncedOrder } from "../../models/synced-order.model.js";
 import { SyncedCustomer } from "../../models/synced-customer.model.js";
 import { getChannelById } from "../../repositories/channel.repo.js";
-import { createShopifyCustomerDirect } from "../channels/shopify.service.js";
+import { createShopifyCustomerDirect, setShopifyCustomerMarketing } from "../channels/shopify.service.js";
 import { HttpError } from "../../utils/http-error.js";
 
 // Strips Mongo/Mongoose identity fields from a .lean() document and swaps
@@ -213,4 +213,62 @@ export async function pushMigratedCustomersToShopify({ companyId, targetChannelI
   }
 
   return { pushed, alreadyExisted, failed, total: candidates.length };
+}
+
+// A customer created via createShopifyCustomerDirect (pushMigratedCustomersToShopify
+// above) or one that already existed on the target store lands with
+// marketing consent OFF by default — Shopify's Customer API has no
+// "carry over consent from another store" concept, so this is a real,
+// separate step, not part of the push itself: turns email (and, best-
+// effort, SMS/WhatsApp-style — see setShopifyCustomerMarketing's own
+// comment on that field's real-world meaning) marketing consent ON for
+// every real, pushed customer on the target channel. One customer's
+// failure is recorded and the batch continues, same pattern as the push
+// step above.
+export async function enableMarketingForPushedCustomers({ companyId, targetChannelId }) {
+  if (!isMongoConnected()) {
+    throw new HttpError(503, "Database is not connected");
+  }
+
+  const target = await getChannelById({ channelId: targetChannelId, companyId });
+  if (!target) throw new HttpError(404, "Channel not found");
+  if (target.provider !== "shopify") throw new HttpError(400, "Only Shopify channels are supported");
+
+  // Every customer physically on the target channel is one of three
+  // things: (a) a genuinely-synced real customer never touched by
+  // migration (migratedFromCustomerId unset), (b) a migrated copy already
+  // pushed for real (pushedToShopifyAt set — covers both a freshly
+  // created Shopify customer AND one that turned out to already exist
+  // there, matched by phone/email — see pushMigratedCustomersToShopify's
+  // "already existed" branch, which deletes the copy and leaves the real,
+  // pre-existing doc in its place with no pushedToShopifyAt of its own),
+  // or (c) a migrated copy NOT yet pushed (synthetic externalId, nothing
+  // real on Shopify to update yet). Only (c) is excluded here.
+  const candidates = await SyncedCustomer.find({
+    companyId,
+    channelId: target._id,
+    $or: [
+      { migratedFromCustomerId: null },
+      { pushedToShopifyAt: { $ne: null } },
+    ],
+  }).lean();
+
+  let updated = 0;
+  const failed = [];
+
+  for (const customer of candidates) {
+    try {
+      await setShopifyCustomerMarketing({
+        companyId,
+        channelId: target._id,
+        externalId: customer.externalId,
+        acceptsMarketing: true,
+      });
+      updated += 1;
+    } catch (err) {
+      failed.push({ customerId: String(customer._id), name: customer.name || customer.email || customer.phone || "Unknown", reason: err.message });
+    }
+  }
+
+  return { updated, failed, total: candidates.length };
 }

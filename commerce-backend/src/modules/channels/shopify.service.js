@@ -345,6 +345,22 @@ function productPayload(payload) {
 }
 
 function customerPayload(payload) {
+  // acceptsMarketing sets Shopify's legacy accepts_marketing flag (drives
+  // the "Email subscription" column in Shopify's own customer list) plus
+  // sms_marketing_consent (the closest official field for the "WhatsApp
+  // subscription"/SMS-style column some stores show, if a marketing app
+  // is reading that same consent model — worth confirming in Shopify's
+  // own admin after use, since that specific column isn't part of the
+  // core Customer API and may be app-specific).
+  const marketingConsent = payload.acceptsMarketing !== undefined
+    ? {
+        accepts_marketing: Boolean(payload.acceptsMarketing),
+        sms_marketing_consent: payload.acceptsMarketing
+          ? { state: "subscribed", opt_in_level: "single_opt_in", consent_updated_at: new Date().toISOString() }
+          : { state: "unsubscribed", consent_updated_at: new Date().toISOString() },
+      }
+    : {};
+
   return pickDefined({
     first_name: payload.firstName !== undefined ? cleanString(payload.firstName) : undefined,
     last_name: payload.lastName !== undefined ? cleanString(payload.lastName) : undefined,
@@ -352,6 +368,7 @@ function customerPayload(payload) {
     phone: payload.phone !== undefined ? cleanString(payload.phone) : undefined,
     tags: payload.tags !== undefined ? cleanTags(payload.tags) : undefined,
     note: payload.note !== undefined ? cleanString(payload.note) : undefined,
+    ...marketingConsent,
   });
 }
 
@@ -412,6 +429,30 @@ export async function updateShopifyRecord({ companyId, resource, recordId, paylo
   }
 
   throw new HttpError(400, "Unsupported synced record type");
+}
+
+// Sets a Shopify customer's marketing consent directly, given an exact
+// channelId — deliberately does NOT go through updateShopifyRecord/
+// getCommerceRecordForUpdate above: that resolver's channel lookup falls
+// back to "any channel of this provider for the company" when it can't
+// match by _id cleanly, which is genuinely ambiguous once a company has
+// more than one Shopify channel (exactly the case a bulk action across a
+// specific migration target needs to get right every time). Used by
+// migration.service.js's enableMarketingForPushedCustomers.
+export async function setShopifyCustomerMarketing({ companyId, channelId, externalId, acceptsMarketing }) {
+  const channel = await getChannelForSync({ channelId, companyId });
+  if (!channel || channel.provider !== "shopify") {
+    throw new HttpError(404, "Shopify channel not found");
+  }
+  const accessToken = channel.credentials?.accessToken;
+  if (!accessToken) throw new HttpError(400, "Shopify access token is missing. Reconnect the channel first.");
+
+  const customer = customerPayload({ acceptsMarketing });
+  const body = await shopifyFetch(channel.shop, `/customers/${externalId}.json`, accessToken, {
+    method: "PUT",
+    body: JSON.stringify({ customer: { id: externalId, ...customer } }),
+  });
+  await saveSyncedShopifyData({ companyId, channelId: channel._id, shop: channel.shop, customers: [body.customer] });
 }
 
 /**
