@@ -2,8 +2,8 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { Building2, CircleDollarSign, Users2, AlertTriangle } from "lucide-react";
-import { listAdminCompanies } from "@/lib/admin-api";
+import { Building2, CircleDollarSign, Users2, AlertTriangle, ShieldCheck } from "lucide-react";
+import { listAdminCompanies, listPendingKyc, approveCompanyKyc, rejectCompanyKyc } from "@/lib/admin-api";
 
 const STATUS_STYLE = {
   active: "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20",
@@ -37,6 +37,98 @@ function statusLabel(c) {
     return { key: left < 0 ? "suspended" : "trialing", text: left < 0 ? "trial expired" : `trial · ${left}d left` };
   }
   return { key: c.subscription.status, text: c.subscription.status };
+}
+
+// Companies with kyc.status === "submitted" — waiting on an admin to
+// actually approve/reject (the company already submitted via PUT
+// /api/company/kyc; nothing surfaced that here before this section).
+function PendingKycSection() {
+  const [pending, setPending] = useState([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [busyId, setBusyId] = useState("");
+  const [error, setError] = useState("");
+
+  async function load() {
+    setIsLoading(true);
+    try {
+      setPending((await listPendingKyc()).companies || []);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function approve(companyId) {
+    setBusyId(companyId);
+    setError("");
+    try {
+      await approveCompanyKyc(companyId);
+      setPending((prev) => prev.filter((c) => c._id !== companyId));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  async function reject(companyId) {
+    const reason = window.prompt("Reason for rejecting this KYC submission?");
+    if (!reason || !reason.trim()) return;
+    setBusyId(companyId);
+    setError("");
+    try {
+      await rejectCompanyKyc(companyId, reason.trim());
+      setPending((prev) => prev.filter((c) => c._id !== companyId));
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusyId("");
+    }
+  }
+
+  if (isLoading || !pending.length) return null;
+
+  return (
+    <div className="mb-6 rounded-xl border border-amber-500/20 bg-amber-500/5 p-4">
+      <div className="mb-3 flex items-center gap-2">
+        <ShieldCheck size={15} className="text-amber-400" />
+        <h2 className="text-sm font-semibold text-white">Pending KYC Approvals ({pending.length})</h2>
+      </div>
+      {error ? <p className="mb-2 text-xs font-medium text-rose-300">{error}</p> : null}
+      <div className="space-y-2">
+        {pending.map((c) => (
+          <div key={c._id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-slate-900 px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-white">{c.name}</p>
+              <p className="text-xs text-slate-400">
+                {c.kyc?.legalName || "No legal name"} · GSTIN {c.kyc?.gstin || "—"} · submitted {c.kyc?.submittedAt ? new Date(c.kyc.submittedAt).toLocaleDateString("en-IN") : "—"}
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <Link href={`/admin/companies/${c._id}`} className="text-xs font-semibold text-slate-400 hover:underline">View</Link>
+              <button
+                onClick={() => reject(c._id)}
+                disabled={busyId === c._id}
+                className="rounded-lg border border-rose-500/30 px-2.5 py-1 text-xs font-semibold text-rose-300 hover:bg-rose-500/10 disabled:opacity-50"
+              >
+                Reject
+              </button>
+              <button
+                onClick={() => approve(c._id)}
+                disabled={busyId === c._id}
+                className="rounded-lg bg-emerald-500/90 px-2.5 py-1 text-xs font-semibold text-slate-950 hover:bg-emerald-400 disabled:opacity-50"
+              >
+                {busyId === c._id ? "…" : "Approve"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 function StatCard({ icon: Icon, label, value }) {
@@ -112,6 +204,8 @@ export default function AdminCompaniesPage() {
           className="h-9 w-72 rounded-lg border border-slate-700 bg-slate-900 px-3 text-sm text-white outline-none placeholder:text-slate-500 focus:border-amber-500"
         />
       </div>
+
+      <PendingKycSection />
 
       <div className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <StatCard icon={Building2} label="Total companies" value={stats.total} />

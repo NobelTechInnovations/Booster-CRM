@@ -77,6 +77,7 @@ export async function createPlan(payload) {
       maxUsers: payload.limits?.maxUsers !== undefined ? Number(payload.limits.maxUsers) : undefined,
       maxOrders: payload.limits?.maxOrders !== undefined ? Number(payload.limits.maxOrders) : undefined,
       maxChannels: payload.limits?.maxChannels !== undefined ? Number(payload.limits.maxChannels) : undefined,
+      maxShippingChannels: payload.limits?.maxShippingChannels !== undefined ? Number(payload.limits.maxShippingChannels) : undefined,
     },
     isActive: payload.isActive !== undefined ? Boolean(payload.isActive) : true,
     sortOrder: Number(payload.sortOrder) || 0,
@@ -176,6 +177,7 @@ export async function updateCompanyStatus({ companyId, status }) {
 
 export async function updateCompanySubscription({ companyId, planId, status, trialEndsAt, currentPeriodEnd, seats, notes }) {
   let features = [];
+  let limits = {};
   let planSlug = "";
   let resolvedStatus = status;
   let resolvedTrialEndsAt = trialEndsAt;
@@ -183,6 +185,7 @@ export async function updateCompanySubscription({ companyId, planId, status, tri
     const plan = await getPlan(planId);
     if (!plan) return { error: "Plan not found" };
     features = plan.features || [];
+    limits = plan.limits || {};
     planSlug = plan.slug;
     // Assigning a trial-flagged plan without the caller specifying a status
     // or trial end date defaults both sensibly — "put them on Trial" should
@@ -196,7 +199,7 @@ export async function updateCompanySubscription({ companyId, planId, status, tri
   }
 
   const subscription = {
-    ...(planId ? { planId, planSlug, features } : {}),
+    ...(planId ? { planId, planSlug, features, limits } : {}),
     ...(resolvedStatus ? { status: resolvedStatus } : {}),
     ...(resolvedTrialEndsAt !== undefined ? { trialEndsAt: resolvedTrialEndsAt ? new Date(resolvedTrialEndsAt) : null } : {}),
     ...(currentPeriodEnd !== undefined ? { currentPeriodEnd: currentPeriodEnd ? new Date(currentPeriodEnd) : null } : {}),
@@ -214,5 +217,41 @@ export async function updateCompanySubscription({ companyId, planId, status, tri
   const company = memory.companies.get(String(companyId));
   if (!company) return { error: "Company not found" };
   company.subscription = { ...(company.subscription || {}), ...subscription };
+  return { company: clone(company) };
+}
+
+// ─── KYC approvals ────────────────────────────────────────────────────────────
+// The company submits via PUT /api/company/kyc (updateCompanyKyc in
+// company.repo.js), which sets kyc.status to "submitted" — nothing surfaced
+// that to a platform admin to act on until now.
+
+export async function listPendingKycCompanies() {
+  if (isMongoConnected()) {
+    return Company.find({ "kyc.status": "submitted" }).sort({ "kyc.submittedAt": 1 }).lean();
+  }
+  return [...memory.companies.values()]
+    .map(clone)
+    .filter((c) => c.kyc?.status === "submitted")
+    .sort((a, b) => new Date(a.kyc?.submittedAt || 0) - new Date(b.kyc?.submittedAt || 0));
+}
+
+export async function decideCompanyKyc({ companyId, approve, rejectionReason }) {
+  const patch = approve
+    ? { "kyc.status": "verified", "kyc.verifiedAt": new Date(), "kyc.rejectionReason": "" }
+    : { "kyc.status": "rejected", "kyc.rejectionReason": String(rejectionReason || "").slice(0, 500) };
+
+  if (isMongoConnected()) {
+    const company = await Company.findByIdAndUpdate(companyId, { $set: patch }, { new: true }).lean();
+    if (!company) return { error: "Company not found" };
+    return { company };
+  }
+  const company = memory.companies.get(String(companyId));
+  if (!company) return { error: "Company not found" };
+  company.kyc = {
+    ...(company.kyc || {}),
+    status: approve ? "verified" : "rejected",
+    verifiedAt: approve ? now() : company.kyc?.verifiedAt,
+    rejectionReason: approve ? "" : String(rejectionReason || "").slice(0, 500),
+  };
   return { company: clone(company) };
 }

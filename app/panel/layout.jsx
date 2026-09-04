@@ -39,6 +39,7 @@ import {
   Plus,
   Camera,
   MessageCircle,
+  Webhook,
 } from "lucide-react";
 import {
   clearSession,
@@ -61,9 +62,13 @@ const NAV_GROUPS = [
     label: "Orders", icon: ShoppingCart, href: "/panel/orders", children: [
       { label: "Orders", icon: ShoppingCart, href: "/panel/orders" },
       { label: "Fulfillment", icon: PackageCheck, href: "/panel/fulfillment" },
-      { label: "Customers", icon: UserRound, href: "/panel/customers" },
     ]
   },
+  // One-click items (not tucked under a sub-nav) — Customers and Leads are
+  // both used often enough that the extra click into a group first isn't
+  // worth it.
+  { label: "Customers", icon: UserRound, href: "/panel/customers", single: true },
+  { label: "Leads", icon: Webhook, href: "/panel/leads", single: true },
   {
     label: "Products", icon: Package, href: "/panel/products", children: [
       { label: "Products", icon: Package, href: "/panel/products" },
@@ -93,7 +98,7 @@ const NAV_GROUPS = [
     ]
   },
   {
-    label: "Admin", icon: Building2, href: "/panel/company", children: [
+    label: "Company Manage", icon: Building2, href: "/panel/company", children: [
       { label: "Company", icon: Building2, href: "/panel/company" },
       { label: "Users", icon: Users, href: "/panel/users" },
       { label: "Automation", icon: Workflow, href: "/panel/automation" },

@@ -90,6 +90,18 @@ const companySchema = new mongoose.Schema(
       // never needs an extra Plan lookup — re-copied whenever the
       // subscription is updated.
       features: [String],
+      // Same denormalization as `features` — copied from Plan.limits at
+      // assignment time (see updateCompanySubscription in
+      // platform-admin.repo.js). Enforced by feature-gate.js's
+      // getEffectiveLimits()/assertLimitNotExceeded() at the few places
+      // that actually create a user/channel; maxOrders is admin-visible
+      // only, not enforced anywhere (see feature-gate.js's own note).
+      limits: {
+        maxUsers: Number,
+        maxOrders: Number,
+        maxChannels: Number,
+        maxShippingChannels: Number,
+      },
       status: { type: String, enum: ["trialing", "active", "past_due", "suspended", "cancelled"], default: "trialing" },
       trialEndsAt: Date,
       currentPeriodEnd: Date,

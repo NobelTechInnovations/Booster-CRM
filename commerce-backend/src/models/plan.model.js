@@ -30,6 +30,7 @@ const planSchema = new mongoose.Schema(
       maxUsers: Number,
       maxOrders: Number,
       maxChannels: Number,
+      maxShippingChannels: Number,
     },
     // Soft-disabled rather than deleted — a plan already assigned to a
     // company must keep resolving correctly even after it's retired from

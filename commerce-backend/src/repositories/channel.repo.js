@@ -1,7 +1,27 @@
 import { isMongoConnected } from "../config/database.js";
 import { Channel } from "../models/channel.model.js";
+import { Company } from "../models/company.model.js";
 import { ShopifyPendingAppConfig } from "../models/shopify-pending-app-config.model.js";
 import { memory, id, clone, now } from "./memory-store.js";
+import { assertLimitNotExceeded } from "../utils/feature-gate.js";
+
+// Only asserted when this upsert would create a genuinely NEW channel
+// (existingChannel is falsy) — reconnecting/updating an already-connected
+// channel never counts against the limit again. `limitKey` is "maxChannels"
+// for sales channels, "maxShippingChannels" for shipping ones (Channel.
+// channelType already separates the two, see channel.model.js).
+async function assertNewChannelWithinLimit({ companyId, existingChannel, channelType, limitKey, label }) {
+  if (existingChannel) return;
+  const company = isMongoConnected()
+    ? await Company.findById(companyId).lean()
+    : clone(memory.companies.get(String(companyId)) || null);
+  const currentCount = isMongoConnected()
+    ? await Channel.countDocuments({ companyId, channelType, status: { $ne: "disconnected" } })
+    : [...memory.channels.values()].filter(
+        (ch) => String(ch.companyId) === String(companyId) && ch.channelType === channelType && ch.status !== "disconnected",
+      ).length;
+  assertLimitNotExceeded({ company, limitKey, currentCount, label });
+}
 
 function withoutCredentials(channel) {
   if (!channel) return channel;
@@ -143,6 +163,9 @@ export async function updateChannelAppCredentials({ channelId, companyId, apiKey
 // apiSecret this channel already had stored from an earlier connect.
 export async function upsertShopifyChannel({ companyId, userId, shop, shopDetails, scopes, accessToken, apiKey, apiSecret }) {
   if (isMongoConnected()) {
+    const existingChannel = await Channel.findOne({ companyId, provider: "shopify", shop }).select("_id").lean();
+    await assertNewChannelWithinLimit({ companyId, existingChannel, channelType: "sales", limitKey: "maxChannels", label: "connected sales channels" });
+
     return Channel.findOneAndUpdate(
       { companyId, provider: "shopify", shop },
       {
@@ -176,6 +199,7 @@ export async function upsertShopifyChannel({ companyId, userId, shop, shopDetail
   const existing = [...memory.channels.values()].find(
     (ch) => String(ch.companyId) === String(companyId) && ch.provider === "shopify" && ch.shop === shop,
   );
+  await assertNewChannelWithinLimit({ companyId, existingChannel: existing, channelType: "sales", limitKey: "maxChannels", label: "connected sales channels" });
 
   const channel = {
     _id:         existing?._id || id(),
@@ -286,6 +310,9 @@ export async function upsertAmazonChannel({ companyId, userId, sellingPartnerId,
   const shop = `amazon-${sellingPartnerId}`.toLowerCase();
 
   if (isMongoConnected()) {
+    const existingChannel = await Channel.findOne({ companyId, provider: "amazon", shop }).select("_id").lean();
+    await assertNewChannelWithinLimit({ companyId, existingChannel, channelType: "sales", limitKey: "maxChannels", label: "connected sales channels" });
+
     return Channel.findOneAndUpdate(
       { companyId, provider: "amazon", shop },
       {
@@ -311,6 +338,8 @@ export async function upsertAmazonChannel({ companyId, userId, sellingPartnerId,
   const existing = [...memory.channels.values()].find(
     (ch) => String(ch.companyId) === String(companyId) && ch.provider === "amazon" && ch.shop === shop,
   );
+  await assertNewChannelWithinLimit({ companyId, existingChannel: existing, channelType: "sales", limitKey: "maxChannels", label: "connected sales channels" });
+
   const channel = {
     _id:         existing?._id || id(),
     channelType: "sales",
@@ -367,6 +396,8 @@ export async function upsertShippingChannel({ companyId, userId, provider, name,
       $or: [{ shop }, { shop: provider }],
     }).lean();
 
+    await assertNewChannelWithinLimit({ companyId, existingChannel: existing, channelType: "shipping", limitKey: "maxShippingChannels", label: "connected shipping channels" });
+
     const filter = existing
       ? { _id: existing._id }
       : { companyId, provider, shop, channelType: "shipping" };
@@ -394,6 +425,7 @@ export async function upsertShippingChannel({ companyId, userId, provider, name,
   const existing = [...memory.channels.values()].find(
     (ch) => String(ch.companyId) === String(companyId) && ch.provider === provider && ch.channelType === "shipping",
   );
+  await assertNewChannelWithinLimit({ companyId, existingChannel: existing, channelType: "shipping", limitKey: "maxShippingChannels", label: "connected shipping channels" });
 
   const channel = {
     _id:         existing?._id || id(),

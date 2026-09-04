@@ -20,6 +20,7 @@ import "../models/asset.model.js";
 import "../models/automation-rule.model.js";
 import "../models/channel.model.js";
 import "../models/company.model.js";
+import "../models/data-export-request.model.js";
 import "../models/expense.model.js";
 import "../models/payment-transaction.model.js";
 import "../models/plan.model.js";
@@ -99,6 +100,56 @@ export async function streamDatabaseBackup(outputStream) {
 
   for (const Model of listCollectionModels()) {
     const docs = await Model.find({}).lean();
+    manifest.collections.push({ collection: Model.collection.name, count: docs.length });
+    archive.append(JSON.stringify(docs, null, 2), { name: `${Model.collection.name}.json` });
+  }
+
+  archive.append(JSON.stringify(manifest, null, 2), { name: "_manifest.json" });
+  await archive.finalize();
+}
+
+// ─── Per-company backup ──────────────────────────────────────────────────────
+// Same mechanics as the whole-DB export above, scoped to one company —
+// serves both the company's own approved data-export download
+// (data-export.repo.js) and the admin's ad-hoc per-company backup
+// (platform-admin.routes.js's /backup/companies/:companyId/* routes).
+// `Model.schema.path("companyId")` is what tells apart a collection that
+// actually holds per-company data (SyncedOrder, Channel, User, ...) from one
+// that doesn't (Plan, PlatformAdmin, WebhookEvent, ...) — no per-model
+// hardcoding needed, and a newly added model with its own companyId field
+// is picked up automatically the same way the whole-DB export already is.
+function modelsWithCompanyId() {
+  return listCollectionModels().filter((Model) => Boolean(Model.schema.path("companyId")));
+}
+
+export async function getCompanyBackupSummary(companyId) {
+  if (!isMongoConnected()) {
+    return { error: "Database is not connected — nothing to back up" };
+  }
+
+  const models = modelsWithCompanyId();
+  const collections = await Promise.all(
+    models.map(async (Model) => ({
+      collection: Model.collection.name,
+      count: await Model.countDocuments({ companyId }),
+    })),
+  );
+
+  return { collections, generatedAt: new Date().toISOString() };
+}
+
+export async function streamCompanyBackup(companyId, outputStream) {
+  if (!isMongoConnected()) {
+    throw new Error("Database is not connected — nothing to back up");
+  }
+
+  const archive = archiver("zip", { zlib: { level: 9 } });
+  archive.pipe(outputStream);
+
+  const manifest = { companyId: String(companyId), generatedAt: new Date().toISOString(), collections: [] };
+
+  for (const Model of modelsWithCompanyId()) {
+    const docs = await Model.find({ companyId }).lean();
     manifest.collections.push({ collection: Model.collection.name, count: docs.length });
     archive.append(JSON.stringify(docs, null, 2), { name: `${Model.collection.name}.json` });
   }

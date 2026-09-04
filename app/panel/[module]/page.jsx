@@ -11,6 +11,7 @@ import { ShippingView } from "@/components/shipping-view";
 import { FinanceView } from "@/components/finance-view";
 import { OrdersView } from "@/components/orders-view";
 import { CustomersView } from "@/components/customers-view";
+import { LeadsView } from "@/components/leads-view";
 import { InventoryView } from "@/components/inventory-view";
 import { AssetsView } from "@/components/assets-view";
 import { ReportsView } from "@/components/reports-view";
@@ -93,6 +94,7 @@ export default function ModulePage({ params }) {
     "inventory": "Inventory",
     "assets": "Assets",
     "customers": "Customers",
+    "leads": "Leads",
     "finance": "Finance",
     "ads": "Ads",
     "social": "Social",
@@ -155,6 +157,10 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Customers") {
     return <CustomersView />;
+  }
+
+  if (activeViewName === "Leads") {
+    return <LeadsView />;
   }
 
   if (activeViewName === "Reports") {

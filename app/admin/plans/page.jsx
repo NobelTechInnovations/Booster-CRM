@@ -5,7 +5,10 @@ import { Plus, Save, X } from "lucide-react";
 import { listPlans, createPlan, updatePlan } from "@/lib/admin-api";
 
 const inputClass = "h-9 w-full rounded-lg border border-slate-700 bg-slate-800 px-3 text-sm text-white outline-none focus:border-amber-500";
-const EMPTY_FORM = { name: "", priceMonthly: "", priceYearly: "", features: [], isActive: true, isTrial: false, trialDays: "", perOrderFulfillmentFee: "" };
+const EMPTY_FORM = {
+  name: "", priceMonthly: "", priceYearly: "", features: [], isActive: true, isTrial: false, trialDays: "", perOrderFulfillmentFee: "",
+  maxUsers: "", maxChannels: "", maxShippingChannels: "",
+};
 
 // The feature keys real routes actually check (requireFeature() in
 // commerce-backend) — whatsapp (Cloud API) isn't gated by any route yet
@@ -18,7 +21,33 @@ const FEATURE_KEYS = [
   { key: "social", label: "Social (Instagram/Facebook)" },
   { key: "automation", label: "Automation" },
   { key: "advanced_reports", label: "Advanced Reports" },
+  { key: "store_migration", label: "Multi-Store Shopify Migration" },
 ];
+
+// Numeric caps — enforced (see assertLimitNotExceeded in commerce-backend's
+// feature-gate.js) at the one place each actually gets created: adding a
+// team member, connecting a sales channel (Shopify/Amazon), connecting a
+// shipping channel. Blank/unset = unlimited. maxOrders is intentionally not
+// here — it's admin-visible metadata only, not enforced anywhere (there's
+// no single safe choke point to block order creation without risking real
+// incoming Shopify/Amazon orders).
+const LIMIT_FIELDS = [
+  { key: "maxUsers", label: "Max Users" },
+  { key: "maxChannels", label: "Max Sales Channels" },
+  { key: "maxShippingChannels", label: "Max Shipping Channels" },
+];
+
+// Compact "3 users · 2 channels · 1 shipping" summary for the plans table —
+// blank/undefined entries are omitted rather than shown as "unlimited" to
+// keep the row scannable; the full picture is in the edit form.
+function limitsSummary(limits) {
+  if (!limits) return "";
+  const parts = [];
+  if (limits.maxUsers !== undefined && limits.maxUsers !== null) parts.push(`${limits.maxUsers} users`);
+  if (limits.maxChannels !== undefined && limits.maxChannels !== null) parts.push(`${limits.maxChannels} channels`);
+  if (limits.maxShippingChannels !== undefined && limits.maxShippingChannels !== null) parts.push(`${limits.maxShippingChannels} shipping`);
+  return parts.join(" · ");
+}
 
 export default function AdminPlansPage() {
   const [plans, setPlans] = useState([]);
@@ -55,6 +84,9 @@ export default function AdminPlansPage() {
       isTrial: Boolean(plan.isTrial),
       trialDays: String(plan.trialDays ?? ""),
       perOrderFulfillmentFee: String(plan.perOrderFulfillmentFee ?? ""),
+      maxUsers: plan.limits?.maxUsers !== undefined && plan.limits?.maxUsers !== null ? String(plan.limits.maxUsers) : "",
+      maxChannels: plan.limits?.maxChannels !== undefined && plan.limits?.maxChannels !== null ? String(plan.limits.maxChannels) : "",
+      maxShippingChannels: plan.limits?.maxShippingChannels !== undefined && plan.limits?.maxShippingChannels !== null ? String(plan.limits.maxShippingChannels) : "",
     });
   }
 
@@ -82,6 +114,11 @@ export default function AdminPlansPage() {
       isTrial: form.isTrial,
       trialDays: Number(form.trialDays) || 0,
       perOrderFulfillmentFee: Number(form.perOrderFulfillmentFee) || 0,
+      limits: {
+        maxUsers: form.maxUsers === "" ? undefined : Number(form.maxUsers),
+        maxChannels: form.maxChannels === "" ? undefined : Number(form.maxChannels),
+        maxShippingChannels: form.maxShippingChannels === "" ? undefined : Number(form.maxShippingChannels),
+      },
     };
     try {
       if (editingId) {
@@ -175,6 +212,24 @@ export default function AdminPlansPage() {
                 ))}
               </div>
             </div>
+            <div className="col-span-full">
+              <span className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Limits (blank = unlimited)</span>
+              <div className="grid grid-cols-1 gap-2 rounded-lg border border-slate-700 bg-slate-800 p-3 sm:grid-cols-3">
+                {LIMIT_FIELDS.map(({ key, label }) => (
+                  <label key={key} className="block">
+                    <span className="mb-1 block text-[11px] text-slate-400">{label}</span>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form[key]}
+                      onChange={(e) => setForm((f) => ({ ...f, [key]: e.target.value }))}
+                      className="h-8 w-full rounded-md border border-slate-600 bg-slate-900 px-2 text-xs text-white outline-none focus:border-amber-500"
+                      placeholder="Unlimited"
+                    />
+                  </label>
+                ))}
+              </div>
+            </div>
           </div>
           <button
             onClick={save}
@@ -214,7 +269,10 @@ export default function AdminPlansPage() {
                     ₹{p.priceMonthly}/mo
                     {p.perOrderFulfillmentFee > 0 ? <span className="block text-[11px] text-slate-500">+₹{p.perOrderFulfillmentFee}/order</span> : null}
                   </td>
-                  <td className="px-4 py-3 text-slate-400">{(p.features || []).join(", ") || "—"}</td>
+                  <td className="px-4 py-3 text-slate-400">
+                    {(p.features || []).join(", ") || "—"}
+                    {limitsSummary(p.limits) ? <span className="mt-0.5 block text-[11px] text-slate-500">{limitsSummary(p.limits)}</span> : null}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${p.isActive ? "bg-emerald-500/10 text-emerald-400 ring-1 ring-emerald-500/20" : "bg-slate-500/10 text-slate-400 ring-1 ring-slate-500/20"}`}>
                       {p.isActive ? "offerable" : "retired"}

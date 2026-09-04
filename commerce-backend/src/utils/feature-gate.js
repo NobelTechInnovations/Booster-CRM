@@ -1,3 +1,5 @@
+import { HttpError } from "./http-error.js";
+
 // Reusable check for "does this company's plan include feature X" — built
 // as infrastructure for app/admin's plan-management system, not wired into
 // any existing route yet (deliberately: which of today's features should be
@@ -18,4 +20,28 @@ export function companyHasFeature(company, featureKey) {
   if (!company?.subscription?.planId) return true;
   const features = company.subscription.features || [];
   return features.includes(featureKey);
+}
+
+// Same "no plan assigned = unmetered" convention as companyHasFeature() above
+// — a company's subscription.limits is only ever populated once an admin
+// actually assigns a plan (see updateCompanySubscription in
+// platform-admin.repo.js, which copies Plan.limits onto it), so an absent
+// planId or an unset individual limit both mean "no cap".
+export function getEffectiveLimits(company) {
+  if (!company?.subscription?.planId) return {};
+  return company.subscription.limits || {};
+}
+
+// Throws when adding one more of something would exceed the company's plan
+// limit. `currentCount` is the count *before* the new one is added, so a
+// limit of 3 allows the 4th create to be blocked once currentCount already
+// reached 3 (i.e. the company keeps exactly 3). Undefined/null limit means
+// unlimited; 0 is a real "not allowed at all" limit, not "unset".
+export function assertLimitNotExceeded({ company, limitKey, currentCount, label }) {
+  const limits = getEffectiveLimits(company);
+  const limit = limits[limitKey];
+  if (limit === undefined || limit === null) return;
+  if (currentCount >= limit) {
+    throw new HttpError(403, `You've reached your plan's limit of ${limit} ${label} — upgrade to add more.`);
+  }
 }

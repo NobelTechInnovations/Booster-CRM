@@ -3,7 +3,10 @@
 import {
   Building2,
   CheckCircle2,
+  Clock,
   CreditCard,
+  DatabaseBackup,
+  Download,
   FileCheck2,
   Globe,
   Hash,
@@ -17,11 +20,129 @@ import {
   ShieldCheck,
   Trash2,
   Upload,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { getCompanyProfile, updateCompanyKyc, updateCompanyProfile, updateCompanyLogo } from "@/lib/api";
+import {
+  getCompanyProfile,
+  updateCompanyKyc,
+  updateCompanyProfile,
+  updateCompanyLogo,
+  requestDataExport,
+  getMyDataExportStatus,
+  downloadMyDataExport,
+} from "@/lib/api";
+
+// "Data & Backup" tab — self-contained (own state, own load effect) since
+// its request/approval status is unrelated to the rest of this page's
+// company-profile/KYC state. Company data isn't unrestricted self-serve:
+// request → a platform admin reviews and approves → download unlocks.
+function DataExportPanel() {
+  const [request, setRequest] = useState(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [requesting, setRequesting] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+  const [error, setError] = useState("");
+
+  async function load() {
+    setIsLoading(true);
+    try {
+      setRequest((await getMyDataExportStatus()).request);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  async function handleRequest() {
+    setRequesting(true);
+    setError("");
+    try {
+      const res = await requestDataExport();
+      setRequest(res.request);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRequesting(false);
+    }
+  }
+
+  async function handleDownload() {
+    setDownloading(true);
+    setError("");
+    try {
+      const { blob, filename } = await downloadMyDataExport();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDownloading(false);
+    }
+  }
+
+  const status = request?.status;
+
+  return (
+    <div className="max-w-xl">
+      <SectionCard
+        title="Export Your Data"
+        icon={DatabaseBackup}
+        desc="Every record this workspace owns (orders, customers, products, and more) as one downloadable .zip — reviewed by a platform admin before it's released, not an unrestricted self-serve export."
+      >
+        {isLoading ? (
+          <p className="text-sm text-slate-400">Loading…</p>
+        ) : (
+          <>
+            {status === "pending" ? (
+              <div className="flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+                <Clock size={16} className="shrink-0" />
+                Request submitted {request?.requestedAt ? new Date(request.requestedAt).toLocaleString("en-IN") : ""} — waiting on a platform admin to review it.
+              </div>
+            ) : status === "approved" ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800">
+                  <CheckCircle2 size={16} className="shrink-0" />
+                  Approved — your data is ready to download.
+                </div>
+                <Button onClick={handleDownload} disabled={downloading} className="h-11">
+                  {downloading ? <Loader2 size={15} className="animate-spin" /> : <Download size={15} />}
+                  {downloading ? "Preparing…" : "Download My Data (.zip)"}
+                </Button>
+              </div>
+            ) : status === "rejected" ? (
+              <div className="space-y-3">
+                <div className="flex items-start gap-2.5 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
+                  <XCircle size={16} className="mt-0.5 shrink-0" />
+                  <span>Rejected{request?.rejectionReason ? `: ${request.rejectionReason}` : ""} — you can ask again below.</span>
+                </div>
+                <Button onClick={handleRequest} disabled={requesting} className="h-11">
+                  {requesting ? "Requesting…" : "Request My Data Again"}
+                </Button>
+              </div>
+            ) : (
+              <Button onClick={handleRequest} disabled={requesting} className="h-11">
+                {requesting ? "Requesting…" : "Request My Data"}
+              </Button>
+            )}
+            {error ? <p className="mt-3 text-xs font-medium text-rose-600">{error}</p> : null}
+          </>
+        )}
+      </SectionCard>
+    </div>
+  );
+}
 
 // Kept in lockstep with commerce-backend's MAX_LOGO_BYTES / accepted-format
 // check (store.js's updateCompanyLogo) — validating here too so the seller
@@ -175,6 +296,7 @@ export function CompanyView({ onCompanyUpdate }) {
   const tabs = [
     { key: "profile", label: "Company Profile", icon: Building2 },
     { key: "kyc", label: "KYC & Banking", icon: ShieldCheck },
+    { key: "data", label: "Data & Backup", icon: DatabaseBackup },
   ];
 
   return (
@@ -358,6 +480,8 @@ export function CompanyView({ onCompanyUpdate }) {
             </Button>
           </div>
         </form>
+      ) : activeTab === "data" ? (
+        <DataExportPanel />
       ) : (
         /* KYC Tab */
         <div className="grid gap-5 xl:grid-cols-[1fr_360px]">

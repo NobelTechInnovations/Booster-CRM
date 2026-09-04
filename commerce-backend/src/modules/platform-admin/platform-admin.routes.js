@@ -16,9 +16,12 @@ import {
   updateCompanyStatus,
   updateCompanySubscription,
   adjustCompanyWallet,
+  listPendingKycCompanies,
+  decideCompanyKyc,
 } from "../../repositories/platform-admin.repo.js";
 import { listAllPaymentTransactions, getFulfillmentEarnings } from "../../repositories/billing.repo.js";
-import { getBackupSummary, streamDatabaseBackup } from "../../repositories/backup.repo.js";
+import { getBackupSummary, streamDatabaseBackup, getCompanyBackupSummary, streamCompanyBackup } from "../../repositories/backup.repo.js";
+import { listPendingDataExportRequests, decideDataExportRequest } from "../../repositories/data-export.repo.js";
 
 export const platformAdminRoutes = Router();
 
@@ -156,6 +159,40 @@ platformAdminRoutes.patch(
   }),
 );
 
+// ─── KYC approvals ────────────────────────────────────────────────────────────
+// The company submits via PUT /api/company/kyc (kyc.status → "submitted");
+// this is where an admin actually acts on it.
+
+platformAdminRoutes.get(
+  "/kyc/pending",
+  requirePlatformAdmin,
+  asyncHandler(async (_req, res) => {
+    const companies = await listPendingKycCompanies();
+    res.json({ companies });
+  }),
+);
+
+platformAdminRoutes.post(
+  "/companies/:id/kyc/approve",
+  requirePlatformAdmin,
+  asyncHandler(async (req, res) => {
+    const result = await decideCompanyKyc({ companyId: req.params.id, approve: true });
+    if (result.error) throw new HttpError(404, result.error);
+    res.json({ company: result.company });
+  }),
+);
+
+platformAdminRoutes.post(
+  "/companies/:id/kyc/reject",
+  requirePlatformAdmin,
+  asyncHandler(async (req, res) => {
+    requireField(req.body?.reason, "Rejection reason");
+    const result = await decideCompanyKyc({ companyId: req.params.id, approve: false, rejectionReason: req.body.reason });
+    if (result.error) throw new HttpError(404, result.error);
+    res.json({ company: result.company });
+  }),
+);
+
 // ─── Plans ───────────────────────────────────────────────────────────────────
 
 platformAdminRoutes.get(
@@ -230,5 +267,66 @@ platformAdminRoutes.get(
     res.setHeader("Content-Type", "application/zip");
     res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
     await streamDatabaseBackup(res);
+  }),
+);
+
+// Per-company variant — admin's own ad-hoc access to one company's data,
+// independent of the request/approval flow below (an admin already has full
+// DB access; this is just a scoped convenience view).
+
+platformAdminRoutes.get(
+  "/backup/companies/:companyId/summary",
+  requirePlatformAdmin,
+  asyncHandler(async (req, res) => {
+    const result = await getCompanyBackupSummary(req.params.companyId);
+    if (result.error) throw new HttpError(503, result.error);
+    res.json(result);
+  }),
+);
+
+platformAdminRoutes.get(
+  "/backup/companies/:companyId/download",
+  requirePlatformAdmin,
+  asyncHandler(async (req, res) => {
+    const filename = `wokbook-company-backup-${req.params.companyId}-${new Date().toISOString().slice(0, 10)}.zip`;
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    await streamCompanyBackup(req.params.companyId, res);
+  }),
+);
+
+// ─── Data export requests ─────────────────────────────────────────────────────
+// A company's own "give me my data" ask (POST /api/company/data-export/
+// request) lands here for review — approving one unlocks that company's own
+// download route (company.routes.js's GET /data-export/download), which
+// streams the same per-company backup as the ad-hoc routes just above.
+
+platformAdminRoutes.get(
+  "/data-export-requests",
+  requirePlatformAdmin,
+  asyncHandler(async (_req, res) => {
+    const requests = await listPendingDataExportRequests();
+    res.json({ requests });
+  }),
+);
+
+platformAdminRoutes.post(
+  "/data-export-requests/:id/approve",
+  requirePlatformAdmin,
+  asyncHandler(async (req, res) => {
+    const result = await decideDataExportRequest({ requestId: req.params.id, approve: true, adminId: req.platformAdmin.sub });
+    if (result.error) throw new HttpError(404, result.error);
+    res.json({ request: result.request });
+  }),
+);
+
+platformAdminRoutes.post(
+  "/data-export-requests/:id/reject",
+  requirePlatformAdmin,
+  asyncHandler(async (req, res) => {
+    requireField(req.body?.reason, "Rejection reason");
+    const result = await decideDataExportRequest({ requestId: req.params.id, approve: false, rejectionReason: req.body.reason, adminId: req.platformAdmin.sub });
+    if (result.error) throw new HttpError(404, result.error);
+    res.json({ request: result.request });
   }),
 );

@@ -11,6 +11,7 @@ import { User } from "../models/user.model.js";
 import { Shipment } from "../models/shipment.model.js";
 import { Warehouse } from "../models/warehouse.model.js";
 import { upsertWarehouseRecord, listWarehouses as listWarehousesRepo } from "./warehouse.repo.js";
+import { assertLimitNotExceeded } from "../utils/feature-gate.js";
 
 const memory = {
   companies: new Map(),
@@ -816,6 +817,10 @@ export async function createCompanyUser({ companyId, invitedBy, name, email, pas
     const existingUser = await User.findOne({ companyId, email: normalizedEmail }).lean();
     if (existingUser) return { error: "Email is already registered" };
 
+    const company = await getCompany(companyId);
+    const currentCount = await User.countDocuments({ companyId });
+    assertLimitNotExceeded({ company, limitKey: "maxUsers", currentCount, label: "team members" });
+
     const user = await User.create({
       companyId,
       invitedBy,
@@ -826,7 +831,6 @@ export async function createCompanyUser({ companyId, invitedBy, name, email, pas
       status: "active",
     });
 
-    const company = await getCompany(companyId);
     return { user: publicUser(user.toObject(), { actorUserId: invitedBy, company }) };
   }
 
@@ -834,6 +838,12 @@ export async function createCompanyUser({ companyId, invitedBy, name, email, pas
     (user) => String(user.companyId) === String(companyId) && user.email === normalizedEmail,
   );
   if (existingUser) return { error: "Email is already registered" };
+
+  {
+    const company = await getCompany(companyId);
+    const currentCount = [...memory.users.values()].filter((u) => String(u.companyId) === String(companyId)).length;
+    assertLimitNotExceeded({ company, limitKey: "maxUsers", currentCount, label: "team members" });
+  }
 
   const user = {
     _id: id(),
