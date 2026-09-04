@@ -64,7 +64,7 @@ export function OrderTrackingView({ companySlug }) {
         setStoreName(res.company?.name || "");
         setStoreLogo(res.company?.logoUrl || "");
       })
-      .catch(() => {}); // Not fatal — the header just falls back to the generic placeholder
+      .catch(() => { }); // Not fatal — the header just falls back to the generic placeholder
   }, [companySlug]);
 
   async function handleSearch(e) {
@@ -105,7 +105,7 @@ export function OrderTrackingView({ companySlug }) {
       <div className="mx-auto max-w-lg px-4 py-8">
         <div className="mb-6 text-center">
           {storeLogo ? (
-            <img src={storeLogo} alt={storeName} className="mx-auto h-12 w-12 rounded-xl object-contain" />
+            <img src={storeLogo} alt={storeName} className="mx-auto h-12 w-24 rounded-xl object-contain" />
           ) : (
             <div className="mx-auto grid h-12 w-12 place-items-center rounded-xl bg-indigo-700 text-white">
               <ShoppingBag size={22} />
