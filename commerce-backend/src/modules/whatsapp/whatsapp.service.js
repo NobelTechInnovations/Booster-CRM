@@ -536,16 +536,41 @@ function renderTemplateText(bodyText, bodyParams) {
   });
 }
 
-export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, templateName, language, bodyParams = [], bodyText = "" }) {
+// headerParams: a template's HEADER can carry its own {{1}} independent of
+// the body's — e.g. "Hi {{1}}" in the header and a totally different {{1}}
+// in the body are two separate slots Meta expects two separate component
+// entries for, not one shared value.
+// buttonParams: a dynamic-URL button (e.g. "https://store.com/{{1}}") is
+// its own component too, addressed by the button's position (`index`) in
+// the template's own BUTTONS array — not a body/header parameter at all.
+// Missing any of these three components entirely (not just leaving one
+// empty) is exactly what Meta's "(#131008) Required parameter is missing"
+// means: this function used to only ever build a body component, so any
+// template with a header variable or a dynamic-URL button silently failed
+// to send — found live via a real send to a real template with a
+// "Shop Now" button whose URL carries its own {{1}}.
+export async function sendWhatsAppTemplateMessage({ companyId, channelId, to, templateName, language, bodyParams = [], headerParams = [], buttonParams = [], bodyText = "" }) {
   const channel = await getChannelForSync({ channelId, companyId });
   if (!channel || channel.channelType !== "whatsapp") throw new HttpError(404, "WhatsApp channel not found");
   if (!to) throw new HttpError(400, "Recipient phone number is required");
   if (!templateName) throw new HttpError(400, "Template name is required");
 
   const waId = normalizeIndianWaId(to);
-  const components = bodyParams.length
-    ? [{ type: "body", parameters: bodyParams.map((value) => ({ type: "text", text: String(value ?? "") })) }]
-    : [];
+  const components = [];
+  if (headerParams.length) {
+    components.push({ type: "header", parameters: headerParams.map((value) => ({ type: "text", text: String(value ?? "") })) });
+  }
+  if (bodyParams.length) {
+    components.push({ type: "body", parameters: bodyParams.map((value) => ({ type: "text", text: String(value ?? "") })) });
+  }
+  for (const { index, value } of buttonParams) {
+    components.push({
+      type: "button",
+      sub_type: "url",
+      index: String(index),
+      parameters: [{ type: "text", text: String(value ?? "") }],
+    });
+  }
 
   const body = await graphFetch(`${GRAPH_BASE()}/${channel.external.phoneNumberId}/messages`, {
     method: "POST",

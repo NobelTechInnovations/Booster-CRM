@@ -259,6 +259,14 @@ whatsappRoutes.post(
       templateName: req.body?.templateName,
       language: req.body?.language,
       bodyParams: Array.isArray(req.body?.bodyParams) ? req.body.bodyParams : [],
+      headerParams: Array.isArray(req.body?.headerParams) ? req.body.headerParams : [],
+      // { index, value } pairs — one per dynamic-URL button the template
+      // actually has (most templates have none, or exactly one "Shop Now"-
+      // style link). index is the button's own position within the
+      // template's BUTTONS array, not a placeholder number.
+      buttonParams: Array.isArray(req.body?.buttonParams)
+        ? req.body.buttonParams.filter((p) => p && typeof p.index !== "undefined").map((p) => ({ index: p.index, value: p.value }))
+        : [],
       // The template's own raw BODY text (with {{1}}, {{2}}... placeholders)
       // — used only to render what gets shown in our own chat history, see
       // sendWhatsAppTemplateMessage's own comment.
