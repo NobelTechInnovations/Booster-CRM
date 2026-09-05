@@ -140,3 +140,26 @@ img, video { max-width: 100%; }
 @media (prefers-reduced-motion: reduce) {
   .reveal { opacity: 1; transform: none; transition: none; }
 }
+
+/* ── Marketing site tokens ─────────────────────────────────────────────────
+   A distinct, warmer, more editorial palette for the public homepage —
+   scoped entirely to `.marketing` so it never touches the authenticated
+   panel's own tokens above (--background/--muted/--line etc.), which every
+   dashboard screen still relies on. Brand primary is deliberately NOT
+   redefined here — var(--primary) (#4361ee) stays the one accent color,
+   the same one the real product uses, so the marketing site and the panel
+   it's selling never feel like two different brands. */
+.marketing {
+  --mkt-bg: #faf9f6;
+  --mkt-surface: #ffffff;
+  --mkt-border: #e7e4dd;
+  --mkt-border-strong: #d8d4cb;
+  --mkt-text: #14151a;
+  --mkt-muted: #68686f;
+  --mkt-muted-soft: #9a9aa1;
+  --mkt-dark-bg: #0b0c0f;
+  --mkt-dark-surface: #16171c;
+  --mkt-dark-border: #26272e;
+  --mkt-dark-text: #f4f4f5;
+  --mkt-dark-muted: #9a9aa5;
+}
