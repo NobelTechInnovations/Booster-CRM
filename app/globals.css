@@ -122,3 +122,21 @@ img, video { max-width: 100%; }
   color: #9ca3af;
   margin-bottom: 12px;
 }
+
+/* ── Scroll reveal (marketing pages) ──────────────────────────────────────
+   Paired with components/reveal.jsx (IntersectionObserver). Starts hidden
+   only once JS confirms it can reveal it — see that component's own note
+   on why the "no-js" class exists. Skipped entirely under reduced-motion:
+   the element renders in its final, visible state immediately. */
+.reveal {
+  opacity: 0;
+  transform: translateY(16px);
+  transition: opacity 0.5s cubic-bezier(0.16, 1, 0.3, 1), transform 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.reveal.reveal-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .reveal { opacity: 1; transform: none; transition: none; }
+}
