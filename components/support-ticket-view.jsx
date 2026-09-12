@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, ArrowLeft, CheckCircle2, Headset, Loader2, MessageSquareText, Plus, RotateCcw, Search, Send, XCircle } from "lucide-react";
+import { AlertTriangle, ArrowLeft, CheckCircle2, Headset, Loader2, MessageSquareText, Paperclip, Plus, RotateCcw, Search, Send, X, XCircle } from "lucide-react";
 import {
   getPublicCompanyBranding,
   listPublicTicketsByContact,
@@ -11,6 +11,7 @@ import {
   commentOnPublicTicket,
   closePublicTicket,
   reopenPublicTicket,
+  publicSupportAttachmentUrl,
 } from "@/lib/api";
 import { parseContact, contactDisplayValue, hasContact, loadStoredContact, saveStoredContact, clearStoredContact, useSilentPoll } from "@/lib/public-page";
 
@@ -46,12 +47,82 @@ function fmtDateTime(date) {
   return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(date));
 }
 
+// ─── Attachments (upload + display) ─────────────────────────────────────────
+
+const MAX_ATTACHMENTS = 3;
+
+// Picker + selected-file preview list, shared by the new-ticket form and
+// the comment form — up to 3 files, matching the backend's own cap (see
+// utils/upload.js). Files aren't uploaded until the surrounding form
+// actually submits; this just accumulates the File objects.
+function FilePickerField({ files, onChange }) {
+  function handlePick(e) {
+    const picked = Array.from(e.target.files || []);
+    onChange([...files, ...picked].slice(0, MAX_ATTACHMENTS));
+    e.target.value = ""; // lets picking the exact same file again work after removing it
+  }
+  return (
+    <div>
+      <label className="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <Paperclip size={12} /> Attach a photo or video (optional)
+      </label>
+      {files.length < MAX_ATTACHMENTS ? (
+        <label className="flex h-10 w-full cursor-pointer items-center justify-center gap-1.5 rounded-xl border border-dashed border-slate-300 text-xs font-semibold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600">
+          <Plus size={13} /> Choose file
+          <input type="file" accept="image/*,video/*,.pdf" multiple className="hidden" onChange={handlePick} />
+        </label>
+      ) : null}
+      {files.length ? (
+        <ul className="mt-2 space-y-1">
+          {files.map((f, idx) => (
+            <li key={`${f.name}-${idx}`} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-600">
+              <span className="truncate">{f.name}</span>
+              <button type="button" onClick={() => onChange(files.filter((_, i) => i !== idx))} className="ml-2 shrink-0 text-slate-400 hover:text-rose-600">
+                <X size={13} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      <p className="mt-1 text-[11px] text-slate-400">Up to {MAX_ATTACHMENTS} files, 12MB each — images, videos, or PDF.</p>
+    </div>
+  );
+}
+
+function AttachmentThumb({ attachment, url }) {
+  if (attachment.mimeType?.startsWith("image/")) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-slate-200">
+        <img src={url} alt={attachment.filename} className="h-full w-full object-cover" />
+      </a>
+    );
+  }
+  if (attachment.mimeType?.startsWith("video/")) {
+    return <video src={url} controls className="max-h-40 w-full max-w-[220px] rounded-lg border border-slate-200 bg-black" />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
+      <Paperclip size={12} /> {attachment.filename}
+    </a>
+  );
+}
+
+function AttachmentGrid({ attachments, buildUrl }) {
+  if (!attachments?.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {attachments.map((a) => <AttachmentThumb key={a.id} attachment={a} url={buildUrl(a.id)} />)}
+    </div>
+  );
+}
+
 // ─── New ticket form ─────────────────────────────────────────────────────────
 
 function NewTicketForm({ companySlug, phone, email, onCreated, onCancel }) {
   const [categoryKey, setCategoryKey] = useState(CATEGORIES[0].key);
   const [subCategory, setSubCategory] = useState(CATEGORIES[0].subCategories[0]);
   const [message, setMessage] = useState("");
+  const [files, setFiles] = useState([]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -68,7 +139,7 @@ function NewTicketForm({ companySlug, phone, email, onCreated, onCancel }) {
     setSubmitting(true);
     setError("");
     try {
-      const res = await createSupportTicket(companySlug, { phone, email, category: categoryKey, subCategory, message: message.trim() });
+      const res = await createSupportTicket(companySlug, { phone, email, category: categoryKey, subCategory, message: message.trim() }, files);
       onCreated(res.ticket);
     } catch (err) {
       setError(err.message);
@@ -109,6 +180,7 @@ function NewTicketForm({ companySlug, phone, email, onCreated, onCancel }) {
           onChange={(e) => setMessage(e.target.value)}
         />
       </div>
+      <FilePickerField files={files} onChange={setFiles} />
       {error ? <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs font-medium text-rose-700">{error}</p> : null}
       <div className="flex gap-2">
         {onCancel ? (
@@ -131,11 +203,13 @@ function NewTicketForm({ companySlug, phone, email, onCreated, onCancel }) {
 
 function TicketDetail({ ticket, companySlug, phone, email, onBack, onUpdated }) {
   const [commentText, setCommentText] = useState("");
+  const [commentFiles, setCommentFiles] = useState([]);
   const [busy, setBusy] = useState(""); // "comment" | "close" | "reopen" | ""
   const [actionError, setActionError] = useState("");
 
   const isClosed = ticket.status === "closed";
   const isPendingClose = ticket.status === "pending_close";
+  const attachmentUrl = (attachmentId) => publicSupportAttachmentUrl(companySlug, ticket.id, attachmentId, { phone, email });
 
   async function runAction(action, fn) {
     setBusy(action);
@@ -162,8 +236,9 @@ function TicketDetail({ ticket, companySlug, phone, email, onBack, onUpdated }) 
     e.preventDefault();
     const text = commentText.trim();
     if (!text) return;
-    await runAction("comment", () => commentOnPublicTicket(companySlug, ticket.id, { phone, email, message: text }));
+    await runAction("comment", () => commentOnPublicTicket(companySlug, ticket.id, { phone, email, message: text, files: commentFiles }));
     setCommentText("");
+    setCommentFiles([]);
   }
 
   return (
@@ -199,6 +274,7 @@ function TicketDetail({ ticket, companySlug, phone, email, onBack, onUpdated }) 
         <p className="mt-1 text-xs text-slate-400">{ticket.subCategory ? `${ticket.subCategory} · ` : ""}{fmtDateTime(ticket.createdAt)}</p>
 
         <div className="mt-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{ticket.message}</div>
+        <AttachmentGrid attachments={ticket.attachments} buildUrl={attachmentUrl} />
 
         {isPendingClose ? (
           <div className="mt-4 flex items-start gap-2.5 rounded-xl border border-amber-200 bg-amber-50 p-3.5">
@@ -234,6 +310,7 @@ function TicketDetail({ ticket, companySlug, phone, email, onBack, onUpdated }) 
                     <span className="text-slate-400">{fmtDateTime(r.createdAt)}</span>
                   </div>
                   <p className="mt-1.5 text-sm text-slate-700">{r.message}</p>
+                  <AttachmentGrid attachments={r.attachments} buildUrl={attachmentUrl} />
                 </div>
               );
             })}
@@ -255,6 +332,7 @@ function TicketDetail({ ticket, companySlug, phone, email, onBack, onUpdated }) 
             value={commentText}
             onChange={(e) => setCommentText(e.target.value)}
           />
+          <FilePickerField files={commentFiles} onChange={setCommentFiles} />
           <button
             type="submit"
             disabled={busy === "comment" || !commentText.trim()}

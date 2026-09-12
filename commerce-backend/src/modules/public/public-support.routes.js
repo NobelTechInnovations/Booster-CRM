@@ -2,6 +2,7 @@ import { Router } from "express";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { simpleRateLimit } from "../../utils/simple-rate-limit.js";
+import { attachmentUpload, handleUploadErrors } from "../../utils/upload.js";
 import {
   createSupportTicket,
   listPublicTicketsByContact,
@@ -9,7 +10,13 @@ import {
   customerCommentOnTicket,
   customerCloseTicket,
   customerReopenTicket,
+  getPublicSupportAttachment,
 } from "../../repositories/support-ticket.repo.js";
+
+// Multipart body → req.body still gets its regular text fields (phone,
+// email, category, message, ...) alongside req.files — multer parses both
+// from the same multipart/form-data request.
+const uploadFiles = handleUploadErrors(attachmentUpload.array("files", 3));
 
 // No-login, customer-facing support tickets — same shape as
 // public-tracking.routes.js (rate-limited per IP, scoped by company slug,
@@ -57,14 +64,34 @@ publicSupportRoutes.get(
 publicSupportRoutes.post(
   "/:companySlug/tickets",
   createLimiter,
+  uploadFiles,
   asyncHandler(async (req, res) => {
     const { companySlug } = req.params;
     const { phone, email, category, subCategory, message } = req.body || {};
-    const result = await createSupportTicket({ companySlug, phone, email, category, subCategory, message });
+    const result = await createSupportTicket({ companySlug, phone, email, category, subCategory, message, files: req.files });
     if (result.error === "not_found") throw new HttpError(404, "Store not found");
     if (result.error === "message_required") throw new HttpError(400, "Please describe your issue");
     if (result.error === "invalid_category") throw new HttpError(400, "Select a valid category");
     res.status(201).json(result);
+  }),
+);
+
+// Re-validates ownership the same way every other public ticket action
+// does (phone/email must match the ticket) before ever streaming a single
+// byte — a guessed attachment id alone reveals nothing.
+publicSupportRoutes.get(
+  "/:companySlug/tickets/:ticketId/attachments/:attachmentId",
+  lookupLimiter,
+  asyncHandler(async (req, res) => {
+    const { companySlug, ticketId, attachmentId } = req.params;
+    const { phone, email } = req.query;
+    const result = await getPublicSupportAttachment({ companySlug, ticketId, attachmentId, phone, email });
+    if (result.error === "not_found") throw new HttpError(404, "Attachment not found");
+    if (result.error === "contact_required") throw new HttpError(400, "Enter a phone number or email");
+    const { attachment } = result;
+    res.set("Content-Type", attachment.mimeType);
+    res.set("Content-Disposition", `inline; filename="${encodeURIComponent(attachment.filename)}"`);
+    res.send(attachment.data.buffer ? Buffer.from(attachment.data.buffer) : attachment.data);
   }),
 );
 
@@ -77,10 +104,11 @@ publicSupportRoutes.post(
 publicSupportRoutes.post(
   "/:companySlug/tickets/:ticketId/comment",
   createLimiter,
+  uploadFiles,
   asyncHandler(async (req, res) => {
     const { companySlug, ticketId } = req.params;
     const { phone, email, message } = req.body || {};
-    const result = await customerCommentOnTicket({ companySlug, ticketId, phone, email, message });
+    const result = await customerCommentOnTicket({ companySlug, ticketId, phone, email, message, files: req.files });
     if (result.error === "not_found") throw new HttpError(404, "Ticket not found");
     if (result.error === "contact_required") throw new HttpError(400, "Enter a phone number or email");
     if (result.error === "message_required") throw new HttpError(400, "Please enter a message");

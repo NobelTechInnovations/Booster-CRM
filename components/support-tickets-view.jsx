@@ -2,12 +2,76 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { AlertTriangle, Headset, Loader2, Mail, MessageSquareText, Phone, RefreshCw, Send, X } from "lucide-react";
+import { AlertTriangle, Headset, Loader2, Mail, MessageSquareText, Paperclip, Phone, Plus, RefreshCw, Send, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { listSupportTickets, getSupportTicket, replySupportTicket, updateSupportTicketStatus } from "@/lib/api";
+import { listSupportTickets, getSupportTicket, replySupportTicket, updateSupportTicketStatus, staffSupportAttachmentUrl } from "@/lib/api";
 import { useSilentPoll } from "@/lib/public-page";
+
+const MAX_ATTACHMENTS = 3;
+
+// Same picker/preview shape as the public support-ticket-view.jsx's own
+// FilePickerField — kept as its own small copy here rather than a shared
+// import since the two pages (public vs staff-authenticated) live in
+// entirely separate route trees with no existing shared-components folder
+// between them.
+function FilePickerField({ files, onChange }) {
+  function handlePick(e) {
+    const picked = Array.from(e.target.files || []);
+    onChange([...files, ...picked].slice(0, MAX_ATTACHMENTS));
+    e.target.value = "";
+  }
+  return (
+    <div className="mt-2">
+      {files.length < MAX_ATTACHMENTS ? (
+        <label className="flex h-8 w-fit cursor-pointer items-center gap-1.5 rounded-lg border border-dashed border-[var(--line)] px-2.5 text-xs font-semibold text-slate-500 transition hover:border-indigo-300 hover:text-indigo-600">
+          <Plus size={12} /> Attach file
+          <input type="file" accept="image/*,video/*,.pdf" multiple className="hidden" onChange={handlePick} />
+        </label>
+      ) : null}
+      {files.length ? (
+        <ul className="mt-1.5 space-y-1">
+          {files.map((f, idx) => (
+            <li key={`${f.name}-${idx}`} className="flex items-center justify-between rounded-lg bg-slate-50 px-2.5 py-1 text-[11px] text-slate-600">
+              <span className="truncate">{f.name}</span>
+              <button type="button" onClick={() => onChange(files.filter((_, i) => i !== idx))} className="ml-2 shrink-0 text-slate-400 hover:text-rose-600">
+                <X size={12} />
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+function AttachmentThumb({ attachment, url }) {
+  if (attachment.mimeType?.startsWith("image/")) {
+    return (
+      <a href={url} target="_blank" rel="noreferrer" className="block h-16 w-16 shrink-0 overflow-hidden rounded-lg border border-[var(--line)]">
+        <img src={url} alt={attachment.filename} className="h-full w-full object-cover" />
+      </a>
+    );
+  }
+  if (attachment.mimeType?.startsWith("video/")) {
+    return <video src={url} controls className="max-h-40 w-full max-w-[220px] rounded-lg border border-[var(--line)] bg-black" />;
+  }
+  return (
+    <a href={url} target="_blank" rel="noreferrer" className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-2.5 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-50">
+      <Paperclip size={12} /> {attachment.filename}
+    </a>
+  );
+}
+
+function AttachmentGrid({ attachments, buildUrl }) {
+  if (!attachments?.length) return null;
+  return (
+    <div className="mt-2 flex flex-wrap gap-2">
+      {attachments.map((a) => <AttachmentThumb key={a.id} attachment={a} url={buildUrl(a.id)} />)}
+    </div>
+  );
+}
 
 const STATUS_TABS = [
   { key: "", label: "All" },
@@ -38,9 +102,11 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
   const [ticket, setTicket] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [reply, setReply] = useState("");
+  const [replyFiles, setReplyFiles] = useState([]);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState("");
   const [updatingStatus, setUpdatingStatus] = useState(false);
+  const attachmentUrl = (attachmentId) => staffSupportAttachmentUrl(ticketId, attachmentId);
 
   const load = useCallback(
     async ({ silent = false } = {}) => {
@@ -71,9 +137,10 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
     setSending(true);
     setError("");
     try {
-      const res = await replySupportTicket(ticketId, reply.trim());
+      const res = await replySupportTicket(ticketId, reply.trim(), replyFiles);
       setTicket(res.ticket);
       setReply("");
+      setReplyFiles([]);
       onUpdated(res.ticket);
     } catch (err) {
       setError(err.message);
@@ -140,9 +207,10 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
 
             <div className="flex-1 overflow-y-auto px-4 py-4">
               <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Original message</p>
-              <div className="mb-5 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{ticket.message}</div>
+              <div className="mb-1 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">{ticket.message}</div>
+              <AttachmentGrid attachments={ticket.attachments} buildUrl={attachmentUrl} />
 
-              <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Replies ({ticket.replies?.length || 0})</p>
+              <p className="mb-2 mt-5 text-xs font-semibold uppercase tracking-wide text-slate-400">Replies ({ticket.replies?.length || 0})</p>
               {ticket.replies?.length ? (
                 <div className="space-y-2.5">
                   {ticket.replies.map((r) => {
@@ -154,6 +222,7 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
                           <span className="text-slate-400">{fmtDateTime(r.createdAt)}</span>
                         </div>
                         <p className="mt-1.5 text-sm text-slate-700">{r.message}</p>
+                        <AttachmentGrid attachments={r.attachments} buildUrl={attachmentUrl} />
                       </div>
                     );
                   })}
@@ -177,6 +246,7 @@ function TicketDrawer({ ticketId, onClose, onUpdated }) {
                   {sending ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
                 </Button>
               </div>
+              <FilePickerField files={replyFiles} onChange={setReplyFiles} />
               {!ticket.contactEmail ? (
                 <p className="mt-1.5 text-[11px] text-slate-400">No email on file for this contact — your reply is saved here but won&apos;t be emailed.</p>
               ) : null}

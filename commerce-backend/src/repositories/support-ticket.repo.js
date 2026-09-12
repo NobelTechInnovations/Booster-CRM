@@ -1,5 +1,6 @@
 import { isMongoConnected } from "../config/database.js";
 import { SupportTicket } from "../models/support-ticket.model.js";
+import { SupportAttachment } from "../models/support-attachment.model.js";
 import { getActiveCompanyBySlug, phoneCandidates, companyIdFilter } from "./public-tracking.repo.js";
 import { getConnectedEmailChannel } from "./channel.repo.js";
 import { sendCompanySmtpEmail } from "../utils/smtp-mailer.js";
@@ -79,6 +80,55 @@ async function notifyCustomer({ companyId, ticket, replyMessage, notice }) {
   }
 }
 
+// ─── Attachments ─────────────────────────────────────────────────────────────
+// A customer's (or staff's) uploaded photo/video/PDF — see
+// support-attachment.model.js for why these live in their own collection
+// rather than embedded on the ticket. Shared by both the public and staff
+// sides of this file: creation (saveAttachments), and merging metadata onto
+// whatever shape a ticket is about to be returned in (mergeAttachments) —
+// works for both the public "summary" shape (ticket.id, reply.id) and the
+// staff-side raw Mongoose shape (ticket._id, reply._id).
+
+function attachmentMeta(a) {
+  return { id: a._id, filename: a.filename, mimeType: a.mimeType, size: a.size, uploadedBy: a.uploadedBy, createdAt: a.createdAt };
+}
+
+async function saveAttachments({ companyId, ticketId, replyId, files, uploadedBy }) {
+  if (!files?.length) return;
+  await SupportAttachment.insertMany(
+    files.map((f) => ({
+      companyId, ticketId, replyId: replyId || null,
+      filename: f.originalname, mimeType: f.mimetype, size: f.size, data: f.buffer, uploadedBy,
+    })),
+  );
+}
+
+// Deliberately NOT called from the list endpoints (listPublicTicketsByContact,
+// listSupportTickets) — a list view doesn't need attachment content, and
+// doing this per-ticket there would be an N+1 query for no benefit.
+async function mergeAttachments(ticketObj) {
+  const ticketId = ticketObj.id || ticketObj._id;
+  if (!isMongoConnected() || !ticketId) { ticketObj.attachments = []; return ticketObj; }
+
+  const rows = await SupportAttachment.find({ ticketId }).select("replyId filename mimeType size uploadedBy createdAt").lean();
+  const byReply = new Map();
+  const forMessage = [];
+  for (const a of rows) {
+    const meta = attachmentMeta(a);
+    if (a.replyId) {
+      const key = String(a.replyId);
+      if (!byReply.has(key)) byReply.set(key, []);
+      byReply.get(key).push(meta);
+    } else {
+      forMessage.push(meta);
+    }
+  }
+
+  ticketObj.attachments = forMessage;
+  ticketObj.replies = (ticketObj.replies || []).map((r) => ({ ...r, attachments: byReply.get(String(r.id || r._id)) || [] }));
+  return ticketObj;
+}
+
 // ─── Public (no-login) ──────────────────────────────────────────────────────
 
 const CATEGORIES = ["order_issue", "payment_refund", "shipping", "product", "general"];
@@ -93,7 +143,7 @@ function publicTicketSummary(t) {
     status: t.status,
     pendingCloseAt: t.pendingCloseAt || null,
     createdAt: t.createdAt,
-    replies: (t.replies || []).map((r) => ({ authorName: r.authorName, authorType: r.authorType || "staff", message: r.message, createdAt: r.createdAt })),
+    replies: (t.replies || []).map((r) => ({ id: r._id, authorName: r.authorName, authorType: r.authorType || "staff", message: r.message, createdAt: r.createdAt })),
   };
 }
 
@@ -124,7 +174,7 @@ async function findOwnedTicketDoc({ companySlug, ticketId, phone, email }) {
 // Support tickets are Mongo-only, no in-memory dev fallback — same
 // reasoning as data-export.repo.js: a real customer-facing record, not
 // something worth simulating for a Mongo-less local dev run.
-export async function createSupportTicket({ companySlug, phone, email, category, subCategory, message }) {
+export async function createSupportTicket({ companySlug, phone, email, category, subCategory, message, files }) {
   if (!isMongoConnected()) return { error: "not_found" };
   const company = await getActiveCompanyBySlug(companySlug);
   if (!company) return { error: "not_found" };
@@ -149,9 +199,10 @@ export async function createSupportTicket({ companySlug, phone, email, category,
   doc.ticketNumber = `TCK-${String(doc._id).slice(-6).toUpperCase()}`;
   await doc.save();
 
+  await saveAttachments({ companyId: company._id, ticketId: doc._id, replyId: null, files, uploadedBy: "customer" });
   await notifyCustomer({ companyId: company._id, ticket: doc });
 
-  return { ticket: publicTicketSummary(doc.toObject()) };
+  return { ticket: await mergeAttachments(publicTicketSummary(doc.toObject())) };
 }
 
 // General-inquiry tickets (no contact info) are never returned here by
@@ -185,7 +236,20 @@ export async function getPublicTicketDetail({ companySlug, ticketId, phone, emai
   const found = await findOwnedTicketDoc({ companySlug, ticketId, phone, email });
   if (found.error) return found;
   const { company, ticket } = found;
-  return { company: { name: company.name, slug: company.slug, logoUrl: company.logoUrl || "" }, ticket: publicTicketSummary(ticket.toObject()) };
+  return { company: { name: company.name, slug: company.slug, logoUrl: company.logoUrl || "" }, ticket: await mergeAttachments(publicTicketSummary(ticket.toObject())) };
+}
+
+// Re-validates ownership (same findOwnedTicketDoc as every other public
+// mutation) before ever touching the attachment's bytes — a guessed
+// attachment id alone reveals nothing without also knowing the contact
+// the parent ticket belongs to.
+export async function getPublicSupportAttachment({ companySlug, ticketId, attachmentId, phone, email }) {
+  const found = await findOwnedTicketDoc({ companySlug, ticketId, phone, email });
+  if (found.error) return found;
+  if (!isMongoConnected()) return { error: "not_found" };
+  const attachment = await SupportAttachment.findOne({ _id: attachmentId, ticketId }).select("+data").lean();
+  if (!attachment) return { error: "not_found" };
+  return { attachment };
 }
 
 // Customer adds a follow-up message to their own ticket — the one public
@@ -194,15 +258,18 @@ export async function getPublicTicketDetail({ companySlug, ticketId, phone, emai
 // that. Commenting while a staff-requested close is on hold reads as an
 // objection — cancels the hold. Commenting on an already-closed ticket
 // picks the conversation back up, same effect.
-export async function customerCommentOnTicket({ companySlug, ticketId, phone, email, message }) {
+export async function customerCommentOnTicket({ companySlug, ticketId, phone, email, message, files }) {
   const cleanMessage = String(message || "").trim();
   if (!cleanMessage) return { error: "message_required" };
 
   const found = await findOwnedTicketDoc({ companySlug, ticketId, phone, email });
   if (found.error) return found;
-  const { ticket } = found;
+  const { company, ticket } = found;
 
   ticket.replies.push({ authorName: "Customer", authorType: "customer", message: cleanMessage });
+  // Mongoose assigns a subdocument its _id at push time, not at save time —
+  // safe to read it off immediately for the attachments below.
+  const newReply = ticket.replies[ticket.replies.length - 1];
 
   if (ticket.status === "pending_close" || ticket.status === "closed" || ticket.status === "open") {
     ticket.status = "in_progress";
@@ -210,7 +277,9 @@ export async function customerCommentOnTicket({ companySlug, ticketId, phone, em
   }
   await ticket.save();
 
-  return { ticket: publicTicketSummary(ticket.toObject()) };
+  await saveAttachments({ companyId: company._id, ticketId: ticket._id, replyId: newReply._id, files, uploadedBy: "customer" });
+
+  return { ticket: await mergeAttachments(publicTicketSummary(ticket.toObject())) };
 }
 
 // One action covers both "customer closes their own ticket outright" and
@@ -221,7 +290,7 @@ export async function customerCloseTicket({ companySlug, ticketId, phone, email 
   if (found.error) return found;
   const { company, ticket } = found;
 
-  if (ticket.status === "closed") return { ticket: publicTicketSummary(ticket.toObject()) }; // already closed — no-op, not an error
+  if (ticket.status === "closed") return { ticket: await mergeAttachments(publicTicketSummary(ticket.toObject())) }; // already closed — no-op, not an error
 
   ticket.status = "closed";
   ticket.pendingCloseAt = undefined;
@@ -229,7 +298,7 @@ export async function customerCloseTicket({ companySlug, ticketId, phone, email 
 
   await notifyCustomer({ companyId: company._id, ticket: ticket.toObject(), notice: "closed" });
 
-  return { ticket: publicTicketSummary(ticket.toObject()) };
+  return { ticket: await mergeAttachments(publicTicketSummary(ticket.toObject())) };
 }
 
 export async function customerReopenTicket({ companySlug, ticketId, phone, email }) {
@@ -245,7 +314,7 @@ export async function customerReopenTicket({ companySlug, ticketId, phone, email
 
   await notifyCustomer({ companyId: company._id, ticket: ticket.toObject(), notice: "reopened" });
 
-  return { ticket: publicTicketSummary(ticket.toObject()) };
+  return { ticket: await mergeAttachments(publicTicketSummary(ticket.toObject())) };
 }
 
 // Called by support-ticket-auto-close.job.js (a plain cron, same shape as
@@ -282,10 +351,23 @@ export async function listSupportTickets({ companyId, status }) {
 
 export async function getSupportTicket({ companyId, ticketId }) {
   if (!isMongoConnected()) return null;
-  return SupportTicket.findOne({ _id: ticketId, companyId: companyIdFilter(companyId) }).lean();
+  const ticket = await SupportTicket.findOne({ _id: ticketId, companyId: companyIdFilter(companyId) }).lean();
+  if (!ticket) return null;
+  return mergeAttachments(ticket);
 }
 
-export async function replySupportTicket({ companyId, ticketId, message, authorName }) {
+// Scoped by companyId (the route already requires auth + support:manage) —
+// no separate contact re-validation needed the way the public side does.
+export async function getStaffSupportAttachment({ companyId, ticketId, attachmentId }) {
+  if (!isMongoConnected()) return { error: "not_found" };
+  const ticket = await SupportTicket.findOne({ _id: ticketId, companyId: companyIdFilter(companyId) }).select("_id").lean();
+  if (!ticket) return { error: "not_found" };
+  const attachment = await SupportAttachment.findOne({ _id: attachmentId, ticketId }).select("+data").lean();
+  if (!attachment) return { error: "not_found" };
+  return { attachment };
+}
+
+export async function replySupportTicket({ companyId, ticketId, message, authorName, files }) {
   if (!isMongoConnected()) return { error: "Ticket not found" };
   const cleanMessage = String(message || "").trim();
   if (!cleanMessage) return { error: "Reply message is required" };
@@ -294,6 +376,7 @@ export async function replySupportTicket({ companyId, ticketId, message, authorN
   if (!ticket) return { error: "Ticket not found" };
 
   ticket.replies.push({ authorName: authorName || "Support", authorType: "staff", message: cleanMessage });
+  const newReply = ticket.replies[ticket.replies.length - 1];
   // A reply is real progress — auto-advance out of "open", but never
   // downgrade a ticket a company already marked resolved/closed just
   // because they left a closing note on it. A staff reply while a close
@@ -302,9 +385,10 @@ export async function replySupportTicket({ companyId, ticketId, message, authorN
   if (ticket.status === "open") ticket.status = "in_progress";
   await ticket.save();
 
+  await saveAttachments({ companyId, ticketId: ticket._id, replyId: newReply._id, files, uploadedBy: "staff" });
   await notifyCustomer({ companyId, ticket: ticket.toObject(), replyMessage: cleanMessage });
 
-  return { ticket: ticket.toObject() };
+  return { ticket: await mergeAttachments(ticket.toObject()) };
 }
 
 export async function updateSupportTicketStatus({ companyId, ticketId, status }) {
@@ -324,11 +408,11 @@ export async function updateSupportTicketStatus({ companyId, ticketId, status })
     ticket.pendingCloseAt = new Date();
     await ticket.save();
     await notifyCustomer({ companyId, ticket: ticket.toObject(), notice: "pending_close" });
-    return { ticket: ticket.toObject() };
+    return { ticket: await mergeAttachments(ticket.toObject()) };
   }
 
   ticket.status = status;
   if (status !== "pending_close") ticket.pendingCloseAt = undefined;
   await ticket.save();
-  return { ticket: ticket.toObject() };
+  return { ticket: await mergeAttachments(ticket.toObject()) };
 }
