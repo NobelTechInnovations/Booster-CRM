@@ -42,6 +42,7 @@ import {
   Webhook,
   Headset,
   BookOpen,
+  Megaphone,
 } from "lucide-react";
 import {
   clearSession,
@@ -84,6 +85,7 @@ const NAV_GROUPS = [
     label: "Finance", icon: CircleDollarSign, href: "/panel/finance", children: [
       { label: "Overview", icon: CircleDollarSign, href: "/panel/finance" },
       { label: "Ads & ROAS", icon: Activity, href: "/panel/ads" },
+      { label: "Ads Manager", icon: Megaphone, href: "/panel/ads-manager" },
       { label: "Analytics", icon: BarChart2, href: "/panel/finance?tab=sales" },
     ]
   },

@@ -51,7 +51,15 @@ export const env = {
     appSecret: process.env.META_APP_SECRET || "",
     apiVersion: process.env.META_API_VERSION || "v21.0",
     appUrl: process.env.META_APP_URL || process.env.SHOPIFY_APP_URL || `http://localhost:${process.env.PORT || 4000}`,
-    scopes: process.env.META_SCOPES || "ads_read,business_management",
+    // ads_management (not just ads_read) is required for the Ads Manager's
+    // write side — editing a campaign/ad set's budget or status, swapping
+    // an ad's creative. Added alongside the pre-existing read/business
+    // scopes; any company that connected Meta Ads before this only has a
+    // token scoped to ads_read, and will need to disconnect and reconnect
+    // (Channels → Ads) once to pick up the new scope before any edit
+    // action here will work — same one-time reconnect this app already
+    // needed once before for Shopify's fulfillment-orders scope.
+    scopes: process.env.META_SCOPES || "ads_read,ads_management,business_management",
     // Facebook Login for Business configuration for WhatsApp Embedded
     // Signup (not a secret — Meta's own JS SDK docs pass config ids
     // directly in client-side code). Defaults to the "WhatsApp Embedded

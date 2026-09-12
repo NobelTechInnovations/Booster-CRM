@@ -3,6 +3,7 @@ import { env } from "../../config/env.js";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
+import { attachmentUpload, handleUploadErrors } from "../../utils/upload.js";
 import { listAdsChannels, getChannelForSync } from "../../repositories/channel.repo.js";
 import { getAdsSummary, linkAdProduct, listAdInsights } from "../../repositories/ad-insight.repo.js";
 import {
@@ -15,8 +16,23 @@ import {
   getMetaAdSpendToday,
   getAdsDemographics,
 } from "./meta.service.js";
+import {
+  listCampaigns,
+  listAdSets,
+  listAds,
+  updateCampaign,
+  updateAdSet,
+  updateAdStatus,
+  updateAdCreative,
+} from "./ads-manager.service.js";
 
 export const adsRoutes = Router();
+
+// Reused as-is — same 12MB/image-or-video-or-PDF cap as support ticket
+// attachments, though only ever the "image" branch actually applies here
+// (a Meta ad creative image, not a video/PDF); no need for a second,
+// near-identical multer config just for this one upload.
+const uploadCreativeImage = handleUploadErrors(attachmentUpload.single("image"));
 
 // ─── Meta OAuth ──────────────────────────────────────────────────────────────
 
@@ -217,5 +233,104 @@ adsRoutes.post(
     });
     if (result.error) throw new HttpError(404, result.error);
     res.json({ message: "Ad linked to product", insight: result.insight });
+  }),
+);
+
+// ─── Ads Manager — list & edit live campaigns/ad sets/ads ───────────────────
+// Reads only need requireAuth (same bar as /channels, /spend-today,
+// /demographics above); every write additionally needs ads:manage, same
+// as connecting/syncing does.
+
+adsRoutes.get(
+  "/:channelId/campaigns",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await listCampaigns({ companyId: req.auth.companyId, channelId: req.params.channelId });
+    res.json(result);
+  }),
+);
+
+adsRoutes.get(
+  "/:channelId/campaigns/:campaignId/adsets",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await listAdSets({ companyId: req.auth.companyId, channelId: req.params.channelId, campaignId: req.params.campaignId });
+    res.json(result);
+  }),
+);
+
+adsRoutes.get(
+  "/:channelId/adsets/:adSetId/ads",
+  requireAuth,
+  asyncHandler(async (req, res) => {
+    const result = await listAds({ companyId: req.auth.companyId, channelId: req.params.channelId, adSetId: req.params.adSetId });
+    res.json(result);
+  }),
+);
+
+adsRoutes.patch(
+  "/:channelId/campaigns/:campaignId",
+  requireAuth,
+  requirePermission("ads:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await updateCampaign({
+      companyId: req.auth.companyId,
+      channelId: req.params.channelId,
+      campaignId: req.params.campaignId,
+      status: req.body?.status,
+      dailyBudget: req.body?.dailyBudget,
+      lifetimeBudget: req.body?.lifetimeBudget,
+    });
+    res.json(result);
+  }),
+);
+
+adsRoutes.patch(
+  "/:channelId/adsets/:adSetId",
+  requireAuth,
+  requirePermission("ads:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await updateAdSet({
+      companyId: req.auth.companyId,
+      channelId: req.params.channelId,
+      adSetId: req.params.adSetId,
+      status: req.body?.status,
+      dailyBudget: req.body?.dailyBudget,
+      lifetimeBudget: req.body?.lifetimeBudget,
+      targeting: req.body?.targeting,
+    });
+    res.json(result);
+  }),
+);
+
+adsRoutes.patch(
+  "/:channelId/ads/:adId",
+  requireAuth,
+  requirePermission("ads:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await updateAdStatus({
+      companyId: req.auth.companyId,
+      channelId: req.params.channelId,
+      adId: req.params.adId,
+      status: req.body?.status,
+    });
+    res.json(result);
+  }),
+);
+
+adsRoutes.put(
+  "/:channelId/ads/:adId/creative",
+  requireAuth,
+  requirePermission("ads:manage"),
+  uploadCreativeImage,
+  asyncHandler(async (req, res) => {
+    const result = await updateAdCreative({
+      companyId: req.auth.companyId,
+      channelId: req.params.channelId,
+      adId: req.params.adId,
+      caption: req.body?.caption,
+      imageFile: req.file,
+    });
+    res.json(result);
   }),
 );

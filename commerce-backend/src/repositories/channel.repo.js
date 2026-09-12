@@ -53,9 +53,22 @@ export async function listChannels(companyId, { channelType } = {}) {
     .map(withoutCredentials);
 }
 
+// The single most central channel lookup in this app — every sync path
+// (Shopify, Amazon, WhatsApp, Meta Ads, every shipping provider) goes
+// through this. companyId on Channel is Mixed (some rows store a plain
+// string — e.g. anything created from req.auth.companyId, which a JWT
+// always serializes to a string — others a real ObjectId), so the bare
+// equality match this used to do silently returned null for a channel
+// stored the other way. Same $in-both-forms fix already used throughout
+// order.repo.js/public-tracking.repo.js/getConnectedEmailChannel for the
+// identical field.
 export async function getChannelForSync({ channelId, companyId }) {
   if (isMongoConnected()) {
-    return Channel.findOne({ _id: channelId, companyId })
+    const compIdStr = String(companyId);
+    const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
+      ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
+      : compIdStr;
+    return Channel.findOne({ _id: channelId, companyId: compFilter })
       .select("+credentials.accessToken +credentials.pageAccessToken +credentials.refreshToken +credentials.token +credentials.tokenExpiresAt +credentials.username +credentials.password +credentials.apiKey +credentials.apiSecret")
       .lean();
   }

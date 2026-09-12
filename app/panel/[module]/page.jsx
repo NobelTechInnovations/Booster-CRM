@@ -13,6 +13,7 @@ import { OrdersView } from "@/components/orders-view";
 import { CustomersView } from "@/components/customers-view";
 import { LeadsView } from "@/components/leads-view";
 import { SupportTicketsView } from "@/components/support-tickets-view";
+import { AdsManagerView } from "@/components/ads-manager-view";
 import { GuideView } from "@/components/guide-view";
 import { InventoryView } from "@/components/inventory-view";
 import { AssetsView } from "@/components/assets-view";
@@ -101,6 +102,7 @@ export default function ModulePage({ params }) {
     "guide": "Guide",
     "finance": "Finance",
     "ads": "Ads",
+    "ads-manager": "AdsManager",
     "social": "Social",
     "whatsapp": "WhatsApp",
     "smart-whatsapp": "SmartWhatsApp",
@@ -194,6 +196,10 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Ads") {
     return <FinanceView defaultTab="ads" />;
+  }
+
+  if (activeViewName === "AdsManager") {
+    return <AdsManagerView />;
   }
 
   if (activeViewName === "Social") {
