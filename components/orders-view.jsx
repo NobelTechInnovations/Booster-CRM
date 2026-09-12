@@ -14,6 +14,7 @@ import {
   ExternalLink,
   FileEdit,
   FileText,
+  History,
   Info,
   Loader2,
   MapPin,
@@ -375,6 +376,23 @@ function InvoiceModal({ order, company, onClose }) {
     </div>
   );
 }
+
+// Maps a computed order stage (utils/order-stage.js on the backend) to a
+// TimelineStep tone — used to color Status History entries consistently
+// with the hand-tuned tones the Timeline section above already uses for
+// the same stages.
+const STAGE_TONE = {
+  draft: "slate",
+  created: "slate",
+  confirmed: "blue",
+  declined: "rose",
+  fulfillment_assigned: "indigo",
+  shipped: "emerald",
+  delivered: "emerald",
+  returned: "gold",
+  refunded: "amber",
+  cancelled: "rose",
+};
 
 function TimelineStep({ label, sublabel, date, done, tone = "slate" }) {
   const dotClass = {
@@ -1021,6 +1039,33 @@ function OrderDetailModal({ order, siblingOrders, onClose, onOpenOrder, onGenera
                 )}
               </ol>
             </section>
+
+            {/* Status History — an exact log of every real status change,
+                complementing the friendlier derived Timeline above with
+                precise timestamps. Appended automatically whenever the
+                order's computed stage changes, from either an app action
+                (ship/deliver/cancel/RTO/refund) or a raw Shopify/Amazon
+                webhook resync — see statusHistory on the SyncedOrder model. */}
+            {order.statusHistory?.length ? (
+              <section className="rounded-xl border border-[var(--line)] p-4">
+                <div className="mb-3 flex items-center gap-2">
+                  <History size={15} className="text-indigo-600" />
+                  <h3 className="text-sm  text-slate-800">Status History</h3>
+                </div>
+                <ol className="space-y-3">
+                  {[...order.statusHistory].reverse().map((entry, idx) => (
+                    <TimelineStep
+                      key={entry._id || idx}
+                      label={entry.label}
+                      sublabel={entry.note || undefined}
+                      date={entry.at}
+                      done
+                      tone={STAGE_TONE[entry.stage] || "slate"}
+                    />
+                  ))}
+                </ol>
+              </section>
+            ) : null}
           </div>
         </div>
 

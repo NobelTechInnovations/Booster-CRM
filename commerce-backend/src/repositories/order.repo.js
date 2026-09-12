@@ -9,7 +9,7 @@ import { memory, id, clone, now, toDate, toNumber, fullName } from "./memory-sto
 import { listSkuCosts } from "./sku-cost.repo.js";
 import { listAssetMappings, listAssets } from "./asset.repo.js";
 import { parseUtmFromOrder } from "../utils/utm.js";
-import { computeOrderStage } from "../utils/order-stage.js";
+import { computeOrderStage, orderStageLabel } from "../utils/order-stage.js";
 
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
@@ -480,7 +480,19 @@ export async function saveSyncedShopifyData({ companyId, channelId, shop, orders
   return { orders: normOrders, products: normProds, customers: normCusts };
 }
 
-// Upsert a single order (used by webhook handlers)
+// Every entry in SyncedOrder.statusHistory looks like this — see that
+// field's own model comment for why it's keyed on computed *stage*
+// (utils/order-stage.js) rather than a raw field name.
+function buildStatusHistoryEntry(stage, note) {
+  return { stage, label: orderStageLabel(stage), note: note || "", at: new Date() };
+}
+
+// Upsert a single order (used by webhook handlers) — also the place a raw
+// Shopify/Amazon resync (a merchant cancelling directly in Shopify, an RTO
+// tag appearing, a refund recorded on Shopify's side) first becomes
+// visible to us, so it's one of the two places (with updateOrderOmsStatus
+// below) that appends to statusHistory whenever the order's computed stage
+// actually changes.
 export async function upsertSingleOrder({ companyId, channelId, provider, shop, order }) {
   const normalized = provider === "shopify"
     ? normalizeOrder({ companyId, channelId, provider, shop, order })
@@ -491,16 +503,34 @@ export async function upsertSingleOrder({ companyId, channelId, provider, shop, 
   const { omsStatus, ...updateFields } = normalized;
 
   if (isMongoConnected()) {
-    return SyncedOrder.findOneAndUpdate(
-      orderFilter(normalized),
+    const filter = orderFilter(normalized);
+    const before = await SyncedOrder.findOne(filter).select("omsStatus cancelledAt financialStatus isRTO isDraft").lean();
+    const beforeStage = before ? computeOrderStage(before) : null;
+
+    const updated = await SyncedOrder.findOneAndUpdate(
+      filter,
       { $set: updateFields, $setOnInsert: { omsStatus } },
       { new: true, upsert: true },
     ).lean();
+
+    const afterStage = computeOrderStage(updated);
+    if (!before) {
+      await SyncedOrder.updateOne({ _id: updated._id }, { $push: { statusHistory: buildStatusHistoryEntry(afterStage, "Order synced") } });
+    } else if (afterStage !== beforeStage) {
+      await SyncedOrder.updateOne({ _id: updated._id }, { $push: { statusHistory: buildStatusHistoryEntry(afterStage, "") } });
+    }
+    return updated;
   }
 
   const key = `${companyId}:${channelId}:${normalized.externalId}`;
   const existing = memory.orders.get(key);
-  const stored = existing ? { ...existing, ...updateFields } : { _id: id(), ...normalized };
+  const beforeStage = existing ? computeOrderStage(existing) : null;
+  const stored = existing ? { ...existing, ...updateFields } : { _id: id(), ...normalized, statusHistory: [] };
+  const afterStage = computeOrderStage(stored);
+  stored.statusHistory = existing?.statusHistory ? [...existing.statusHistory] : [];
+  if (!existing || afterStage !== beforeStage) {
+    stored.statusHistory.push(buildStatusHistoryEntry(afterStage, existing ? "" : "Order synced"));
+  }
   memory.orders.set(key, clone(stored));
   return clone(stored);
 }
@@ -684,22 +714,38 @@ export async function getOrderByExternalId({ companyId, shopifyOrderId }) {
   return null;
 }
 
+// The other of the two statusHistory choke points (with upsertSingleOrder
+// above) — every app-driven status change (ship, deliver, cancel, RTO via
+// courier tracking, the cancel/refund webhook handlers) goes through here.
 export async function updateOrderOmsStatus({ companyId, shopifyOrderId, update }) {
   if (isMongoConnected()) {
     const compIdStr = String(companyId || "");
     const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
       ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
       : compIdStr;
-    return SyncedOrder.findOneAndUpdate(
-      { companyId: compFilter, externalId: shopifyOrderId },
-      { $set: update },
-      { new: true },
-    ).lean();
+    const filter = { companyId: compFilter, externalId: shopifyOrderId };
+
+    const before = await SyncedOrder.findOne(filter).select("omsStatus cancelledAt financialStatus isRTO isDraft").lean();
+    const beforeStage = before ? computeOrderStage(before) : null;
+
+    const updated = await SyncedOrder.findOneAndUpdate(filter, { $set: update }, { new: true }).lean();
+    if (!updated) return null;
+
+    const afterStage = computeOrderStage(updated);
+    if (before && afterStage !== beforeStage) {
+      await SyncedOrder.updateOne({ _id: updated._id }, { $push: { statusHistory: buildStatusHistoryEntry(afterStage, "") } });
+    }
+    return updated;
   }
 
   for (const order of memory.orders.values()) {
     if (String(order.companyId) === String(companyId) && order.externalId === shopifyOrderId) {
+      const beforeStage = computeOrderStage(order);
       Object.assign(order, update, { updatedAt: now() });
+      const afterStage = computeOrderStage(order);
+      if (afterStage !== beforeStage) {
+        order.statusHistory = [...(order.statusHistory || []), buildStatusHistoryEntry(afterStage, "")];
+      }
       return clone(order);
     }
   }
@@ -1347,11 +1393,22 @@ export async function getOrdersInRange({ companyId, from, to, channelId }) {
     const compFilter = mongoose.Types.ObjectId.isValid(compIdStr)
       ? { $in: [compIdStr, new mongoose.Types.ObjectId(compIdStr)] }
       : compIdStr;
+    // channelId on SyncedOrder is Mixed (some rows store it as a plain
+    // string, some as a real ObjectId — same reason as companyId above),
+    // so a bare equality match against a caller-supplied string silently
+    // matched nothing for rows stored the other way. Found live via the
+    // Reports channel filter returning 0 orders for a channel that very
+    // much had some — same $in-both-forms fix used throughout this file
+    // and public-tracking.repo.js for the identical field.
+    const chanIdStr = channelId ? String(channelId) : "";
+    const chanFilter = chanIdStr && mongoose.Types.ObjectId.isValid(chanIdStr)
+      ? { $in: [chanIdStr, new mongoose.Types.ObjectId(chanIdStr)] }
+      : chanIdStr;
     const filter = {
       companyId: compFilter,
       shopifyCreatedAt: { $gte: start, $lte: end },
       isTestOrder: { $ne: true },
-      ...(channelId ? { channelId } : {}),
+      ...(chanIdStr ? { channelId: chanFilter } : {}),
     };
     const orders = await SyncedOrder.find(filter).sort({ shopifyCreatedAt: 1 }).limit(20000).lean();
     return { orders: deduplicateRecords(orders).map(applyManualAdjustments), start, end };

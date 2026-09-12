@@ -489,6 +489,20 @@ function SalesCharts({ salesTrend, channelMix, period, periodSales, periodOrderC
   );
 }
 
+// Human labels for every non-sales channelType — shown as a small kicker
+// badge instead of pretending a shipping/ads/social/WhatsApp/email
+// connection is a sales channel with "Orders"/"Revenue" (it never has
+// either; those fields just sat at 0/₹0.00 before this, reading as
+// broken rather than simply "not applicable to this kind of channel").
+const CHANNEL_TYPE_LABELS = {
+  sales: "Sales Channel",
+  shipping: "Shipping Partner",
+  ads: "Ads Account",
+  social: "Social Account",
+  whatsapp: "WhatsApp",
+  email: "Email",
+};
+
 function ChannelsPanel({
   connectedChannels,
   setConnectedChannels,
@@ -496,12 +510,23 @@ function ChannelsPanel({
   setChannelsError,
   isLoadingChannels,
   onRefreshData,
+  // Restricts this panel to one channelType — the dashboard home page
+  // passes "sales" so "Active Integrations" there only ever shows real
+  // storefronts (the Orders/Revenue metrics genuinely mean something for
+  // those); the full Channels page passes nothing and sees everything.
+  channelTypeFilter,
+  title = "Active Integrations",
+  subtitle = "All connected channels and their sync health.",
 }) {
   const [showConnect, setShowConnect] = useState(false);
   const [shop, setShop] = useState(defaultShopifyShop);
   const [connectError, setConnectError] = useState("");
   const [isConnecting, setIsConnecting] = useState(false);
   const [syncingId, setSyncingId] = useState("");
+
+  const visibleChannels = channelTypeFilter
+    ? connectedChannels.filter((c) => c.channelType === channelTypeFilter)
+    : connectedChannels;
 
   async function handleConnect(event) {
     event.preventDefault();
@@ -538,8 +563,8 @@ function ChannelsPanel({
     <Card>
       <CardHeader>
         <div>
-          <CardTitle>Active Integrations</CardTitle>
-          <p className="mt-1 text-sm text-[var(--muted)]">All connected channels and their sync health.</p>
+          <CardTitle>{title}</CardTitle>
+          <p className="mt-1 text-sm text-[var(--muted)]">{subtitle}</p>
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
@@ -554,20 +579,21 @@ function ChannelsPanel({
             Loading connected channels…
           </div>
         ) : null}
-        {!isLoadingChannels && !connectedChannels.length ? (
+        {!isLoadingChannels && !visibleChannels.length ? (
           <div className="flex flex-col items-center gap-3 rounded-xl border border-dashed border-[var(--line)] bg-[var(--panel-soft)] px-4 py-8 text-center">
             <div className="grid h-12 w-12 place-items-center rounded-2xl bg-slate-100">
               <PlugZap size={22} className="text-slate-400" />
             </div>
             <div>
-              <p className="font-semibold text-slate-700">No channels connected</p>
+              <p className="font-semibold text-slate-700">No {channelTypeFilter === "sales" ? "sales channels" : "channels"} connected</p>
               <p className="mt-1 text-sm text-[var(--muted)]">Connect Shopify or Amazon above to start syncing.</p>
             </div>
           </div>
         ) : null}
-        {connectedChannels.map((channel) => {
+        {visibleChannels.map((channel) => {
           const channelId = channel._id || channel.id;
           const isSyncing = syncingId === channelId || channel.sync?.orders === "running";
+          const isSalesChannel = channel.channelType === "sales";
           const orderCount = channel.metrics?.orderCount || 0;
           const salesTotal = Number(channel.metrics?.salesTotal || 0);
           const currency = channel.metrics?.currency || "INR";
@@ -589,6 +615,14 @@ function ChannelsPanel({
                         Live
                       </span>
                     </div>
+                    {/* Non-sales channels get a plain-language kicker
+                        ("Shipping Partner", "Ads Account", ...) instead of
+                        letting the shop/handle string alone imply it's a
+                        storefront — this is exactly the "why is Meta Ads
+                        showing like a sales channel" confusion being fixed. */}
+                    {!isSalesChannel ? (
+                      <p className="text-[11px] font-medium text-indigo-600">{CHANNEL_TYPE_LABELS[channel.channelType] || channel.channelType}</p>
+                    ) : null}
                     <p className="text-xs text-[var(--muted)] truncate">{channel.shop}</p>
                   </div>
                 </div>
@@ -603,23 +637,40 @@ function ChannelsPanel({
                 </div>
               </div>
 
-              {/* Metrics */}
-              <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Orders</p>
-                  <p className="text-sm  text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
+              {/* Metrics — Orders/Revenue only ever meant something for a
+                  real sales channel; every other channelType showed a
+                  permanent "0 orders / ₹0.00" that read as broken rather
+                  than "not applicable". Those get a plain Status + Last
+                  Sync row instead. */}
+              {isSalesChannel ? (
+                <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+                  <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Orders</p>
+                    <p className="text-sm  text-slate-900">{orderCount.toLocaleString("en-IN")}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
+                    <p className="text-sm  text-slate-900">
+                      {currency === "INR" ? "₹" : ""}{Number(salesTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Last Sync</p>
+                    <p className="text-sm  text-slate-900">{formatChannelSync(channel.sync)}</p>
+                  </div>
                 </div>
-                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Revenue</p>
-                  <p className="text-sm  text-slate-900">
-                    {currency === "INR" ? "₹" : ""}{Number(salesTotal || 0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                  </p>
+              ) : (
+                <div className="mt-3 grid grid-cols-2 gap-2 text-center">
+                  <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Status</p>
+                    <p className="text-sm  text-slate-900">{channel.status === "connected" ? "Connected" : channel.status || "Connected"}</p>
+                  </div>
+                  <div className="rounded-lg bg-slate-50 px-2 py-1.5">
+                    <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Last Sync</p>
+                    <p className="text-sm  text-slate-900">{formatChannelSync(channel.sync)}</p>
+                  </div>
                 </div>
-                <div className="rounded-lg bg-slate-50 px-2 py-1.5">
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">Last Sync</p>
-                  <p className="text-sm  text-slate-900">{formatChannelSync(channel.sync)}</p>
-                </div>
-              </div>
+              )}
 
               {/* Sync health bar */}
               <div className="mt-3">
@@ -2861,6 +2912,12 @@ export function DashboardView() {
             setChannelsError={setChannelsError}
             isLoadingChannels={isLoadingChannels}
             onRefreshData={() => { }}
+            // Home dashboard is about sales activity — shipping/ads/social/
+            // WhatsApp/email connections belong on the full Channels page,
+            // not mixed in here with meaningless ₹0.00 revenue rows.
+            channelTypeFilter="sales"
+            title="Sales Channels"
+            subtitle="Your connected storefronts and their sync health."
           />
         </div>
       </div>

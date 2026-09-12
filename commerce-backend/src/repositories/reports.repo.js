@@ -1,8 +1,32 @@
-import { getOrdersInRange, getSavedCommerceData } from "./order.repo.js";
+import { getOrdersInRange, getSavedCommerceData, isRevenueOrder } from "./order.repo.js";
 import { listExpenses, listPurchases, getFinanceSummary } from "./finance.repo.js";
 import { getAdSpendTotal } from "./ad-insight.repo.js";
 import { getCompany } from "./store.js";
 import { toNumber } from "./memory-store.js";
+
+// The same "cancelled/voided/refunded/RTO" definition as isRevenueOrder
+// (order.repo.js) but for reports that show a RETURNED row rather than
+// dropping it — GST and Cancelled & Returns need to know an order is a
+// return, not just silently exclude it. Every report below used to only
+// check `!o.cancelledAt`, so a refunded, voided, or RTO'd order (a courier
+// return-to-origin — see isRtoPayload) was still counted as a full sale:
+// a COD or prepaid order that ships fine and then bounces back 15 days
+// later as RTO kept inflating Sales/GST/P&L/Channel/Payment-Method reports
+// forever, even though the exact same order was already correctly excluded
+// from the Dashboard/Finance revenue totals and already listed in the
+// Refunds/Returns drilldown. Fixed here so every report agrees with the
+// one place that mattered before this: isRevenueOrder().
+function isReturnedOrCancelled(o) {
+  return Boolean(o.cancelledAt) || o.financialStatus === "voided" || o.financialStatus === "refunded" || Boolean(o.isRTO);
+}
+
+function returnReasonLabel(o) {
+  if (o.isRTO) return "Returned (RTO)";
+  if (o.cancelledAt) return "Cancelled";
+  if (o.financialStatus === "voided") return "Voided";
+  if (o.financialStatus === "refunded") return "Refunded";
+  return "Cancelled";
+}
 
 // Every report generator returns { title, description, columns: [{key,label}], rows: [...] }
 // so the frontend can render + CSV-export any of them the same generic way.
@@ -29,9 +53,12 @@ function paymentStatusLabel(financialStatus) {
 }
 
 // ─── 1. Sales Report ─────────────────────────────────────────────────────────
-async function salesReport({ companyId, from, to }) {
-  const { orders } = await getOrdersInRange({ companyId, from, to });
-  const validOrders = orders.filter((o) => !o.cancelledAt);
+async function salesReport({ companyId, from, to, channelId }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to, channelId });
+  // isRevenueOrder — not just "!cancelledAt" — so a refunded/voided/RTO'd
+  // order stops inflating this the moment it's flagged, same as every
+  // other revenue number in the app.
+  const validOrders = orders.filter(isRevenueOrder);
   const byDay = new Map();
 
   for (const o of validOrders) {
@@ -75,9 +102,9 @@ function normalizeState(s) {
   return String(s || "").trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-async function gstReport({ companyId, from, to }) {
+async function gstReport({ companyId, from, to, channelId }) {
   const [{ orders }, company] = await Promise.all([
-    getOrdersInRange({ companyId, from, to }),
+    getOrdersInRange({ companyId, from, to, channelId }),
     getCompany(companyId),
   ]);
   const gstRate = Number(company?.taxSettings?.gstRate ?? 5);
@@ -89,7 +116,10 @@ async function gstReport({ companyId, from, to }) {
 
   const rows = orders.map((o) => {
     const customerState = o.shippingAddress?.province || "";
-    const isCancelled = Boolean(o.cancelledAt) || o.financialStatus === "voided" || o.financialStatus === "refunded";
+    // Includes isRTO now — a courier return-to-origin is functionally a
+    // return, same as a voided/refunded order, and previously kept showing
+    // as a full taxable sale here even after the shipment bounced back.
+    const isCancelled = isReturnedOrCancelled(o);
     const hasStateInfo = Boolean(storeState) && Boolean(customerState);
     const isIntraState = hasStateInfo && normalizeState(storeState) === normalizeState(customerState);
     const gstType = !hasStateInfo ? "Unknown" : isIntraState ? "CGST + SGST" : "IGST";
@@ -110,7 +140,7 @@ async function gstReport({ companyId, from, to }) {
         expectedTax: 0,
         recordedTax: 0,
         total: 0,
-        status: "Cancelled",
+        status: returnReasonLabel(o),
       };
     }
 
@@ -152,8 +182,8 @@ async function gstReport({ companyId, from, to }) {
   return {
     title: "GST / Tax Report",
     description: storeState
-      ? `Store registered in ${storeState} (Settings → Tax → Place of Supply) — same-state orders split as CGST + SGST, other-state orders as IGST, both at ${gstRate}% total. GST @ ${gstRate}% treated as inclusive in the order total (India default). Cancelled orders show ₹0.`
-      : `No Place of Supply set (Settings → Tax) — every row shows as "Unknown" until it's filled in, since CGST/SGST vs IGST can't be determined without knowing which state the store is registered in. GST @ ${gstRate}% treated as inclusive in the order total (India default). Cancelled orders show ₹0.`,
+      ? `Store registered in ${storeState} (Settings → Tax → Place of Supply) — same-state orders split as CGST + SGST, other-state orders as IGST, both at ${gstRate}% total. GST @ ${gstRate}% treated as inclusive in the order total (India default). Cancelled, refunded, voided, and RTO'd orders show ₹0.`
+      : `No Place of Supply set (Settings → Tax) — every row shows as "Unknown" until it's filled in, since CGST/SGST vs IGST can't be determined without knowing which state the store is registered in. GST @ ${gstRate}% treated as inclusive in the order total (India default). Cancelled, refunded, voided, and RTO'd orders show ₹0.`,
     columns: [
       { key: "orderNumber", label: "Order #" },
       { key: "date", label: "Date" },
@@ -231,15 +261,19 @@ async function purchaseReport({ companyId, from, to }) {
 }
 
 // ─── 5. Profit & Loss Report ─────────────────────────────────────────────────
-async function profitLossReport({ companyId, from, to }) {
+async function profitLossReport({ companyId, from, to, channelId }) {
   const [{ orders }, expenses, purchases, adSpend] = await Promise.all([
-    getOrdersInRange({ companyId, from, to }),
+    getOrdersInRange({ companyId, from, to, channelId }),
     listExpenses({ companyId, from, to }),
     listPurchases({ companyId, from, to }),
+    // Ad spend is account-level, not per-sales-channel — stays unfiltered
+    // even when this report is scoped to one channel, since there's no
+    // meaningful way to attribute Meta spend to a single Shopify/Amazon
+    // store here.
     getAdSpendTotal({ companyId, from, to }).catch(() => ({ spend: 0 })),
   ]);
 
-  const revenueOrders = orders.filter((o) => !o.cancelledAt);
+  const revenueOrders = orders.filter(isRevenueOrder);
   const revenue = revenueOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
   const totalExpenses = expenses.reduce((sum, e) => sum + toNumber(e.amount), 0);
   const totalPurchases = purchases.reduce((sum, p) => sum + toNumber(p.totalAmount), 0);
@@ -273,12 +307,12 @@ async function profitLossReport({ companyId, from, to }) {
 }
 
 // ─── 6. Channel-wise Sales Report ────────────────────────────────────────────
-async function channelReport({ companyId, from, to }) {
+async function channelReport({ companyId, from, to, channelId }) {
   const [{ orders }, { channels }] = await Promise.all([
-    getOrdersInRange({ companyId, from, to }),
+    getOrdersInRange({ companyId, from, to, channelId }),
     getSavedCommerceData(companyId),
   ]);
-  const validOrders = orders.filter((o) => !o.cancelledAt);
+  const validOrders = orders.filter(isRevenueOrder);
   const totalRevenue = validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
 
   // Historical/manually-imported orders (see the "historical" provider values on
@@ -320,9 +354,9 @@ async function channelReport({ companyId, from, to }) {
 }
 
 // ─── 7. Payment Method Report ────────────────────────────────────────────────
-async function paymentMethodReport({ companyId, from, to }) {
-  const { orders } = await getOrdersInRange({ companyId, from, to });
-  const validOrders = orders.filter((o) => !o.cancelledAt);
+async function paymentMethodReport({ companyId, from, to, channelId }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to, channelId });
+  const validOrders = orders.filter(isRevenueOrder);
   const totalRevenue = validOrders.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
 
   const cod = validOrders.filter((o) => o.isCOD);
@@ -349,9 +383,9 @@ async function paymentMethodReport({ companyId, from, to }) {
 }
 
 // ─── 8. Top Products Report ──────────────────────────────────────────────────
-async function productReport({ companyId, from, to }) {
-  const { orders } = await getOrdersInRange({ companyId, from, to });
-  const validOrders = orders.filter((o) => !o.cancelledAt);
+async function productReport({ companyId, from, to, channelId }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to, channelId });
+  const validOrders = orders.filter(isRevenueOrder);
 
   const byProduct = new Map();
   for (const o of validOrders) {
@@ -410,9 +444,13 @@ async function customerReport({ companyId }) {
 }
 
 // ─── 10. Cancelled & Returns Report ──────────────────────────────────────────
-async function cancelledReport({ companyId, from, to }) {
-  const { orders } = await getOrdersInRange({ companyId, from, to });
-  const cancelled = orders.filter((o) => o.cancelledAt || o.financialStatus === "voided" || o.financialStatus === "refunded");
+async function cancelledReport({ companyId, from, to, channelId }) {
+  const { orders } = await getOrdersInRange({ companyId, from, to, channelId });
+  // Now includes RTO — a courier return-to-origin used to be missing from
+  // this report entirely unless it also happened to be cancelled/voided/
+  // refunded, even though it's exactly the kind of return this report
+  // exists for.
+  const cancelled = orders.filter(isReturnedOrCancelled);
 
   const rows = cancelled
     .map((o) => ({
@@ -420,7 +458,7 @@ async function cancelledReport({ companyId, from, to }) {
       date: fmtDate(o.cancelledAt || o.shopifyCreatedAt),
       customer: o.customerName || "—",
       amount: round(o.totalPrice),
-      status: o.financialStatus || "cancelled",
+      status: returnReasonLabel(o),
     }))
     .sort((a, b) => (a.date < b.date ? 1 : -1)); // latest first
 
@@ -464,8 +502,8 @@ export const REPORT_TYPES = [
   { key: "cancelled", label: "Cancelled & Returns" },
 ];
 
-export async function generateReport({ type, companyId, from, to }) {
+export async function generateReport({ type, companyId, from, to, channelId }) {
   const generator = REPORT_GENERATORS[type];
   if (!generator) return null;
-  return generator({ companyId, from, to });
+  return generator({ companyId, from, to, channelId });
 }

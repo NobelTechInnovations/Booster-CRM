@@ -548,6 +548,38 @@ export async function syncShipmentDeliveredElsewhere({ companyId, shipment }) {
   return updatedOrder;
 }
 
+// Same idea as syncShipmentCancelledElsewhere/syncShipmentDeliveredElsewhere,
+// for a courier reporting the shipment as RTO'd ("Return to Origin" —
+// bounced back to us undelivered) — called from tracking-update.job.js's
+// own cron loop. Before this, RTO detection only ever happened if a
+// Shopify tag containing "rto" showed up on the order (see isRtoPayload in
+// order.repo.js) — a real courier RTO status (e.g. "RTO Initiated", "RTO
+// Delivered") on its own never flipped isRTO, so a COD/prepaid order that
+// shipped fine and then bounced back kept counting as full revenue in
+// every report forever. This closes that gap: the moment the courier's own
+// tracking reads as RTO, the order is flagged the same way a manual
+// Shopify tag would flag it, and every report/dashboard number that
+// already respects isRTO (see isRevenueOrder in order.repo.js) picks it up
+// on its next read — automatically, no tag required.
+// Deliberately does NOT touch Shopify's own fulfillment record — the item
+// genuinely was shipped, so reverting that in Shopify would misrepresent
+// what actually happened there; only this app's own revenue/GST/report
+// numbers need correcting.
+export async function syncShipmentRtoElsewhere({ companyId, shipment }) {
+  const orderRefId = shipment.syncedOrderId || shipment.shopifyOrderId;
+  const order = await getOrderById({ companyId, orderId: orderRefId });
+  if (!order || order.isRTO) return null;
+
+  await updateShipmentById({ shipmentId: shipment._id, companyId, update: { status: "rto" } });
+  const updatedOrder = await updateOrderOmsStatus({
+    companyId,
+    shopifyOrderId: order.externalId,
+    update: { isRTO: true, omsStatus: "returned" },
+  });
+  console.log(`[Fulfillment] ${order.name} shipment RTO'd per ${shipment.provider}'s tracking — excluded from revenue/GST`);
+  return updatedOrder;
+}
+
 /**
  * Cancels a Shopify fulfillment (the mirror of markShopifyOrderFulfilled's
  * create call) so an order we un-ship on the courier side also reverts to

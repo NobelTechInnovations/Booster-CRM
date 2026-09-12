@@ -2,7 +2,18 @@ import { isMongoConnected } from "../config/database.js";
 import { Shipment } from "../models/shipment.model.js";
 import { memory, clone } from "../repositories/memory-store.js";
 import { getShippingProvider } from "../modules/shipping/shipping-registry.js";
-import { syncShipmentCancelledElsewhere, syncShipmentDeliveredElsewhere } from "../modules/fulfillment/fulfillment.service.js";
+import { syncShipmentCancelledElsewhere, syncShipmentDeliveredElsewhere, syncShipmentRtoElsewhere } from "../modules/fulfillment/fulfillment.service.js";
+
+// A courier reporting the shipment as RTO'd ("Return to Origin" — bounced
+// back to us undelivered) — checked BEFORE the cancel/delivered patterns
+// below since an RTO status is its own distinct, more specific outcome
+// (e.g. "RTO Initiated", "RTO Delivered", "RTO In Transit") that shouldn't
+// fall through to either of those. This is what actually flips
+// SyncedOrder.isRTO from real courier tracking — previously that flag only
+// ever came from a Shopify order *tag* containing "rto" (see isRtoPayload
+// in order.repo.js), so a real RTO the courier reported but nobody tagged
+// in Shopify silently kept counting as full revenue forever.
+const RTO_STATUS_PATTERN = /rto/i;
 
 // A courier reporting any of these tracking states means the shipment is
 // dead and the order needs to come back to "To Ship" — cancelled directly
@@ -65,10 +76,16 @@ export async function runTrackingUpdateJob() {
           : [...memory.shipments.values()].filter((s) => String(s.companyId) === String(companyId) && s.provider === providerName && awbs.includes(s.awbCode)).map(clone);
 
         for (const s of updated) {
-          if (s.status === "cancelled" || s.status === "delivered") continue;
+          if (s.status === "cancelled" || s.status === "delivered" || s.status === "rto") continue;
           if (!s.trackingStatus) continue;
 
-          if (DEAD_STATUS_PATTERN.test(s.trackingStatus)) {
+          if (RTO_STATUS_PATTERN.test(s.trackingStatus)) {
+            try {
+              await syncShipmentRtoElsewhere({ companyId, shipment: s });
+            } catch (err) {
+              console.error(`[Job] Failed to sync RTO shipment ${s.awbCode} (${providerName}, Company: ${companyId}):`, err.message);
+            }
+          } else if (DEAD_STATUS_PATTERN.test(s.trackingStatus)) {
             try {
               await syncShipmentCancelledElsewhere({ companyId, shipment: s });
             } catch (err) {

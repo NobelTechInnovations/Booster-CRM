@@ -23,6 +23,7 @@ reportsRoutes.get(
       companyId: req.auth.companyId,
       from: req.query.from,
       to: req.query.to,
+      channelId: req.query.channelId || undefined,
     });
 
     if (!report) {

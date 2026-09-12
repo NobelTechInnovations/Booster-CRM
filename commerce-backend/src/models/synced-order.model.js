@@ -101,10 +101,16 @@ const syncedOrderSchema = new mongoose.Schema(
     // checkbox) or a manual "test"/"test-order" tag — never real revenue, so
     // every sales/expense total (Dashboard, Finance) excludes these outright.
     isTestOrder: { type: Boolean, default: false, index: true },
-    // Courier/3PL tagged this order "rto"/"rto_initiated" ("Return to Origin"
-    // — shipment bounced back to us undelivered). Treated as a return: its
-    // value is excluded from revenue and it appears in the Refunds/Returns
-    // drill-down exactly like a financial-status refund.
+    // "Return to Origin" — shipment bounced back to us undelivered. Set two
+    // ways: a Shopify order tag containing "rto" (isRtoPayload, re-checked
+    // on every webhook resync), or live courier tracking actually reporting
+    // an RTO status (tracking-update.job.js's RTO_STATUS_PATTERN, via
+    // syncShipmentRtoElsewhere) — the tag alone used to be the only path,
+    // so a real RTO the courier reported but nobody tagged in Shopify kept
+    // counting as full revenue indefinitely. Treated as a return either
+    // way: excluded from revenue (see isRevenueOrder) and GST (see
+    // reports.repo.js), and appears in the Refunds/Returns drill-down
+    // exactly like a financial-status refund.
     isRTO: { type: Boolean, default: false, index: true },
 
     // Full shipping address (all fields needed for shipment creation)
@@ -202,6 +208,25 @@ const syncedOrderSchema = new mongoose.Schema(
 
     // Full raw payload from Shopify (kept for debugging/re-mapping)
     raw: mongoose.Schema.Types.Mixed,
+
+    // A record of every time this order's computed *stage* (see
+    // utils/order-stage.js's computeOrderStage — the one plain-English
+    // "where is this order right now" value the whole UI already shows)
+    // actually changed, not a log of every field write. Appended by the
+    // two real choke points every status-relevant update goes through —
+    // updateOrderOmsStatus (our own app actions: ship, deliver, cancel,
+    // RTO-via-tracking, refund/cancel webhooks) and upsertSingleOrder (a
+    // raw Shopify/Amazon webhook resync, e.g. a merchant cancelling
+    // directly in Shopify or an RTO tag showing up) — so this stays
+    // accurate regardless of which path actually caused the change.
+    statusHistory: [
+      {
+        stage: { type: String, required: true }, // one of ORDER_STAGES' keys
+        label: { type: String, required: true }, // human label at the time, so a later ORDER_STAGES rename doesn't rewrite history
+        note:  { type: String, trim: true },
+        at:    { type: Date, default: Date.now },
+      },
+    ],
   },
   { timestamps: true },
 );

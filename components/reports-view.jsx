@@ -22,6 +22,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { getReport } from "@/lib/api";
+import { useCommerceStore } from "@/lib/store";
 
 const REPORT_ICONS = {
   sales: TrendingUp,
@@ -94,14 +95,31 @@ function downloadCsv(filename, csv) {
   URL.revokeObjectURL(url);
 }
 
+// Reports that actually break down by/derive from individual orders — the
+// channel filter is meaningless for Expenses, Purchases, and Customers
+// (none of those are tied to a single sales channel), so it's hidden
+// rather than shown-but-silently-ignored for those report types.
+const CHANNEL_FILTERABLE_TYPES = new Set(["sales", "gst", "profit-loss", "channel", "payment-method", "products", "cancelled"]);
+
 export function ReportsView() {
+  const { connectedChannels } = useCommerceStore();
   const [activeType, setActiveType] = useState("sales");
   const [rangeDays, setRangeDays] = useState("30");
   const [custom, setCustom] = useState({ from: LIFETIME_START, to: isoDate(new Date()) });
+  // "" = every sales channel. Only Shopify/Amazon-style sales channels make
+  // sense here — a shipping/ads/WhatsApp connection was never what "which
+  // store's numbers" meant.
+  const [channelId, setChannelId] = useState("");
   const [report, setReport] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
   const [sort, setSort] = useState(null); // { key, dir: "asc" | "desc" }
+
+  const salesChannels = useMemo(
+    () => (connectedChannels || []).filter((c) => c.channelType === "sales" && c.status === "connected"),
+    [connectedChannels],
+  );
+  const showChannelFilter = CHANNEL_FILTERABLE_TYPES.has(activeType) && salesChannels.length > 1;
 
   const { from, to } = useMemo(() => {
     const end = new Date();
@@ -116,7 +134,9 @@ export function ReportsView() {
     setIsLoading(true);
     setError("");
     try {
-      const res = await getReport(activeType, { from, to });
+      const params = { from, to };
+      if (channelId && CHANNEL_FILTERABLE_TYPES.has(activeType)) params.channelId = channelId;
+      const res = await getReport(activeType, params);
       setReport(res.report);
     } catch (err) {
       setError(err.message);
@@ -126,7 +146,7 @@ export function ReportsView() {
     }
   }
 
-  useEffect(() => { loadReport(); setSort(null); }, [activeType, from, to]);
+  useEffect(() => { loadReport(); setSort(null); }, [activeType, from, to, channelId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function toggleSort(key) {
     setSort((current) => {
@@ -152,7 +172,11 @@ export function ReportsView() {
   function handleExport() {
     if (!report) return;
     const csv = toCsv(report.columns, sortedRows);
-    downloadCsv(`${activeType}-report-${from}-to-${to}.csv`, csv);
+    const activeChannel = channelId && CHANNEL_FILTERABLE_TYPES.has(activeType)
+      ? salesChannels.find((c) => (c._id || c.id) === channelId)
+      : null;
+    const channelSuffix = activeChannel ? `-${(activeChannel.name || activeChannel.shop || activeChannel.provider).replace(/[^a-z0-9]+/gi, "-").toLowerCase()}` : "";
+    downloadCsv(`${activeType}-report-${from}-to-${to}${channelSuffix}.csv`, csv);
   }
 
   return (
@@ -179,6 +203,19 @@ export function ReportsView() {
               <option key={val} value={val}>{label}</option>
             ))}
           </select>
+          {showChannelFilter ? (
+            <select
+              className="h-9 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-indigo-500"
+              value={channelId}
+              onChange={(e) => setChannelId(e.target.value)}
+              title="Filter this report to one sales channel"
+            >
+              <option value="">All Sales Channels</option>
+              {salesChannels.map((c) => (
+                <option key={c._id || c.id} value={c._id || c.id}>{c.name || c.shop || c.provider}</option>
+              ))}
+            </select>
+          ) : null}
           {rangeDays === "custom" ? (
             <div className="flex items-center gap-1.5 rounded-lg border border-[var(--line)] bg-white px-2 py-1">
               <input
