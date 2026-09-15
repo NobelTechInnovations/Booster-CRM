@@ -5,7 +5,7 @@ import { Purchase } from "../models/purchase.model.js";
 import { Expense } from "../models/expense.model.js";
 import { SyncedCustomer } from "../models/synced-customer.model.js";
 import { memory, id, clone, now, toNumber } from "./memory-store.js";
-import { getSalesTotal, getShippingCostTotal, getRefundedRevenueTotal, getMfgCostTotal, getSalesAnalytics, getOrdersInRange, isPendingCodOrder, bucketKey, bucketLabel } from "./order.repo.js";
+import { getSalesTotal, getShippingCostTotal, getRefundedRevenueTotal, getMfgCostTotal, getSalesAnalytics, getPendingCodSummary, bucketKey, bucketLabel } from "./order.repo.js";
 import { getAdSpendTotal, AD_GST_RATE, listAdInsights } from "./ad-insight.repo.js";
 
 // companyId is stored as Schema.Types.Mixed across these models, so the same id
@@ -15,6 +15,20 @@ import { getAdSpendTotal, AD_GST_RATE, listAdInsights } from "./ad-insight.repo.
 function mixedIdFilter(idValue) {
   const str = String(idValue || "");
   return mongoose.Types.ObjectId.isValid(str) ? { $in: [str, new mongoose.Types.ObjectId(str)] } : str;
+}
+
+// A date-only "to" string ("2026-09-15") parses as UTC midnight — a bare
+// $lte/> comparison against that excludes essentially the entire day for
+// any expense/purchase actually logged that day, since real timestamps
+// almost always fall later than 00:00:00.000. Every "to" boundary in this
+// file needs to reach the END of that calendar day, not its very first
+// instant. Found live: an expense logged this morning wasn't showing up
+// in "Last 30 Days" (or even "Today") at all, on the same table this
+// function's own parseSummaryRange already gets right further down.
+function endOfDay(dateStr) {
+  const d = new Date(dateStr);
+  d.setHours(23, 59, 59, 999);
+  return d;
 }
 
 // ─── Vendors ─────────────────────────────────────────────────────────────────
@@ -129,7 +143,7 @@ export async function listPurchases({ companyId, from, to, vendorId }) {
       ? {
           purchaseDate: {
             ...(from ? { $gte: new Date(from) } : {}),
-            ...(to ? { $lte: new Date(to) } : {}),
+            ...(to ? { $lte: endOfDay(to) } : {}),
           },
         }
       : {}),
@@ -144,7 +158,7 @@ export async function listPurchases({ companyId, from, to, vendorId }) {
       if (String(p.companyId) !== String(companyId)) return false;
       if (vendorId && String(p.vendorId) !== String(vendorId)) return false;
       if (from && new Date(p.purchaseDate) < new Date(from)) return false;
-      if (to && new Date(p.purchaseDate) > new Date(to)) return false;
+      if (to && new Date(p.purchaseDate) > endOfDay(to)) return false;
       return true;
     })
     .sort((a, b) => new Date(b.purchaseDate) - new Date(a.purchaseDate))
@@ -231,7 +245,7 @@ export async function listExpenses({ companyId, from, to, category }) {
       ? {
           date: {
             ...(from ? { $gte: new Date(from) } : {}),
-            ...(to ? { $lte: new Date(to) } : {}),
+            ...(to ? { $lte: endOfDay(to) } : {}),
           },
         }
       : {}),
@@ -246,7 +260,7 @@ export async function listExpenses({ companyId, from, to, category }) {
       if (String(e.companyId) !== String(companyId)) return false;
       if (category && e.category !== category) return false;
       if (from && new Date(e.date) < new Date(from)) return false;
-      if (to && new Date(e.date) > new Date(to)) return false;
+      if (to && new Date(e.date) > endOfDay(to)) return false;
       return true;
     })
     .sort((a, b) => new Date(b.date) - new Date(a.date))
@@ -402,7 +416,7 @@ export async function getFinanceTrend({ companyId, from, to, groupBy = "day" }) 
 // ─── Finance Summary ─────────────────────────────────────────────────────────
 
 export async function getFinanceSummary({ companyId, from, to }) {
-  const [sales, purchases, expenses, adSpend, shippingCost, refundedRevenue, mfgCost, { orders: ordersInRange }] = await Promise.all([
+  const [sales, purchases, expenses, adSpend, shippingCost, refundedRevenue, mfgCost, pendingCod] = await Promise.all([
     getSalesTotal({ companyId, from, to }),
     listPurchases({ companyId, from, to }),
     listExpenses({ companyId, from, to }),
@@ -410,8 +424,15 @@ export async function getFinanceSummary({ companyId, from, to }) {
     getShippingCostTotal({ companyId, from, to }),
     getRefundedRevenueTotal({ companyId, from, to }),
     getMfgCostTotal({ companyId, from, to }),
-    getOrdersInRange({ companyId, from, to }),
+    // Deliberately NOT scoped to `from`/`to` — see getPendingCodSummary's own
+    // comment. Used to be filtered to orders placed inside the selected
+    // range, which made this card show a smaller number than the same card
+    // on the Dashboard (e.g. "Last 30 Days" would miss a COD order placed
+    // 40 days ago that's still sitting undelivered today) — both now read
+    // off the exact same all-time snapshot.
+    getPendingCodSummary(companyId),
   ]);
+  const { pendingCodAmount, pendingCodOrders } = pendingCod;
 
   // All money totals below (expenses, marketing spend, net profit) come
   // purely from the manually-logged Expense ledger — what the user actually
@@ -424,15 +445,6 @@ export async function getFinanceSummary({ companyId, from, to }) {
   // tracked live number on top of it, even though the manual entry already
   // *was* that spend. Meta's number stays visible on its own "Meta Ad Spend"
   // card purely so it can be checked against — it never feeds a total here.
-  // COD orders placed in this range that haven't been delivered yet — not
-  // counted in `sales`/`revenue` above (see isRevenueOrder), shown here so
-  // it's visible as money still in transit rather than looking like it
-  // vanished. Moves into revenue automatically once each order is
-  // delivered, or drops off if it's cancelled/RTO'd.
-  const pendingCodList = ordersInRange.filter((o) => isPendingCodOrder(o) && !o.isTestOrder);
-  const pendingCodAmount = pendingCodList.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
-  const pendingCodOrders = pendingCodList.length;
-
   const cogs = purchases.reduce((sum, purchase) => sum + toNumber(purchase.totalAmount), 0);
   const expenseTotal = expenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
   const marketingExpenseTotal = expenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);

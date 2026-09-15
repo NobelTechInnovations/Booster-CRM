@@ -180,7 +180,11 @@ function formatMoney(value, currency = "INR") {
 // Used to abbreviate to "₹6k" / "₹1.2L" on chart axes/tooltips — per
 // explicit request, no more abbreviation anywhere: full value with decimals,
 // same as formatMoney. Kept as a separate name only so the chart call sites
-// below don't need touching.
+// below don't need touching. Since this shows the FULL string (not an
+// abbreviation), every <YAxis tickFormatter={formatCompact}> needs a wide
+// enough `width` to actually fit it — too narrow and Recharts still draws
+// the whole string, just partly outside the reserved space, which reads as
+// garbled/cut-off numbers rather than a clean truncation.
 function formatCompact(value) {
   return formatMoney(value);
 }
@@ -207,7 +211,13 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc 
   return (
     <Card
       className={cn(
-        "relative overflow-hidden p-4 text-left",
+        // No overflow-hidden here (on purpose) — the info tooltip below is
+        // positioned absolutely and needs to be able to pop out past the
+        // card's own edge instead of getting clipped by it. The accent bar
+        // gets its own rounded top corners instead, since overflow-hidden
+        // isn't around to trim its square corners against the card's own
+        // rounded ones anymore.
+        "relative p-4 text-left",
         onClick && "cursor-pointer hover:border-slate-300",
       )}
       onClick={onClick}
@@ -215,7 +225,7 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc 
       tabIndex={onClick ? 0 : undefined}
       onKeyDown={onClick ? (e) => (e.key === "Enter" || e.key === " ") && onClick() : undefined}
     >
-      <div className={cn("absolute inset-x-0 top-0 h-[3px]", tileAccent[tone] || tileAccent.slate)} />
+      <div className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-xl", tileAccent[tone] || tileAccent.slate)} />
       <div className="flex items-start justify-between gap-3">
         <div>
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--muted)]">
@@ -426,7 +436,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
           sub={`${summary?.pendingCodOrders ?? 0} COD order${summary?.pendingCodOrders === 1 ? "" : "s"} in transit`}
           tone={summary?.pendingCodOrders ? "amber" : "slate"}
           icon={Wallet}
-          calc="Value of COD orders placed in this range that haven't been delivered yet — not counted in Total Revenue above, since they can still be cancelled or come back RTO. Moves into revenue automatically once each order is delivered."
+          calc="Value of every COD order that hasn't been delivered yet, right now — not scoped to the date range above, since a COD order placed weeks ago can still be pending today. Not counted in Total Revenue, since it can still be cancelled or come back RTO. Moves into revenue automatically once each order is delivered — same figure as the Dashboard's Pending Sales card."
         />
         <KpiTile
           label="Inventory Purchases" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes}
@@ -658,7 +668,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
                 </defs>
                 <CartesianGrid stroke="#e5eaf1" vertical={false} />
                 <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={56} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
                 <Tooltip content={<ChartTooltip />} />
                 <Legend wrapperStyle={{ fontSize: 12 }} />
                 <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#3730a3" fill="url(#financeSalesGradient)" strokeWidth={3} />
@@ -720,7 +730,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
               <BarChart data={economics?.waterfall || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <CartesianGrid stroke="#e5eaf1" vertical={false} />
                 <XAxis dataKey="stage" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={56} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
                 <ReferenceLine y={0} stroke="#cbd5e1" />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="value" name="Amount" radius={[4, 4, 4, 4]} maxBarSize={48}>
@@ -771,7 +781,7 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
               <BarChart data={analytics?.trend || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <CartesianGrid stroke="#e5eaf1" vertical={false} />
                 <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={56} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="revenue" name="Revenue" fill="#3730a3" radius={[4, 4, 0, 0]} maxBarSize={28} />
               </BarChart>
@@ -2010,7 +2020,7 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
               <BarChart data={adsSummary?.trend || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <CartesianGrid stroke="#e5eaf1" vertical={false} />
                 <XAxis dataKey="date" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={56} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="spend" name="Spend" fill="#b45309" radius={[4, 4, 0, 0]} maxBarSize={22} />
                 <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={3} dot={false} />

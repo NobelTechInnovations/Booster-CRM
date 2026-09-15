@@ -1503,6 +1503,23 @@ export function isPendingCodOrder(order) {
     && order.omsStatus !== "delivered";
 }
 
+// "Pending Sales" is a snapshot of money currently stuck in transit right
+// now — deliberately NOT scoped to whatever date range a page happens to
+// have selected (a COD order placed 3 weeks ago that still hasn't been
+// delivered is still pending today, even if "Last 30 Days" or "Today" is
+// selected). Both the Dashboard and Finance Overview call this same
+// function so the figure always matches between them, instead of Finance
+// showing a smaller, range-scoped number (only orders PLACED inside the
+// selected range) next to Dashboard's real, all-time pending total.
+export async function getPendingCodSummary(companyId) {
+  const { orders } = await getSavedCommerceData(companyId);
+  const pending = orders.filter((order) => isPendingCodOrder(order) && !order.isTestOrder);
+  return {
+    pendingCodAmount: pending.reduce((sum, order) => sum + toNumber(order.totalPrice), 0),
+    pendingCodOrders: pending.length,
+  };
+}
+
 // Same historical/manually-imported fallback labels as channelReport() in
 // reports.repo.js — orders with no live channelId (imported before a
 // channel connection existed, or from a provider that's since been

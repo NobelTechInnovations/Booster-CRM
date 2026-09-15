@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, usePathname } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { Suspense } from "react";
 import Link from "next/link";
 import { FollowUpReminderBanner } from "@/components/followup-reminder-banner";
 import { UpgradeBanner } from "@/components/upgrade-banner";
@@ -110,25 +111,45 @@ const NAV_GROUPS = [
   { label: "Settings", icon: Settings, href: "/panel/settings", single: true },
 ];
 
+// A bare `pathname.startsWith(base)` treats "/panel/ads" as a prefix of
+// "/panel/ads-manager" — a real string prefix, but not a real path match —
+// which made the Ads & ROAS link (and its parent Finance group) light up
+// for every Ads Manager page too. Requiring a "/" right after the base
+// makes this a genuine path-segment match instead of a raw string prefix.
+function pathMatchesBase(pathname, base) {
+  return pathname === base || (base !== "/panel" && pathname?.startsWith(`${base}/`));
+}
+
 function isGroupActive(group, pathname) {
-  if (group.single) return pathname === group.href || (group.href !== "/panel" && pathname?.startsWith(group.href));
-  return (group.children || []).some((c) => {
-    const base = c.href.split("?")[0];
-    return pathname === base || (base !== "/panel" && pathname?.startsWith(base));
-  });
+  if (group.single) return pathMatchesBase(pathname, group.href);
+  return (group.children || []).some((c) => pathMatchesBase(pathname, c.href.split("?")[0]));
 }
 
 // ─── Sub-nav bar (horizontal tabs for active group's children) ────────────────
 
 function SubNavBar({ pathname }) {
+  const searchParams = useSearchParams();
+  const currentSearch = searchParams?.toString() || "";
   const group = NAV_GROUPS.find((g) => !g.single && isGroupActive(g, pathname));
   if (!group) return null;
   return (
     <div className="border-b border-[var(--line)] bg-[var(--panel)]">
       <nav className="flex items-center gap-0 px-4 overflow-x-auto">
         {group.children.map((child) => {
-          const base = child.href.split("?")[0];
-          const active = pathname === base || (base !== "/panel" && pathname?.startsWith(base));
+          const [base, query] = child.href.split("?");
+          const pathMatches = pathMatchesBase(pathname, base);
+          // Overview (/panel/finance) and Analytics (/panel/finance?tab=sales)
+          // share the exact same path — pathname alone can't tell them apart,
+          // which used to leave Overview underlined no matter which one was
+          // actually open (usePathname() never reflects the query string, so
+          // Analytics's own link was never distinguishable at all). A child
+          // with a query only counts active when that exact query is present;
+          // a plain child only counts active when no sibling's query is the
+          // one currently showing.
+          const siblingQuery = group.children.find((sib) => sib !== child && sib.href.includes("?") && sib.href.split("?")[0] === base)?.href.split("?")[1];
+          const active = query
+            ? pathMatches && currentSearch === query
+            : pathMatches && (!siblingQuery || currentSearch !== siblingQuery);
           return (
             <Link
               key={child.href}
@@ -509,7 +530,9 @@ export default function PanelLayout({ children }) {
 
       <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-white">
         <Topbar setOpen={setOpen} session={session} />
-        <SubNavBar pathname={pathname} />
+        <Suspense fallback={null}>
+          <SubNavBar pathname={pathname} />
+        </Suspense>
         <UpgradeBanner session={session} />
         <FollowUpReminderBanner onOpenCustomer={(c) => setFollowUpCustomer(c)} />
         <div className="flex-1">{children}</div>
