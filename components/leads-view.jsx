@@ -15,6 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TableSkeleton, ListRowsSkeleton } from "@/components/ui/skeleton";
 import { cn, formatMoney } from "@/lib/utils";
 import { SendWhatsAppModal } from "@/components/send-whatsapp-modal";
 import {
@@ -338,7 +339,7 @@ function LeadDrawer({ lead, onClose, onLogFollowUp, onWhatsApp }) {
 
           <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-400">Event timeline ({events.length})</p>
           {isLoading ? (
-            <p className="text-sm text-slate-400">Loading…</p>
+            <ListRowsSkeleton rows={3} />
           ) : (
             <div className="space-y-2">
               {events.map((event, idx) => {
@@ -697,7 +698,9 @@ export function LeadsView() {
                 ? "No phone number on the event yet (e.g. a cart still at an early checkout stage) — nothing to call until one comes in."
                 : "Every lead with a follow-up call scheduled, soonest (or most overdue) first."}
           </p>
-          {!shownLeads.length ? (
+          {isLoading && !leads.length ? (
+            <TableSkeleton rows={6} cols={9} />
+          ) : !shownLeads.length ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               {!leads.length ? <Webhook size={22} className="text-slate-300" /> : null}
               <p className="text-sm text-[var(--muted)]">

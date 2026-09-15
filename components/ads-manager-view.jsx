@@ -20,6 +20,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   listAdsChannels,
   listAdCampaigns,
@@ -458,7 +459,9 @@ export function AdsManagerView() {
       ) : null}
 
       {loadingChannels ? (
-        <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-indigo-600" /></div>
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-32 rounded-xl" />)}
+        </div>
       ) : !channels.length ? (
         <Card>
           <CardContent className="flex flex-col items-center gap-3 p-12 text-center">
@@ -504,7 +507,9 @@ export function AdsManagerView() {
           {/* Campaigns */}
           {view === "campaigns" ? (
             loadingCampaigns ? (
-              <div className="flex justify-center py-16"><Loader2 size={24} className="animate-spin text-indigo-600" /></div>
+              <div className="space-y-3">
+                {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-36 rounded-xl" />)}
+              </div>
             ) : !campaigns?.length ? (
               <Card><CardContent className="p-10 text-center text-sm text-[var(--muted)]">No campaigns on this ad account.</CardContent></Card>
             ) : (

@@ -5,7 +5,7 @@ import { Purchase } from "../models/purchase.model.js";
 import { Expense } from "../models/expense.model.js";
 import { SyncedCustomer } from "../models/synced-customer.model.js";
 import { memory, id, clone, now, toNumber } from "./memory-store.js";
-import { getSalesTotal, getShippingCostTotal, getRefundedRevenueTotal, getMfgCostTotal, getSalesAnalytics, bucketKey, bucketLabel } from "./order.repo.js";
+import { getSalesTotal, getShippingCostTotal, getRefundedRevenueTotal, getMfgCostTotal, getSalesAnalytics, getOrdersInRange, isPendingCodOrder, bucketKey, bucketLabel } from "./order.repo.js";
 import { getAdSpendTotal, AD_GST_RATE, listAdInsights } from "./ad-insight.repo.js";
 
 // companyId is stored as Schema.Types.Mixed across these models, so the same id
@@ -355,22 +355,31 @@ export async function getFinanceTrend({ companyId, from, to, groupBy = "day" }) 
 
   const buckets = new Map();
   for (const point of analytics.trend) {
-    buckets.set(point.key, { key: point.key, period: point.period, revenue: point.revenue, orders: point.orders, expenses: 0, adSpend: 0 });
+    buckets.set(point.key, { key: point.key, period: point.period, revenue: point.revenue, orders: point.orders, expenses: 0, marketingSpend: 0, otherExpenses: 0, adSpend: 0 });
   }
 
   const getOrInitBucket = (date) => {
     const key = bucketKey(date, groupBy);
     let bucket = buckets.get(key);
     if (!bucket) {
-      bucket = { key, period: bucketLabel(key, groupBy), revenue: 0, orders: 0, expenses: 0, adSpend: 0 };
+      bucket = { key, period: bucketLabel(key, groupBy), revenue: 0, orders: 0, expenses: 0, marketingSpend: 0, otherExpenses: 0, adSpend: 0 };
       buckets.set(key, bucket);
     }
     return bucket;
   };
 
+  // expenses = every logged expense in the bucket (all categories combined,
+  // for the existing Revenue/Expenses/Ad Spend line). marketingSpend and
+  // otherExpenses split that same total the same way getFinanceSummary
+  // does — each rupee lands on exactly one of the two — for the Monthly
+  // Overview chart's 3-bar (Sales / Expense / Marketing Spend) view.
   for (const expense of expenses) {
     if (expense.source === "meta-ad-sync") continue;
-    getOrInitBucket(expense.date).expenses += toNumber(expense.amount);
+    const bucket = getOrInitBucket(expense.date);
+    const amount = toNumber(expense.amount);
+    bucket.expenses += amount;
+    if (expense.category === "marketing") bucket.marketingSpend += amount;
+    else bucket.otherExpenses += amount;
   }
 
   for (const row of adInsights) {
@@ -379,7 +388,13 @@ export async function getFinanceTrend({ companyId, from, to, groupBy = "day" }) 
 
   const trend = [...buckets.values()]
     .sort((a, b) => (a.key > b.key ? 1 : -1))
-    .map((b) => ({ ...b, expenses: Math.round(b.expenses), adSpend: Math.round(b.adSpend) }));
+    .map((b) => ({
+      ...b,
+      expenses: Math.round(b.expenses),
+      marketingSpend: Math.round(b.marketingSpend),
+      otherExpenses: Math.round(b.otherExpenses),
+      adSpend: Math.round(b.adSpend),
+    }));
 
   return { trend, currency: analytics.totals.currency };
 }
@@ -387,7 +402,7 @@ export async function getFinanceTrend({ companyId, from, to, groupBy = "day" }) 
 // ─── Finance Summary ─────────────────────────────────────────────────────────
 
 export async function getFinanceSummary({ companyId, from, to }) {
-  const [sales, purchases, expenses, adSpend, shippingCost, refundedRevenue, mfgCost] = await Promise.all([
+  const [sales, purchases, expenses, adSpend, shippingCost, refundedRevenue, mfgCost, { orders: ordersInRange }] = await Promise.all([
     getSalesTotal({ companyId, from, to }),
     listPurchases({ companyId, from, to }),
     listExpenses({ companyId, from, to }),
@@ -395,6 +410,7 @@ export async function getFinanceSummary({ companyId, from, to }) {
     getShippingCostTotal({ companyId, from, to }),
     getRefundedRevenueTotal({ companyId, from, to }),
     getMfgCostTotal({ companyId, from, to }),
+    getOrdersInRange({ companyId, from, to }),
   ]);
 
   // All money totals below (expenses, marketing spend, net profit) come
@@ -408,6 +424,15 @@ export async function getFinanceSummary({ companyId, from, to }) {
   // tracked live number on top of it, even though the manual entry already
   // *was* that spend. Meta's number stays visible on its own "Meta Ad Spend"
   // card purely so it can be checked against — it never feeds a total here.
+  // COD orders placed in this range that haven't been delivered yet — not
+  // counted in `sales`/`revenue` above (see isRevenueOrder), shown here so
+  // it's visible as money still in transit rather than looking like it
+  // vanished. Moves into revenue automatically once each order is
+  // delivered, or drops off if it's cancelled/RTO'd.
+  const pendingCodList = ordersInRange.filter((o) => isPendingCodOrder(o) && !o.isTestOrder);
+  const pendingCodAmount = pendingCodList.reduce((sum, o) => sum + toNumber(o.totalPrice), 0);
+  const pendingCodOrders = pendingCodList.length;
+
   const cogs = purchases.reduce((sum, purchase) => sum + toNumber(purchase.totalAmount), 0);
   const expenseTotal = expenses.reduce((sum, expense) => sum + toNumber(expense.amount), 0);
   const marketingExpenseTotal = expenses.filter((e) => e.category === "marketing").reduce((sum, e) => sum + toNumber(e.amount), 0);
@@ -453,6 +478,8 @@ export async function getFinanceSummary({ companyId, from, to }) {
   return {
     revenue: Math.round(revenue),
     orders: sales.orders,
+    pendingCodAmount: Math.round(pendingCodAmount),
+    pendingCodOrders,
     cogs: Math.round(cogs),
     grossProfit: Math.round(grossProfit),
     // "Total Expense" card — Marketing Spend + Shipping Cost (full: Amazon

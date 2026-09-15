@@ -11,6 +11,20 @@ import { listAssetMappings, listAssets } from "./asset.repo.js";
 import { parseUtmFromOrder } from "../utils/utm.js";
 import { computeOrderStage, orderStageLabel } from "../utils/order-stage.js";
 
+// companyId is stored as Schema.Types.Mixed across these models, so the same id
+// can end up saved as a string or an ObjectId depending on the write path — a
+// bare equality filter only catches whichever form it happens to be. Most
+// query functions in this file already guard against this inline; this was
+// the one shared, reusable version, added after getSavedCommerceData (the
+// function every Dashboard number is built from) was found still doing a
+// bare-equality match and silently returning zero orders/products/customers/
+// channels for any company whose companyId happens to be stored as a real
+// ObjectId rather than a string.
+function mixedIdFilter(idValue) {
+  const str = String(idValue || "");
+  return mongoose.Types.ObjectId.isValid(str) ? { $in: [str, new mongoose.Types.ObjectId(str)] } : str;
+}
+
 // ─── Normalizers ─────────────────────────────────────────────────────────────
 
 // A real online payment gateway name — if one of these actually processed the
@@ -814,11 +828,12 @@ export function finalizeOrder(order) {
 
 export async function getSavedCommerceData(companyId) {
   if (isMongoConnected()) {
+    const filter = mixedIdFilter(companyId);
     const [orders, products, customers, channels] = await Promise.all([
-      SyncedOrder.find({ companyId }).sort({ shopifyCreatedAt: -1 }).limit(5000).lean(),
-      SyncedProduct.find({ companyId }).sort({ shopifyUpdatedAt: -1 }).limit(5000).lean(),
-      SyncedCustomer.find({ companyId }).sort({ shopifyUpdatedAt: -1 }).limit(5000).lean(),
-      Channel.find({ companyId }).sort({ updatedAt: -1 }).lean(),
+      SyncedOrder.find({ companyId: filter }).sort({ shopifyCreatedAt: -1 }).limit(5000).lean(),
+      SyncedProduct.find({ companyId: filter }).sort({ shopifyUpdatedAt: -1 }).limit(5000).lean(),
+      SyncedCustomer.find({ companyId: filter }).sort({ shopifyUpdatedAt: -1 }).limit(5000).lean(),
+      Channel.find({ companyId: filter }).sort({ updatedAt: -1 }).lean(),
     ]);
     return {
       orders: deduplicateRecords(orders).map(applyManualAdjustments),
@@ -1235,6 +1250,14 @@ export async function getDashboardSummary(companyId, { period } = {}) {
   const deliveredOrders = orders.filter((order) => order.fulfillmentStatus === "fulfilled").length;
   const lowStockProducts = products.filter((product) => toNumber(product.totalInventory) <= 5).length;
 
+  // COD orders still in transit — not yet real revenue (see isRevenueOrder),
+  // not yet dropped (not cancelled/RTO'd either). This is money that's
+  // "on the way" to becoming a sale, shown separately so it's never
+  // confused with confirmed revenue.
+  const pendingCodOrdersList = orders.filter((order) => isPendingCodOrder(order) && !order.isTestOrder);
+  const pendingCodOrders = pendingCodOrdersList.length;
+  const pendingCodAmount = pendingCodOrdersList.reduce((total, order) => total + toNumber(order.totalPrice), 0);
+
   // Trend chart: daily buckets for shorter windows, weekly buckets once the
   // selected period gets wide (Last 90 Days) so the chart stays readable.
   const useWeeklyBuckets = trendDays > 31;
@@ -1298,6 +1321,8 @@ export async function getDashboardSummary(companyId, { period } = {}) {
       productCount: products.length,
       customerCount: customers.length,
       pendingOrders,
+      pendingCodOrders,
+      pendingCodAmount,
       deliveredOrders,
       cancelledOrders,
       lowStockProducts,
@@ -1309,18 +1334,19 @@ export async function getDashboardSummary(companyId, { period } = {}) {
         .at(-1),
     },
     kpis: [
-      { label: "Today's Sales", value: formatMoney(todaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), today)).length} orders`, tone: "green" },
-      { label: "Yesterday Sales", value: formatMoney(yesterdaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), yesterday)).length} orders`, tone: "blue" },
-      { label: "Monthly Revenue", value: formatMoney(monthlySales, currency), change: `${revenueOrders.length} paid orders`, tone: "green" },
-      { label: "Lifetime Revenue", value: formatMoney(salesTotal, currency), change: `${revenueOrders.length} paid orders all-time`, tone: "indigo" },
-      { label: "Total Orders", value: orders.length.toLocaleString("en-IN"), change: `${pendingOrders} pending`, tone: "blue" },
-      { label: "Avg Order Value", value: formatMoney(revenueOrders.length ? salesTotal / revenueOrders.length : 0, currency), change: "lifetime AOV", tone: "indigo" },
-      { label: "Pending Orders", value: pendingOrders.toLocaleString("en-IN"), change: pendingOrders ? "needs shipping" : "all clear", tone: pendingOrders ? "amber" : "green" },
-      { label: "Products", value: products.length.toLocaleString("en-IN"), change: `${lowStockProducts} low stock`, tone: lowStockProducts ? "amber" : "green" },
-      { label: "Customers", value: customers.length.toLocaleString("en-IN"), change: `${channels.filter((channel) => channel.status === "connected").length} channels`, tone: "teal" },
-      { label: "Connected Channels", value: channels.filter((channel) => channel.status === "connected").length.toLocaleString("en-IN"), change: `${channels.length} total linked`, tone: "teal" },
-      { label: "Delivered", value: deliveredOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((deliveredOrders / orders.length) * 100) : 0}% fulfilment`, tone: "green" },
-      { label: "Cancelled", value: cancelledOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((cancelledOrders / orders.length) * 100) : 0}% orders`, tone: cancelledOrders ? "rose" : "green" },
+      { label: "Today's Sales", value: formatMoney(todaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), today)).length} orders`, tone: "green", info: "Confirmed revenue booked today — prepaid orders as soon as they're placed, COD orders once delivered. Cancelled/RTO'd orders are never counted." },
+      { label: "Pending Sales", value: formatMoney(pendingCodAmount, currency), change: `${pendingCodOrders} COD order${pendingCodOrders === 1 ? "" : "s"} in transit`, tone: pendingCodOrders ? "amber" : "green", info: "Value of COD orders that are still on the way — not yet delivered, so not yet counted as revenue. Moves into Sales automatically once each order is marked delivered, or drops off if it's cancelled or returned (RTO)." },
+      { label: "Monthly Revenue", value: formatMoney(monthlySales, currency), change: `${revenueOrders.length} paid orders`, tone: "green", info: "Confirmed revenue booked so far this calendar month." },
+      { label: "Lifetime Revenue", value: formatMoney(salesTotal, currency), change: `${revenueOrders.length} paid orders all-time`, tone: "indigo", info: "All confirmed revenue since this store connected — excludes cancelled, refunded, RTO'd, and undelivered COD orders." },
+      { label: "Yesterday Sales", value: formatMoney(yesterdaySales, currency), change: `${revenueOrders.filter((order) => order.shopifyCreatedAt && isSameDate(new Date(order.shopifyCreatedAt), yesterday)).length} orders`, tone: "blue", info: "Confirmed revenue booked yesterday, for a same-time comparison against today." },
+      { label: "Total Orders", value: orders.length.toLocaleString("en-IN"), change: `${pendingOrders} pending`, tone: "blue", info: "Every order ever synced from your connected channels, including cancelled and RTO'd ones." },
+      { label: "Avg Order Value", value: formatMoney(revenueOrders.length ? salesTotal / revenueOrders.length : 0, currency), change: "lifetime AOV", tone: "indigo", info: "Lifetime revenue divided by the number of orders that counted toward it." },
+      { label: "Pending Orders", value: pendingOrders.toLocaleString("en-IN"), change: pendingOrders ? "needs shipping" : "all clear", tone: pendingOrders ? "amber" : "green", info: "Orders that are still unfulfilled and need to be shipped." },
+      { label: "Products", value: products.length.toLocaleString("en-IN"), change: `${lowStockProducts} low stock`, tone: lowStockProducts ? "amber" : "green", info: "Total products synced from your catalog, and how many are running low on stock (5 units or fewer)." },
+      { label: "Customers", value: customers.length.toLocaleString("en-IN"), change: `${channels.filter((channel) => channel.status === "connected").length} channels`, tone: "teal", info: "Unique customers synced across every connected sales channel." },
+      { label: "Connected Channels", value: channels.filter((channel) => channel.status === "connected").length.toLocaleString("en-IN"), change: `${channels.length} total linked`, tone: "teal", info: "Sales channels (Shopify, Amazon, etc.) currently connected and syncing." },
+      { label: "Delivered", value: deliveredOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((deliveredOrders / orders.length) * 100) : 0}% fulfilment`, tone: "green", info: "Orders marked fulfilled/delivered, and what share of all orders that represents." },
+      { label: "Cancelled", value: cancelledOrders.toLocaleString("en-IN"), change: `${orders.length ? Math.round((cancelledOrders / orders.length) * 100) : 0}% orders`, tone: cancelledOrders ? "rose" : "green", info: "Orders that were cancelled or voided, and what share of all orders that represents." },
     ],
     period: period || "today",
     periodSales: periodOrders.reduce((total, order) => total + toNumber(order.totalPrice), 0),
@@ -1433,8 +1459,17 @@ export async function getOrdersInRange({ companyId, from, to, channelId }) {
 // refunded and isn't a courier RTO ("Return to Origin" — shipment bounced
 // back to us undelivered, tagged rto/rto_initiated). RTO is functionally a
 // return, so its value is excluded from sales exactly like a refund.
+//
+// COD is the one case where "not cancelled/RTO'd yet" isn't enough on its
+// own: nothing has actually been collected until the courier delivers and
+// takes the cash, and every day before that the order can still cancel or
+// bounce back as RTO. So a COD order only becomes revenue once it's
+// actually delivered — until then it sits in "pending" (see
+// isPendingCodOrder below), not sales/GST. A prepaid order already
+// captured payment at checkout, so it keeps counting as revenue as soon as
+// it's placed, same as before.
 export function isRevenueOrder(order) {
-  return !order.cancelledAt
+  const eligible = !order.cancelledAt
     && order.financialStatus !== "voided"
     && order.financialStatus !== "refunded"
     && !order.isRTO
@@ -1445,6 +1480,27 @@ export function isRevenueOrder(order) {
     // by migration.service.js, its own copy is what counts from then on —
     // this stops the same sale being counted here AND on the copy.
     && !order.migratedToOrderId;
+
+  if (!eligible) return false;
+  if (order.isCOD) return order.omsStatus === "delivered";
+  return true;
+}
+
+// The mirror image of isRevenueOrder for COD orders — still alive (not
+// cancelled/RTO'd/refunded/draft) but not yet delivered, so its value sits
+// in "pending", waiting to either become real revenue (on delivery) or
+// drop out entirely (on cancel/RTO). Used for the dashboard/finance
+// "Pending Sales" card — never true for a prepaid order, since prepaid
+// revenue is already recognized at order time.
+export function isPendingCodOrder(order) {
+  return Boolean(order.isCOD)
+    && !order.cancelledAt
+    && order.financialStatus !== "voided"
+    && order.financialStatus !== "refunded"
+    && !order.isRTO
+    && !order.isDraft
+    && !order.migratedToOrderId
+    && order.omsStatus !== "delivered";
 }
 
 // Same historical/manually-imported fallback labels as channelReport() in

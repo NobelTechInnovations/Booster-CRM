@@ -60,6 +60,9 @@ import { CreateOrderModal } from "@/components/create-order-modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { KpiRowSkeleton, ListRowsSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { MonthlyOverviewChart } from "@/components/monthly-overview-chart";
 import {
   automations,
   channelCatalog,
@@ -227,8 +230,16 @@ function Sidebar({ open, setOpen, activeView, setActiveView }) {
   );
 }
 
-function Topbar({ setOpen, session, onSyncAll, canSync }) {
-  const { company, period, setPeriod } = useCommerceStore();
+// The "Today/Yesterday/This Month/Last 90 Days" period picker and the
+// global "Sync" button used to live here — removed. The picker only ever
+// changed one thing on one page (the Dashboard's channel-mix/recent-orders
+// scope buried further down), with nothing on screen indicating what had
+// just refreshed, so it read as broken rather than as a filter. The sync
+// button was a duplicate of the per-channel Sync action already on the
+// Channels page. The Dashboard now always shows its real, fixed metrics
+// (Today, Pending, Monthly, Lifetime, etc.) with no filter to get lost in.
+function Topbar({ setOpen, session }) {
+  const { company } = useCommerceStore();
   const router = useRouter();
   const companyName = session?.company?.name || company;
 
@@ -255,20 +266,6 @@ function Topbar({ setOpen, session, onSyncAll, canSync }) {
             placeholder="Search orders, SKU, customer, shipment, invoice"
           />
         </div>
-        <select
-          className="hidden h-10 rounded-md border border-[var(--line)] bg-white px-3 text-sm font-semibold outline-none focus:border-indigo-600 md:block"
-          value={period}
-          onChange={(event) => setPeriod(event.target.value)}
-        >
-          <option>Today</option>
-          <option>Yesterday</option>
-          <option>This Month</option>
-          <option>Last 90 Days</option>
-        </select>
-        <Button variant="secondary" className="hidden sm:inline-flex" onClick={onSyncAll} disabled={!canSync}>
-          <RefreshCw size={16} />
-          Sync
-        </Button>
         <button className="grid h-10 w-10 place-items-center rounded-md border border-[var(--line)] bg-white text-slate-600 hover:bg-slate-50" aria-label="Notifications">
           <Bell size={18} />
         </button>
@@ -312,6 +309,7 @@ function KpiSparkline({ data = [], color = "#94a3b8" }) {
 function KpiRow({ items, salesTrend = [] }) {
   const PRIMARY = [
     { match: /today.*sale/i, color: "#22c55e", series: "sales" },
+    { match: /^pending.*sale/i, color: "#d97706", series: null },
     { match: /monthly.*revenue|monthly.*sale/i, color: "#4361ee", series: "sales" },
     { match: /total.*order/i, color: "#3b82f6", series: "orders" },
     { match: /^delivered$/i, color: null, series: null },
@@ -333,13 +331,16 @@ function KpiRow({ items, salesTrend = [] }) {
   if (!primaryItems.length) return null;
 
   return (
-    <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 xl:grid-cols-6">
+    <div className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 lg:grid-cols-4">
       {primaryItems.map((item) => {
         const isNeg = item.tone === "rose";
         const changeColor = isNeg ? "text-rose-500" : "text-emerald-600";
         return (
           <div key={item.label} className="flex flex-col">
-            <p className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">{item.label}</p>
+            <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-400">
+              {item.label}
+              <InfoTooltip text={item.info} />
+            </p>
             <p className="mt-1.5 text-[26px]  leading-none tracking-tight text-slate-950">{item.value}</p>
             <p className={cn("mt-1.5 text-[12px] font-semibold", changeColor)}>
               {isNeg ? "↘" : "↗"} {item.change}
@@ -2609,6 +2610,8 @@ function BusinessMetricStrip({ kpis = [], channels = [] }) {
   const find = (re) => kpis.find((k) => re.test(k.label));
 
   const metrics = [
+    find(/today.*sale/i),
+    find(/^pending.*sale/i),
     find(/monthly.*revenue/i),
     find(/total.*order/i),
     find(/^delivered$/i),
@@ -2620,7 +2623,10 @@ function BusinessMetricStrip({ kpis = [], channels = [] }) {
     const isNeg = k.tone === "rose";
     return (
       <span className="flex items-center gap-2 whitespace-nowrap">
-        <span className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">{k.label}</span>
+        <span className="flex items-center gap-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+          {k.label}
+          <InfoTooltip text={k.info} />
+        </span>
         <span className="text-[14px]  text-slate-900">{k.value}</span>
         <span className={cn("text-[11.5px] font-semibold", isNeg ? "text-rose-500" : "text-emerald-600")}>
           {isNeg ? "↘" : "↗"} {k.change}
@@ -2661,7 +2667,9 @@ function MorningBrief({ dashboardData, companyName }) {
   const ordersKpi = kpis.find((k) => /total.*order|^orders$/i.test(k.label));
   const deliveredKpi = kpis.find((k) => /deliver/i.test(k.label));
   const cancelledKpi = kpis.find((k) => /cancel/i.test(k.label));
-  const pendingKpi = kpis.find((k) => /pending/i.test(k.label));
+  // Explicitly "Pending Orders" (order count), not the newer "Pending
+  // Sales" (COD ₹ in transit) — both labels now contain "pending".
+  const pendingKpi = kpis.find((k) => /pending.*order/i.test(k.label));
   const inventory = dashboardData?.inventory || [];
   const lowStock = inventory.filter((i) => (i.available || 0) <= 0);
 
@@ -2778,7 +2786,10 @@ function AdditionalInsights({ items }) {
       <div className="flex flex-wrap gap-x-8 gap-y-3">
         {picked.map((item) => (
           <div key={item.label} className="flex items-baseline gap-2">
-            <span className="text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">{item.label}</span>
+            <span className="flex items-center gap-1 text-[10.5px] font-semibold uppercase tracking-wide text-slate-400">
+              {item.label}
+              <InfoTooltip text={item.info} />
+            </span>
             <span className="text-[14px]  text-slate-800">{item.value}</span>
             <span className="text-[11.5px] text-slate-400">{item.change}</span>
           </div>
@@ -2842,7 +2853,7 @@ function PlanStatusBadges({ company }) {
 }
 
 export function DashboardView() {
-  const { dashboardData, connectedChannels, setConnectedChannels, channelsError, setChannelsError, isLoadingChannels, session } = useCommerceStore();
+  const { dashboardData, connectedChannels, setConnectedChannels, channelsError, setChannelsError, isLoadingChannels, isLoadingDashboard, session } = useCommerceStore();
 
   const kpiItems = withKpiIcons(dashboardData?.kpis?.length ? dashboardData.kpis : zeroKpis);
   const salesTrend = dashboardData?.salesTrend?.length ? dashboardData.salesTrend : zeroSalesTrend;
@@ -2850,6 +2861,10 @@ export function DashboardView() {
   const recentOrders = dashboardData?.recentOrders || [];
   const inventoryItems = dashboardData?.inventory || [];
   const hasData = !!dashboardData?.kpis?.length;
+  // Only while the very first load is still in flight — once real data has
+  // ever arrived, a later refresh (e.g. after syncing a channel) shouldn't
+  // blank the page back out to a skeleton.
+  const isInitialLoading = isLoadingDashboard && !hasData;
 
   const activeCompanyName = session?.company?.name || "Your Workspace";
 
@@ -2871,72 +2886,112 @@ export function DashboardView() {
         <PlanStatusBadges company={session?.company} />
       </div>
 
-      {/* Business metric strip — plain command-bar row, no card */}
-      <BusinessMetricStrip kpis={kpiItems} channels={connectedChannels || []} />
+      {isInitialLoading ? (
+        <DashboardSkeleton />
+      ) : (
+        <>
+          {/* Business metric strip — plain command-bar row, no card */}
+          <BusinessMetricStrip kpis={kpiItems} channels={connectedChannels || []} />
 
-      {/* Morning brief — intelligent executive summary, no card */}
-      {hasData && (
-        <MorningBrief dashboardData={dashboardData} companyName={session?.company?.name} />
+          {/* Morning brief — intelligent executive summary, no card */}
+          {hasData && (
+            <MorningBrief dashboardData={dashboardData} companyName={session?.company?.name} />
+          )}
+
+          {/* Opportunities & Insights — colored-accent cards, no boxed borders */}
+          {hasData && <OpportunitiesSection dashboardData={dashboardData} />}
+
+          {/* Overview — 6 real KPIs, plain grid, no card */}
+          <div className="mb-10">
+            <p className="section-label">Overview</p>
+            <KpiRow items={kpiItems} salesTrend={salesTrend} />
+          </div>
+
+          {/* Performance — main analytics area */}
+          <div className="mb-10">
+            <p className="section-label">Performance</p>
+            <SalesCharts
+              salesTrend={salesTrend}
+              channelMix={channelMix}
+              period={dashboardData?.period}
+              periodSales={dashboardData?.periodSales}
+              periodOrderCount={dashboardData?.periodOrderCount}
+            />
+            <div className="mt-6">
+              <MonthlyOverviewChart />
+            </div>
+          </div>
+
+          {/* Activity — orders + channels */}
+          <div className="mb-10">
+            <p className="section-label">Activity</p>
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
+              <OrdersPanel orders={recentOrders} />
+              <ChannelsPanel
+                connectedChannels={connectedChannels}
+                setConnectedChannels={setConnectedChannels}
+                channelsError={channelsError}
+                setChannelsError={setChannelsError}
+                isLoadingChannels={isLoadingChannels}
+                onRefreshData={() => { }}
+                // Home dashboard is about sales activity — shipping/ads/social/
+                // WhatsApp/email connections belong on the full Channels page,
+                // not mixed in here with meaningless ₹0.00 revenue rows.
+                channelTypeFilter="sales"
+                title="Sales Channels"
+                subtitle="Your connected storefronts and their sync health."
+              />
+            </div>
+          </div>
+
+          {/* Inventory + Finance */}
+          <div className="mb-10">
+            <p className="section-label">Inventory &amp; Finance</p>
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
+              <InventoryPanel inventory={inventoryItems} />
+              <div className="grid gap-6">
+                <LowStockAssetsPanel />
+                <FinancePanel />
+                <AutomationPanel />
+              </div>
+            </div>
+          </div>
+
+          {/* Additional business insights — quiet, secondary reference info */}
+          <AdditionalInsights items={kpiItems} />
+        </>
       )}
+    </div>
+  );
+}
 
-      {/* Opportunities & Insights — colored-accent cards, no boxed borders */}
-      {hasData && <OpportunitiesSection dashboardData={dashboardData} />}
-
-      {/* Overview — 6 real KPIs, plain grid, no card */}
-      <div className="mb-10">
-        <p className="section-label">Overview</p>
-        <KpiRow items={kpiItems} salesTrend={salesTrend} />
+// Mirrors the real Dashboard's section rhythm (metric strip → overview grid
+// → chart → two-column activity) so the page doesn't jump/reflow once real
+// data arrives — shown only during the very first load, before any
+// dashboard data has ever come back.
+function DashboardSkeleton() {
+  return (
+    <div className="space-y-10">
+      <KpiRowSkeleton count={4} />
+      <div>
+        <Skeleton className="mb-3 h-4 w-24" />
+        <KpiRowSkeleton count={4} />
       </div>
-
-      {/* Performance — main analytics area */}
-      <div className="mb-10">
-        <p className="section-label">Performance</p>
-        <SalesCharts
-          salesTrend={salesTrend}
-          channelMix={channelMix}
-          period={dashboardData?.period}
-          periodSales={dashboardData?.periodSales}
-          periodOrderCount={dashboardData?.periodOrderCount}
-        />
+      <div>
+        <Skeleton className="mb-3 h-4 w-24" />
+        <Skeleton className="h-80 w-full rounded-xl" />
       </div>
-
-      {/* Activity — orders + channels */}
-      <div className="mb-10">
-        <p className="section-label">Activity</p>
+      <div>
+        <Skeleton className="mb-3 h-4 w-24" />
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(380px,0.9fr)]">
-          <OrdersPanel orders={recentOrders} />
-          <ChannelsPanel
-            connectedChannels={connectedChannels}
-            setConnectedChannels={setConnectedChannels}
-            channelsError={channelsError}
-            setChannelsError={setChannelsError}
-            isLoadingChannels={isLoadingChannels}
-            onRefreshData={() => { }}
-            // Home dashboard is about sales activity — shipping/ads/social/
-            // WhatsApp/email connections belong on the full Channels page,
-            // not mixed in here with meaningless ₹0.00 revenue rows.
-            channelTypeFilter="sales"
-            title="Sales Channels"
-            subtitle="Your connected storefronts and their sync health."
-          />
-        </div>
-      </div>
-
-      {/* Inventory + Finance */}
-      <div className="mb-10">
-        <p className="section-label">Inventory &amp; Finance</p>
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(340px,0.8fr)]">
-          <InventoryPanel inventory={inventoryItems} />
-          <div className="grid gap-6">
-            <LowStockAssetsPanel />
-            <FinancePanel />
-            <AutomationPanel />
+          <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+            <ListRowsSkeleton rows={5} />
+          </div>
+          <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+            <ListRowsSkeleton rows={3} />
           </div>
         </div>
       </div>
-
-      {/* Additional business insights — quiet, secondary reference info */}
-      <AdditionalInsights items={kpiItems} />
     </div>
   );
 }

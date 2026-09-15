@@ -21,6 +21,7 @@ import {
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { TableSkeleton } from "@/components/ui/skeleton";
 import { getReport } from "@/lib/api";
 import { useCommerceStore } from "@/lib/store";
 
@@ -61,7 +62,11 @@ const RANGE_PRESETS = [
 
 // Arbitrarily early — no real business data predates this, so it's a safe
 // stand-in for "no lower bound" without a separate backend code path.
+// Only used for the "Lifetime" preset — NOT as the Custom Range picker's
+// default "From" (that used to pre-fill with this same 2000 date, which
+// just read as a bug rather than a sensible starting point).
 const LIFETIME_START = "2000-01-01";
+const CURRENT_YEAR_START = `${new Date().getFullYear()}-01-01`;
 
 // toISOString() converts to UTC first — for any timezone ahead of UTC (e.g. IST,
 // +5:30), local midnight becomes the *previous* day in UTC, silently shifting the
@@ -105,7 +110,7 @@ export function ReportsView() {
   const { connectedChannels } = useCommerceStore();
   const [activeType, setActiveType] = useState("sales");
   const [rangeDays, setRangeDays] = useState("30");
-  const [custom, setCustom] = useState({ from: LIFETIME_START, to: isoDate(new Date()) });
+  const [custom, setCustom] = useState({ from: CURRENT_YEAR_START, to: isoDate(new Date()) });
   // "" = every sales channel. Only Shopify/Amazon-style sales channels make
   // sense here — a shipping/ads/WhatsApp connection was never what "which
   // store's numbers" meant.
@@ -124,7 +129,7 @@ export function ReportsView() {
   const { from, to } = useMemo(() => {
     const end = new Date();
     if (rangeDays === "lifetime") return { from: LIFETIME_START, to: isoDate(end) };
-    if (rangeDays === "custom") return { from: custom.from || LIFETIME_START, to: custom.to || isoDate(end) };
+    if (rangeDays === "custom") return { from: custom.from || CURRENT_YEAR_START, to: custom.to || isoDate(end) };
     const start = new Date();
     start.setDate(end.getDate() - Number(rangeDays));
     return { from: isoDate(start), to: isoDate(end) };
@@ -272,7 +277,9 @@ export function ReportsView() {
         <Card>
           <CardContent className="p-0">
             {isLoading ? (
-              <div className="p-10 text-center text-sm text-[var(--muted)]">Generating report…</div>
+              <div className="p-4">
+                <TableSkeleton rows={7} cols={5} />
+              </div>
             ) : error ? (
               <div className="p-10 text-center text-sm font-medium text-rose-600">{error}</div>
             ) : !report || report.rows.length === 0 ? (

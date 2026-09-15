@@ -28,6 +28,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { BillingSettingsTab } from "@/components/billing-settings-tab";
 import { StoreMigrationTab } from "@/components/store-migration-tab";
@@ -347,7 +348,9 @@ function WebhooksTab() {
         </CardHeader>
         <CardContent>
           {isLoading && !endpoints.length ? (
-            <p className="text-sm text-[var(--muted)]">Loading…</p>
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-24 rounded-xl" />)}
+            </div>
           ) : !endpoints.length ? (
             <div className="flex flex-col items-center gap-2 rounded-xl border border-dashed border-[var(--line)] bg-[var(--panel-soft)] px-4 py-8 text-center">
               <Webhook size={22} className="text-slate-400" />
@@ -492,7 +495,13 @@ export function SettingsView() {
       {activeTab === "migration" ? <StoreMigrationTab /> : null}
 
       {activeTab !== "general" ? null : isLoading ? (
-        <div className="rounded-xl border border-[var(--line)] bg-white p-10 text-center text-sm text-[var(--muted)]">Loading settings…</div>
+        <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="space-y-5">
+            <Skeleton className="h-48 rounded-xl" />
+            <Skeleton className="h-48 rounded-xl" />
+          </div>
+          <Skeleton className="h-64 rounded-xl" />
+        </div>
       ) : (
         <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-5">

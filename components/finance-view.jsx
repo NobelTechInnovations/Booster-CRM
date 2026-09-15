@@ -58,7 +58,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { TableSkeleton } from "@/components/ui/skeleton";
+import { TableSkeleton, KpiRowSkeleton, ListRowsSkeleton, Skeleton } from "@/components/ui/skeleton";
+import { InfoTooltip } from "@/components/ui/info-tooltip";
+import { MonthlyOverviewChart } from "@/components/monthly-overview-chart";
 import {
   connectMetaAds,
   createExpense,
@@ -113,7 +115,13 @@ const rangePresets = [
 
 // Arbitrarily early — no real business data predates this, so it's a safe
 // stand-in for "no lower bound" without needing a separate backend code path.
+// Only ever used for the "Lifetime" preset itself — NOT as the default
+// starting point for the Custom Range picker (that used to pre-fill the
+// "From" field with this same 2000 date, which just looked like a bug:
+// opening Custom Range should start you off looking at the current year,
+// not scrolled back a quarter-century).
 const LIFETIME_START = "2000-01-01";
+const CURRENT_YEAR_START = `${new Date().getFullYear()}-01-01`;
 
 // toISOString() converts to UTC first — for any timezone ahead of UTC (e.g. IST,
 // +5:30), local midnight becomes the *previous* day in UTC, silently shifting every
@@ -151,7 +159,7 @@ function resolveRange(preset, custom) {
   if (preset === "lifetime") return { from: LIFETIME_START, to: isoDay(today) };
 
   if (preset === "custom") {
-    return { from: custom?.from || LIFETIME_START, to: custom?.to || isoDay(today) };
+    return { from: custom?.from || CURRENT_YEAR_START, to: custom?.to || isoDay(today) };
   }
 
   const days = preset === "7d" ? 7 : preset === "90d" ? 90 : 30;
@@ -210,7 +218,10 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc 
       <div className={cn("absolute inset-x-0 top-0 h-[3px]", tileAccent[tone] || tileAccent.slate)} />
       <div className="flex items-start justify-between gap-3">
         <div>
-          <p className="text-[13px] font-medium text-[var(--muted)]">{label}</p>
+          <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--muted)]">
+            {label}
+            <InfoTooltip text={calc} />
+          </p>
           <p className="mt-2 text-[26px]  leading-none tracking-tight text-slate-950">{value}</p>
         </div>
         <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg", tileIconTone[tone] || tileIconTone.slate)}>
@@ -330,6 +341,23 @@ const fieldClass =
 
 function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isLoading, onNavigate }) {
   const currency = analytics?.totals?.currency || "INR";
+
+  // Only the very first load ever shows a skeleton — once real numbers
+  // have arrived, switching date ranges just quietly refreshes the same
+  // cards in place rather than blanking the page back to placeholders.
+  if (isLoading && !summary) {
+    return (
+      <div className="space-y-4">
+        <KpiRowSkeleton count={5} />
+        <KpiRowSkeleton count={5} />
+        <KpiRowSkeleton count={4} />
+        <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+          <Skeleton className="h-80 w-full" />
+        </div>
+      </div>
+    );
+  }
+
   const [showRefunds, setShowRefunds] = useState(false);
   const [refundOrders, setRefundOrders] = useState(null);
   const [refundsLoading, setRefundsLoading] = useState(false);
@@ -386,11 +414,19 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
         <KpiTile
           label="Total Revenue" value={formatMoney(summary?.revenue, currency)} sub={`${summary?.orders ?? 0} orders`} tone="green" icon={BadgeIndianRupee}
           onClick={() => onNavigate("sales")}
-          calc="Sum of totalPrice across every non-cancelled order in this range."
+          calc="Sum of totalPrice across every order counted as revenue in this range — excludes cancelled, refunded, RTO'd, and not-yet-delivered COD orders."
+        />
+        <KpiTile
+          label="Pending Sales"
+          value={formatMoney(summary?.pendingCodAmount, currency)}
+          sub={`${summary?.pendingCodOrders ?? 0} COD order${summary?.pendingCodOrders === 1 ? "" : "s"} in transit`}
+          tone={summary?.pendingCodOrders ? "amber" : "slate"}
+          icon={Wallet}
+          calc="Value of COD orders placed in this range that haven't been delivered yet — not counted in Total Revenue above, since they can still be cancelled or come back RTO. Moves into revenue automatically once each order is delivered."
         />
         <KpiTile
           label="Inventory Purchases" value={formatMoney(summary?.cogs, currency)} sub={`${summary?.purchaseCount ?? 0} purchases`} tone="amber" icon={Boxes}
@@ -599,6 +635,8 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
         </Card>
       ) : null}
 
+      <MonthlyOverviewChart />
+
       <Card>
         <CardHeader>
           <div>
@@ -715,9 +753,9 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
   return (
     <div className="space-y-4">
       <div className="grid gap-3 sm:grid-cols-3">
-        <KpiTile label="Revenue" value={formatMoney(analytics?.totals?.revenue, currency)} sub={groupBy} tone="green" icon={BadgeIndianRupee} />
-        <KpiTile label="Orders" value={(analytics?.totals?.orders ?? 0).toLocaleString("en-IN")} sub="in range" tone="blue" icon={Package} />
-        <KpiTile label="Average Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub="AOV" tone="indigo" icon={ChartNoAxesCombined} />
+        <KpiTile label="Revenue" value={formatMoney(analytics?.totals?.revenue, currency)} sub={groupBy} tone="green" icon={BadgeIndianRupee} calc="Sum of totalPrice across every order counted as revenue in this range — excludes cancelled, refunded, RTO'd, and not-yet-delivered COD orders." />
+        <KpiTile label="Orders" value={(analytics?.totals?.orders ?? 0).toLocaleString("en-IN")} sub="in range" tone="blue" icon={Package} calc="Count of orders counted as revenue in this range (same set as the Revenue card)." />
+        <KpiTile label="Average Order Value" value={formatMoney(analytics?.totals?.aov, currency)} sub="AOV" tone="indigo" icon={ChartNoAxesCombined} calc="Revenue ÷ Orders in this range." />
       </div>
 
       <Card>
@@ -1098,7 +1136,7 @@ function ExpensesTab({ expenses, isLoading, onRefresh, range, initialCategoryFil
           </div>
         ) : null}
 
-        {isLoading ? <p className="text-sm text-[var(--muted)]">Loading expenses...</p> : null}
+        {isLoading && !expenses.length ? <TableSkeleton rows={5} cols={7} /> : null}
         {!isLoading && !filteredExpenses.length ? (
           <p className="text-sm text-[var(--muted)]">
             {expenses.length ? "No expenses match this category in this range." : "No expenses recorded in this range yet."}
@@ -1455,7 +1493,7 @@ function VendorsPurchasesTab({ vendors, purchases, isLoading, onRefresh }) {
           </Button>
         </CardHeader>
         <CardContent className="space-y-2">
-          {isLoading ? <p className="text-sm text-[var(--muted)]">Loading vendors...</p> : null}
+          {isLoading && !vendors.length ? <ListRowsSkeleton rows={3} /> : null}
           {!isLoading && !vendors.length ? <p className="text-sm text-[var(--muted)]">No vendors added yet.</p> : null}
           {vendors.map((vendor) => (
             <div key={vendor._id || vendor.id} className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--line)] px-3 py-2">
@@ -1491,7 +1529,7 @@ function VendorsPurchasesTab({ vendors, purchases, isLoading, onRefresh }) {
           </Button>
         </CardHeader>
         <CardContent className="overflow-x-auto">
-          {isLoading ? <p className="text-sm text-[var(--muted)]">Loading purchases...</p> : null}
+          {isLoading && !purchases.length ? <TableSkeleton rows={4} cols={6} /> : null}
           {!isLoading && !purchases.length ? <p className="text-sm text-[var(--muted)]">No purchases recorded in this range yet.</p> : null}
           {purchases.length ? (
             <table className="w-full min-w-[720px] border-collapse text-sm">
@@ -1951,14 +1989,14 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
       <div>
         <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Delivery & Engagement</p>
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <KpiTile label="Impressions" value={(totals.impressions || 0).toLocaleString("en-IN")} sub="times shown" tone="slate" icon={Eye} />
-          <KpiTile label="Reach" value={(totals.reach || 0).toLocaleString("en-IN")} sub="approx, sums daily reach" tone="slate" icon={Users} />
-          <KpiTile label="Frequency" value={(totals.frequency || 0).toFixed(2)} sub="impressions / reach" tone="slate" icon={Repeat} />
-          <KpiTile label="CPM" value={formatMoney(totals.cpm, totals.currency)} sub="cost per 1,000 impressions" tone="amber" icon={ImageIcon} />
-          <KpiTile label="All Clicks" value={(totals.clicks || 0).toLocaleString("en-IN")} sub="incl. likes, shares, etc." tone="slate" icon={MousePointerClick} />
-          <KpiTile label="Link Clicks" value={(totals.linkClicks || 0).toLocaleString("en-IN")} sub="clicks to your site" tone="indigo" icon={Link2} />
-          <KpiTile label="CTR" value={`${totals.ctr || 0}%`} sub="all clicks / impressions" tone="blue" icon={Percent} />
-          <KpiTile label="CPC (Link)" value={formatMoney(totals.costPerLinkClick, totals.currency)} sub="cost per link click" tone="amber" icon={Coins} />
+          <KpiTile label="Impressions" value={(totals.impressions || 0).toLocaleString("en-IN")} sub="times shown" tone="slate" icon={Eye} calc="Total number of times your ads were displayed, summed across every day in this range — the same impression can count more than once per person." />
+          <KpiTile label="Reach" value={(totals.reach || 0).toLocaleString("en-IN")} sub="approx, sums daily reach" tone="slate" icon={Users} calc="Approximate unique people reached, summed across each day's own reach figure — someone seen on 2 different days is counted twice, since Meta only reports reach per-day, not de-duplicated across a range." />
+          <KpiTile label="Frequency" value={(totals.frequency || 0).toFixed(2)} sub="impressions / reach" tone="slate" icon={Repeat} calc="Impressions ÷ Reach — on average, how many times each person saw your ad." />
+          <KpiTile label="CPM" value={formatMoney(totals.cpm, totals.currency)} sub="cost per 1,000 impressions" tone="amber" icon={ImageIcon} calc="Spend (Meta-reported) ÷ Impressions × 1,000 — what 1,000 ad views cost you." />
+          <KpiTile label="All Clicks" value={(totals.clicks || 0).toLocaleString("en-IN")} sub="incl. likes, shares, etc." tone="slate" icon={MousePointerClick} calc="Every click Meta counts on the ad — link clicks plus likes, comments, shares, and other engagement." />
+          <KpiTile label="Link Clicks" value={(totals.linkClicks || 0).toLocaleString("en-IN")} sub="clicks to your site" tone="indigo" icon={Link2} calc="Clicks that actually sent someone to your website — a subset of All Clicks." />
+          <KpiTile label="CTR" value={`${totals.ctr || 0}%`} sub="all clicks / impressions" tone="blue" icon={Percent} calc="All Clicks ÷ Impressions — what share of people who saw the ad clicked something on it." />
+          <KpiTile label="CPC (Link)" value={formatMoney(totals.costPerLinkClick, totals.currency)} sub="cost per link click" tone="amber" icon={Coins} calc="Spend (Meta-reported) ÷ Link Clicks — what one click-through to your site cost." />
         </div>
       </div>
 
@@ -1987,7 +2025,7 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
           <CardTitle>Campaign Breakdown</CardTitle>
         </CardHeader>
         <CardContent className="space-y-2">
-          {isLoading ? <p className="text-sm text-[var(--muted)]">Loading campaigns...</p> : null}
+          {isLoading && !(adsSummary?.campaigns || []).length ? <ListRowsSkeleton rows={3} /> : null}
           {!isLoading && !(adsSummary?.campaigns || []).length ? <p className="text-sm text-[var(--muted)]">No Meta data synced for this range yet. Click Sync Meta Data.</p> : null}
           {(adsSummary?.campaigns || []).map((campaign) => (
             <div key={campaign.campaignId || campaign.campaignName} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--line)] px-3 py-2 text-sm">
@@ -2066,7 +2104,7 @@ export function FinanceView({ defaultTab = "overview" }) {
   }
 
   const [preset, setPreset] = useState("30d");
-  const [custom, setCustom] = useState({ from: LIFETIME_START, to: isoDay(new Date()) });
+  const [custom, setCustom] = useState({ from: CURRENT_YEAR_START, to: isoDay(new Date()) });
   const [groupBy, setGroupBy] = useState("day");
   const range = useMemo(() => resolveRange(preset, custom), [preset, custom]);
 

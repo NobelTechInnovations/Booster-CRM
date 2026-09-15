@@ -10,13 +10,11 @@ import { CreateOrderModal } from "@/components/create-order-modal";
 import {
   Bell,
   Building2,
-  Calendar,
   ChevronDown,
   ChevronRight,
   Layers3,
   LogOut,
   Menu,
-  RefreshCw,
   X,
   Gauge,
   PackageCheck,
@@ -49,7 +47,6 @@ import {
   getSession,
   listChannels,
   getChannelDashboard,
-  syncChannel,
   listMyCompanies,
   createBrand,
   switchCompany,
@@ -393,7 +390,15 @@ function Sidebar({ open, setOpen, session, onLogout }) {
 
 // ─── Topbar ───────────────────────────────────────────────────────────────────
 
-function Topbar({ setOpen, onSyncAll, canSync, period, setPeriod, session }) {
+// The "Today/Yesterday/This Month/Last 90 Days/Lifetime" period picker and
+// the "Sync" button used to live here — removed. The picker silently
+// re-scoped just the Dashboard's channel-mix/recent-orders section further
+// down the page with no visible cue for what had just changed, which read
+// as broken rather than as a filter; the Sync button duplicated the
+// per-channel Sync action already on the Channels page. The Dashboard now
+// shows its real, fixed metrics (Today, Pending, Monthly, Lifetime, etc.)
+// with nothing to get lost in.
+function Topbar({ setOpen, session }) {
   return (
     <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--panel)] px-4 lg:px-4">
       <button className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
@@ -413,30 +418,6 @@ function Topbar({ setOpen, onSyncAll, canSync, period, setPeriod, session }) {
           <span className="h-2 w-2 rounded-full bg-emerald-400" />
           Live
         </span>
-
-        <div className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-2.5">
-          <Calendar size={13} className="text-slate-400" />
-          <select
-            className="bg-transparent text-[13px] font-medium text-slate-700 outline-none"
-            value={period}
-            onChange={(e) => setPeriod(e.target.value)}
-          >
-            <option>Today</option>
-            <option>Yesterday</option>
-            <option>This Month</option>
-            <option>Last 90 Days</option>
-            <option>Lifetime</option>
-          </select>
-        </div>
-
-        <button
-          onClick={onSyncAll}
-          disabled={!canSync}
-          className="flex h-8 items-center gap-1.5 rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-[13px] font-medium text-slate-600 transition hover:bg-slate-100 disabled:opacity-40"
-        >
-          <RefreshCw size={13} />
-          <span className="hidden sm:inline">Sync</span>
-        </button>
 
         <button className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] text-slate-500 hover:bg-slate-100">
           <Bell size={14} />
@@ -473,7 +454,8 @@ export default function PanelLayout({ children }) {
     session, setSession, checkingSession, setCheckingSession,
     connectedChannels, setConnectedChannels,
     setDashboardData, setChannelsError, setIsLoadingChannels,
-    period, setPeriod,
+    setIsLoadingDashboard,
+    period,
   } = useCommerceStore();
 
   async function refreshChannels() {
@@ -484,21 +466,10 @@ export default function PanelLayout({ children }) {
   }
 
   async function refreshDashboardData() {
+    setIsLoadingDashboard(true);
     try { setDashboardData((await getChannelDashboard({ period: periodToKey(period) })).dashboard || null); }
     catch (err) { setChannelsError(err.message); }
-  }
-
-  async function syncAllChannels() {
-    const syncable = (Array.isArray(connectedChannels) ? connectedChannels : []).filter((ch) => ch.status === "connected");
-    setChannelsError("");
-    try {
-      for (const ch of syncable) {
-        const id = ch._id || ch.id;
-        const res = await syncChannel(id);
-        setConnectedChannels((cur) => cur.map((e) => String(e._id || e.id) === String(id) ? { ...e, ...res.channel, _id: e._id || res.channel.id } : e));
-      }
-      await Promise.all([refreshChannels(), refreshDashboardData()]);
-    } catch (err) { setChannelsError(err.message); }
+    finally { setIsLoadingDashboard(false); }
   }
 
   function logout() { clearSession(); router.push("/login"); }
@@ -528,8 +499,6 @@ export default function PanelLayout({ children }) {
     );
   }
 
-  const canSync = Array.isArray(connectedChannels) && connectedChannels.some((ch) => ch.status === "connected");
-
   return (
     /* Desktop: sidebar (220px) + main. Mobile: stacked (sidebar is overlay). */
     <div className="min-h-screen bg-[var(--background)] lg:flex">
@@ -539,7 +508,7 @@ export default function PanelLayout({ children }) {
       <Sidebar open={open} setOpen={setOpen} session={session} onLogout={logout} />
 
       <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-white">
-        <Topbar setOpen={setOpen} onSyncAll={syncAllChannels} canSync={canSync} period={period} setPeriod={setPeriod} session={session} />
+        <Topbar setOpen={setOpen} session={session} />
         <SubNavBar pathname={pathname} />
         <UpgradeBanner session={session} />
         <FollowUpReminderBanner onOpenCustomer={(c) => setFollowUpCustomer(c)} />

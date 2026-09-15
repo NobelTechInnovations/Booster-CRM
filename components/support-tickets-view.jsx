@@ -6,6 +6,7 @@ import { AlertTriangle, Headset, Loader2, Mail, MessageSquareText, Paperclip, Ph
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { ListRowsSkeleton } from "@/components/ui/skeleton";
 import { listSupportTickets, getSupportTicket, replySupportTicket, updateSupportTicketStatus, staffSupportAttachmentUrl } from "@/lib/api";
 import { useSilentPoll } from "@/lib/public-page";
 
@@ -348,7 +349,7 @@ export function SupportTicketsView() {
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
-            <div className="p-10 text-center text-sm text-[var(--muted)]">Loading…</div>
+            <div className="p-4"><ListRowsSkeleton rows={5} /></div>
           ) : !tickets.length ? (
             <div className="p-12 text-center">
               <Headset size={36} className="mx-auto mb-3 text-slate-300" />

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Building2, ChevronRight, LockKeyhole, Mail } from "lucide-react";
 import { useState } from "react";
 import { AuthLayout } from "@/components/auth-layout";
@@ -10,6 +10,13 @@ import { loginCompany } from "@/lib/api";
 
 export function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  // Set by lib/api.js's handleUnauthorized() whenever any API call comes
+  // back 401 with a stale/expired token — the panel used to just sit there
+  // showing a raw error while looking logged in, so it's redirected here
+  // instead with this flag, and this banner tells the user why they landed
+  // back on login instead of leaving them to guess.
+  const sessionExpired = searchParams?.get("sessionExpired") === "1";
   const [form, setForm] = useState({ email: "", password: "" });
   const [companyChoices, setCompanyChoices] = useState([]);
   const [error, setError] = useState("");
@@ -67,6 +74,13 @@ export function LoginForm() {
           <h2 className="text-[1.5rem] font-bold tracking-tight text-slate-950">Sign in</h2>
           <p className="mt-1 text-sm text-slate-500">Access your operations panel</p>
         </div>
+
+        {sessionExpired ? (
+          <div className="mb-4 flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5 text-sm font-medium text-amber-800">
+            <span className="mt-0.5 shrink-0 text-amber-500">⚠</span>
+            Your session has expired. Please sign in again.
+          </div>
+        ) : null}
 
         <form className="space-y-4" onSubmit={onSubmit}>
           <Field
