@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const whatsappMessageSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: "WhatsAppConversation", required: true, index: true },
 
     // Meta's own message id — unique, and specifically what makes webhook

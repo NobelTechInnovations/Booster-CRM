@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const channelSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
 
     // "sales" = Shopify, Amazon, WooCommerce etc.
     // "shipping" = Velocity, Shiprocket, Shipmozo etc.

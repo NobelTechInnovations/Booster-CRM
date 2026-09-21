@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const expenseSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
 
     category: {
       type: String,

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
+import { requireApp } from "../../middleware/require-app.js";
 import { requireFeature } from "../../middleware/feature-gate.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
@@ -16,6 +17,7 @@ import {
 export const automationRoutes = Router();
 
 automationRoutes.use(requireAuth);
+automationRoutes.use(requireApp("automation"));
 automationRoutes.use(requireFeature("automation"));
 
 // The known trigger keys, for the Automation page's trigger picker — a

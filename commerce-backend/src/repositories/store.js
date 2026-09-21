@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import bcrypt from "bcryptjs";
 import { isMongoConnected } from "../config/database.js";
 import { Channel } from "../models/channel.model.js";
+import { Account } from "../models/account.model.js";
 import { Company } from "../models/company.model.js";
 import { ProductMapping } from "../models/product-mapping.model.js";
 import { SyncedCustomer } from "../models/synced-customer.model.js";
@@ -15,6 +16,7 @@ import { assertLimitNotExceeded } from "../utils/feature-gate.js";
 
 const memory = {
   companies: new Map(),
+  accounts: new Map(),
   users: new Map(),
   channels: new Map(),
   orders: new Map(),
@@ -437,8 +439,14 @@ export async function createCompanyOwner({ companyName, name, email, passwordHas
       slug,
     });
 
+    // One identity per email, reused across every workspace they own. When
+    // this is an additional workspace for someone who already has an account,
+    // upsertAccount returns the existing one and the password stays theirs.
+    const account = await upsertAccount({ email: normalizedEmail, name, passwordHash });
+
     const user = await User.create({
       companyId: company._id,
+      accountId: account?._id,
       name,
       email: normalizedEmail,
       passwordHash,
@@ -469,9 +477,12 @@ export async function createCompanyOwner({ companyName, name, email, passwordHas
   };
   memory.companies.set(company._id, company);
 
+  const memAccount = await upsertAccount({ email: normalizedEmail, name, passwordHash });
+
   const user = {
     _id: id(),
     companyId: company._id,
+    accountId: memAccount?._id,
     email: normalizedEmail,
     name,
     role: "Owner",
@@ -487,14 +498,77 @@ export async function createCompanyOwner({ companyName, name, email, passwordHas
   return { company, user };
 }
 
+// Creates the one identity record for an email, or returns the existing one.
+// Called on every path that used to invent a fresh password hash per
+// workspace — signup, adding a brand, inviting a team member — so a person
+// ends up with exactly one credential no matter how many workspaces they're
+// in. An existing Account is never overwritten: joining a second workspace
+// must not silently reset the password the person already uses.
+export async function upsertAccount({ email, name, passwordHash }) {
+  const normalizedEmail = String(email || "").trim().toLowerCase();
+  if (!normalizedEmail) return null;
+
+  if (isMongoConnected()) {
+    const existing = await Account.findOne({ email: normalizedEmail }).lean();
+    if (existing) return existing;
+    const created = await Account.create({
+      email: normalizedEmail,
+      name: name || normalizedEmail,
+      passwordHash,
+      status: "active",
+    });
+    return created.toObject();
+  }
+
+  const existing = [...memory.accounts.values()].find((entry) => entry.email === normalizedEmail);
+  if (existing) return clone(existing);
+
+  const account = {
+    _id: id(),
+    email: normalizedEmail,
+    name: name || normalizedEmail,
+    passwordHash,
+    status: "active",
+    createdAt: now(),
+    updatedAt: now(),
+  };
+  memory.accounts.set(account._id, account);
+  return clone(account);
+}
+
+// Returns every membership for an email, each carrying the password hash
+// that should actually be checked against.
+//
+// The hash is taken from the person's Account when one exists, and only
+// falls back to the membership row's own legacy copy when it doesn't. That
+// fallback is what makes the Account rollout safe to deploy independently of
+// the backfill script: before migration each row still authenticates against
+// its own hash exactly as before, and after migration every workspace checks
+// against the single shared one — with no coordinated cutover in between,
+// and no change required in auth.routes.js, which still just bcrypt-compares
+// whatever `passwordHash` it finds here.
 export async function findUserByEmailWithPassword(email) {
   const normalizedEmail = String(email || "").trim().toLowerCase();
 
   if (isMongoConnected()) {
-    return User.find({ email: normalizedEmail }).select("+passwordHash").lean();
+    const [users, account] = await Promise.all([
+      User.find({ email: normalizedEmail }).select("+passwordHash").lean(),
+      Account.findOne({ email: normalizedEmail }).select("+passwordHash").lean(),
+    ]);
+
+    // A disabled identity locks the person out of every workspace at once —
+    // the one thing per-workspace membership rows could never express.
+    if (account?.status === "disabled") return [];
+
+    if (!account?.passwordHash) return users;
+    return users.map((user) => ({ ...user, passwordHash: account.passwordHash, accountId: account._id }));
   }
 
-  return [...memory.users.values()].filter((entry) => entry.email === normalizedEmail).map(clone);
+  const users = [...memory.users.values()].filter((entry) => entry.email === normalizedEmail).map(clone);
+  const account = [...memory.accounts.values()].find((entry) => entry.email === normalizedEmail);
+  if (account?.status === "disabled") return [];
+  if (!account?.passwordHash) return users;
+  return users.map((user) => ({ ...user, passwordHash: account.passwordHash, accountId: account._id }));
 }
 
 export async function getUserAndCompany({ userId, companyId }) {
@@ -821,8 +895,15 @@ export async function createCompanyUser({ companyId, invitedBy, name, email, pas
     const currentCount = await User.countDocuments({ companyId });
     assertLimitNotExceeded({ company, limitKey: "maxUsers", currentCount, label: "team members" });
 
+    // If this person already has an account — because they're a member of
+    // another workspace — reuse it, and the password the inviter typed is
+    // ignored in favour of the one the person already has. Inviting someone
+    // into your workspace must not be able to reset their existing password.
+    const account = await upsertAccount({ email: normalizedEmail, name, passwordHash });
+
     const user = await User.create({
       companyId,
+      accountId: account?._id,
       invitedBy,
       name,
       email: normalizedEmail,
@@ -900,25 +981,53 @@ export async function changeOwnPassword({ userId, currentPassword, newPassword }
     return { error: "New password must be at least 8 characters" };
   }
 
+  // Reads and writes the password on the Account, not the membership row.
+  // This used to update only the one membership the person happened to be
+  // signed into, so someone in three workspaces changed their password and
+  // silently kept the old one in the other two. The membership's own copy is
+  // still kept in sync afterwards purely so the legacy fallback in
+  // findUserByEmailWithPassword stays correct if the Account is ever rolled
+  // back.
   if (isMongoConnected()) {
     const user = await User.findById(userId).select("+passwordHash");
     if (!user) return { error: "User not found" };
 
-    const matches = await bcrypt.compare(String(currentPassword || ""), user.passwordHash || "");
+    const account = await Account.findOne({ email: user.email }).select("+passwordHash");
+    const currentHash = account?.passwordHash || user.passwordHash || "";
+
+    const matches = await bcrypt.compare(String(currentPassword || ""), currentHash);
     if (!matches) return { error: "Current password is incorrect" };
 
-    user.passwordHash = await bcrypt.hash(String(newPassword), 12);
+    const nextHash = await bcrypt.hash(String(newPassword), 12);
+
+    if (account) {
+      account.passwordHash = nextHash;
+      await account.save();
+    }
+
+    user.passwordHash = nextHash;
+    if (account && !user.accountId) user.accountId = account._id;
     await user.save();
+
     return { success: true };
   }
 
   const user = memory.users.get(userId);
   if (!user) return { error: "User not found" };
 
-  const matches = await bcrypt.compare(String(currentPassword || ""), user.passwordHash || "");
+  const account = [...memory.accounts.values()].find((entry) => entry.email === user.email);
+  const currentHash = account?.passwordHash || user.passwordHash || "";
+
+  const matches = await bcrypt.compare(String(currentPassword || ""), currentHash);
   if (!matches) return { error: "Current password is incorrect" };
 
-  user.passwordHash = await bcrypt.hash(String(newPassword), 12);
+  const nextHash = await bcrypt.hash(String(newPassword), 12);
+  if (account) {
+    account.passwordHash = nextHash;
+    account.updatedAt = now();
+  }
+  user.passwordHash = nextHash;
+  if (account && !user.accountId) user.accountId = account._id;
   user.updatedAt = now();
   return { success: true };
 }

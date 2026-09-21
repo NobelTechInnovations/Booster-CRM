@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
+import { requireApp } from "../../middleware/require-app.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { getSalesAnalytics, listRefundedOrders, listOrdersWithShippingCost, updateOrderShippingCost, updateOrderManualAdjustments, updateOrderConfirmation, updateOrderFulfillmentAssignment } from "../../repositories/order.repo.js";
@@ -25,6 +26,7 @@ import {
 export const financeRoutes = Router();
 
 financeRoutes.use(requireAuth);
+financeRoutes.use(requireApp("finance"));
 
 // ─── Summary & Analytics ─────────────────────────────────────────────────────
 

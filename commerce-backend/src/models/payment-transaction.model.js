@@ -7,7 +7,7 @@ import mongoose from "mongoose";
 // are idempotent against this same row via razorpayOrderId).
 const paymentTransactionSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     purpose: { type: String, enum: ["wallet_topup", "plan_upgrade"], required: true },
     amount: { type: Number, required: true }, // rupees, not paise — paise is a Razorpay-API-only detail
     currency: { type: String, default: "INR" },

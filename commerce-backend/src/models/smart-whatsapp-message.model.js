@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 // GET /sessions/:companyId/media/:messageId), not a Meta media id.
 const smartWhatsappMessageSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     conversationId: { type: mongoose.Schema.Types.ObjectId, ref: "SmartWhatsAppConversation", required: true, index: true },
     waMessageId: { type: String, required: true },
     direction: { type: String, enum: ["inbound", "outbound"], required: true },

@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 // custom-named trigger a company invents are valid here.
 const emailTemplateSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     name: { type: String, required: true, trim: true },
     trigger: { type: String, required: true, trim: true, index: true },
     subject: { type: String, required: true },

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
+import { requireApp } from "../../middleware/require-app.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { listSkuCosts, upsertSkuCost, deleteSkuCost } from "../../repositories/sku-cost.repo.js";
@@ -17,6 +18,7 @@ import {
 export const inventoryRoutes = Router();
 
 inventoryRoutes.use(requireAuth);
+inventoryRoutes.use(requireApp("products"));
 
 // ─── SKU cost sheet (buying price, MRP, shipping cost, margin) ─────────────
 

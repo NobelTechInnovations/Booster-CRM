@@ -11,7 +11,7 @@ import mongoose from "mongoose";
 // completeShopifyConnection consumes it, or via the TTL index below if the
 // connect flow is abandoned.
 const shopifyPendingAppConfigSchema = new mongoose.Schema({
-  companyId: { type: mongoose.Schema.Types.Mixed, required: true },
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   shop: { type: String, required: true },
   apiKey: { type: String, required: true },
   apiSecret: { type: String, required: true, select: false },

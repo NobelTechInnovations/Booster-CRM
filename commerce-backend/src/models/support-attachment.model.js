@@ -19,7 +19,7 @@ import mongoose from "mongoose";
 // belongs to.
 const supportAttachmentSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     ticketId: { type: mongoose.Schema.Types.ObjectId, required: true, index: true },
     replyId: { type: mongoose.Schema.Types.ObjectId, default: null, index: true },
     filename: { type: String, required: true, trim: true },

@@ -15,17 +15,22 @@ import {
   findUserForCompanySwitch,
 } from "../../repositories/store.js";
 import { permissionsForRole } from "./permissions.js";
+import { resolvePermissions } from "../../repositories/role.repo.js";
 
 export const authRoutes = Router();
 
-function publicUser(user) {
+// Async now: permissions are resolved against the workspace's own roles
+// (repositories/role.repo.js) rather than read straight off the built-in
+// map, so a workspace that has defined "Centre Head" gets that role's real
+// permission list here — which is what the frontend's <Can> gating reads.
+async function publicUser(user) {
   return {
     id: user._id,
     name: user.name,
     email: user.email,
     role: user.role,
     companyId: user.companyId,
-    permissions: permissionsForRole(user.role),
+    permissions: await resolvePermissions({ companyId: user.companyId, role: user.role }),
   };
 }
 
@@ -73,7 +78,7 @@ authRoutes.post(
     res.status(201).json({
       token: signAuthToken(result.user),
       store: getStoreMode(),
-      user: publicUser(result.user),
+      user: await publicUser(result.user),
       company: result.company,
     });
   }),
@@ -142,7 +147,7 @@ authRoutes.post(
     res.json({
       token: signAuthToken(user),
       store: getStoreMode(),
-      user: publicUser(user),
+      user: await publicUser(user),
       company,
     });
   }),
@@ -159,7 +164,7 @@ authRoutes.post(
     res.json({
       token: signAuthToken(user),
       store: getStoreMode(),
-      user: publicUser(user),
+      user: await publicUser(user),
       company,
     });
   }),
@@ -174,7 +179,7 @@ authRoutes.get(
       companyId: req.auth.companyId,
     });
 
-    res.json({ user: user ? publicUser(user) : null, company, store: getStoreMode() });
+    res.json({ user: user ? await publicUser(user) : null, company, store: getStoreMode() });
   }),
 );
 
@@ -211,7 +216,7 @@ authRoutes.post(
     res.status(201).json({
       token: signAuthToken(result.user),
       store: getStoreMode(),
-      user: publicUser(result.user),
+      user: await publicUser(result.user),
       company: result.company,
     });
   }),
@@ -238,7 +243,7 @@ authRoutes.post(
     res.json({
       token: signAuthToken(result.user),
       store: getStoreMode(),
-      user: publicUser(result.user),
+      user: await publicUser(result.user),
       company: result.company,
     });
   }),

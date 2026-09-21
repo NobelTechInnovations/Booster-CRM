@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth, requireAuthHeaderOrQuery, requirePermission } from "../../middleware/auth.js";
+import { requireApp } from "../../middleware/require-app.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { attachmentUpload, handleUploadErrors } from "../../utils/upload.js";
@@ -43,6 +44,7 @@ supportRoutes.get(
 );
 
 supportRoutes.use(requireAuth);
+supportRoutes.use(requireApp("support"));
 supportRoutes.use(requirePermission("support:manage"));
 
 supportRoutes.get(

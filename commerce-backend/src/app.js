@@ -28,6 +28,7 @@ import { cronRoutes } from "./modules/cron/cron.routes.js";
 import { publicTrackingRoutes } from "./modules/public/public-tracking.routes.js";
 import { publicSupportRoutes } from "./modules/public/public-support.routes.js";
 import { supportRoutes } from "./modules/support/support.routes.js";
+import { appsRoutes } from "./modules/apps/apps.routes.js";
 import { migrationRoutes } from "./modules/migration/migration.routes.js";
 
 export function createApp() {
@@ -95,6 +96,7 @@ export function createApp() {
   app.use("/api/public/track", publicTrackingRoutes);
   app.use("/api/public/support", publicSupportRoutes);
   app.use("/api/support", supportRoutes);
+  app.use("/api/apps", appsRoutes);
 
   app.use((req, res) => {
     res.status(404).json({ message: `Route not found: ${req.method} ${req.originalUrl}` });

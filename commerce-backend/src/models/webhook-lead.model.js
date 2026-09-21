@@ -23,7 +23,7 @@ const followUpSchema = new mongoose.Schema(
 
 const webhookLeadSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     endpointId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
     provider: { type: String, required: true, trim: true },
     leadKey: { type: String, required: true, trim: true },

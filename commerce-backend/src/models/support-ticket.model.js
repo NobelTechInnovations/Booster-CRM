@@ -26,7 +26,7 @@ const ticketReplySchema = new mongoose.Schema(
 // duplicating.
 const supportTicketSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
 
     // "TCK-<last 6 hex of this doc's own _id, uppercased>" — set right
     // after creation (needs the real _id first). Human-friendly, no

@@ -1,6 +1,7 @@
 import jwt from "jsonwebtoken";
 import { env } from "../config/env.js";
 import { permissionsForRole } from "../modules/auth/permissions.js";
+import { resolvePermissions } from "../repositories/role.repo.js";
 import { HttpError } from "../utils/http-error.js";
 
 export function signAuthToken(user) {
@@ -16,15 +17,27 @@ export function signAuthToken(user) {
   );
 }
 
+// Resolves the caller's permissions against the workspace's OWN roles first,
+// falling back to the built-in map for workspaces that have never defined
+// any. That fallback is why this change needed no edits at the 67 call sites
+// and no migration: a workspace with no Role documents behaves exactly as it
+// did before, and one that has defined its own gets its own answer.
 export function requirePermission(permission) {
-  return (req, _res, next) => {
-    const permissions = permissionsForRole(req.auth?.role);
+  return async (req, _res, next) => {
+    try {
+      const permissions = await resolvePermissions({
+        companyId: req.auth?.companyId,
+        role: req.auth?.role,
+      });
 
-    if (permissions.includes("*") || permissions.includes(permission)) {
-      return next();
+      if (permissions.includes("*") || permissions.includes(permission)) {
+        return next();
+      }
+
+      return next(new HttpError(403, "You do not have permission for this action"));
+    } catch (error) {
+      return next(error);
     }
-
-    return next(new HttpError(403, "You do not have permission for this action"));
   };
 }
 

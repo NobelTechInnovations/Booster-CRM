@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 // creation, shown once like the Shopify custom-app token.
 const webhookEndpointSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
 
     name: { type: String, required: true, trim: true }, // brand-chosen label, e.g. "Razorpay — main account"
     provider: { type: String, required: true, trim: true }, // free text: "razorpay", "cashfree", "shiprocket-checkout", "fastrr", "custom", ...

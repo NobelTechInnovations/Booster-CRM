@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 // so the events list is scannable without opening every payload.
 const webhookEventSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     endpointId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
 
     provider: { type: String, required: true, trim: true },

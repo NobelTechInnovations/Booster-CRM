@@ -2,8 +2,8 @@ import mongoose from "mongoose";
 
 const socialCommentSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
-    channelId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", required: true, index: true },
     // Local SocialPost._id, not the external post id — lets a comment list
     // query join cheaply without re-parsing externalPostId matching logic.
     postId: { type: mongoose.Schema.Types.ObjectId, ref: "SocialPost", required: true, index: true },

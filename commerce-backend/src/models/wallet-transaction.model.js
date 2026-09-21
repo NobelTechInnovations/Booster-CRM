@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 // reconstructable and auditable.
 const walletTransactionSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     amount: { type: Number, required: true }, // positive = credit, negative = debit
     balanceAfter: { type: Number, required: true },
     type: { type: String, enum: ["topup", "debit", "adjustment", "fulfillment_fee"], default: "topup" },

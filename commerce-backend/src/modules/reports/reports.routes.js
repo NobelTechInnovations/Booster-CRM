@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { requireAuth } from "../../middleware/auth.js";
+import { requireApp } from "../../middleware/require-app.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import { generateReport, REPORT_TYPES } from "../../repositories/reports.repo.js";
@@ -7,6 +8,7 @@ import { generateReport, REPORT_TYPES } from "../../repositories/reports.repo.js
 export const reportsRoutes = Router();
 
 reportsRoutes.use(requireAuth);
+reportsRoutes.use(requireApp("reports"));
 
 reportsRoutes.get(
   "/types",

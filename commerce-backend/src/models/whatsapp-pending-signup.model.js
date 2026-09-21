@@ -10,7 +10,7 @@ import mongoose from "mongoose";
 // picks a number, or after 15 minutes if they never come back to finish.
 const whatsappPendingSignupSchema = new mongoose.Schema({
   selectionToken: { type: String, required: true, unique: true, index: true },
-  companyId: { type: mongoose.Schema.Types.Mixed, required: true },
+  companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true },
   userId: { type: mongoose.Schema.Types.Mixed, required: true },
   accessToken: { type: String, required: true, select: false },
   candidates: [

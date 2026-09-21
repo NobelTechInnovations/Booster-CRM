@@ -3,6 +3,7 @@ import bcrypt from "bcryptjs";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { createCompanyUser, listCompanyUsers, updateCompanyUser, changeOwnPassword } from "../../repositories/store.js";
 import { roles } from "../auth/permissions.js";
+import { listRoles } from "../../repositories/role.repo.js";
 import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 
@@ -14,8 +15,15 @@ function requireField(value, label) {
   }
 }
 
-function assertRole(role) {
-  if (!roles.includes(role)) {
+// Validates against the roles this workspace actually has, not a hardcoded
+// list. Previously any role outside the seven built-in e-commerce ones was
+// rejected outright, which is what stopped a workspace from having a role
+// that describes its own people ("Centre Head", "Counsellor"). The built-in
+// names stay valid for every workspace that hasn't defined its own.
+async function assertRole(companyId, role) {
+  const available = await listRoles(companyId);
+  const names = new Set([...available.map((entry) => entry.name), ...roles]);
+  if (!names.has(role)) {
     throw new HttpError(400, "Invalid role");
   }
 }
@@ -44,7 +52,7 @@ userRoutes.post(
     requireField(email, "Email");
     requireField(password, "Password");
     requireField(role, "Role");
-    assertRole(role);
+    await assertRole(req.auth.companyId, role);
 
     if (String(password).length < 8) {
       throw new HttpError(400, "Password must be at least 8 characters");
@@ -98,7 +106,7 @@ userRoutes.patch(
     const role = req.body.role;
     const status = req.body.status;
 
-    assertRole(role);
+    await assertRole(req.auth.companyId, role);
 
     if (!["active", "disabled"].includes(status)) {
       throw new HttpError(400, "Invalid status");

@@ -11,7 +11,7 @@ import mongoose from "mongoose";
 // historical profit on orders that shipped months ago.
 const skuCostSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
     sku:       { type: String, required: true, trim: true },
 
     productTitle: String,   // denormalized for display convenience

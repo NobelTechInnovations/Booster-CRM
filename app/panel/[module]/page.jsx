@@ -14,6 +14,7 @@ import { CustomersView } from "@/components/customers-view";
 import { LeadsView } from "@/components/leads-view";
 import { SupportTicketsView } from "@/components/support-tickets-view";
 import { AdsManagerView } from "@/components/ads-manager-view";
+import { AppsView } from "@/components/apps-view";
 import { GuideView } from "@/components/guide-view";
 import { InventoryView } from "@/components/inventory-view";
 import { AssetsView } from "@/components/assets-view";
@@ -108,6 +109,7 @@ export default function ModulePage({ params }) {
     "smart-whatsapp": "SmartWhatsApp",
     "automation": "Automation",
     "reports": "Reports",
+    "apps": "Apps",
     "settings": "Settings"
   };
 
@@ -183,6 +185,10 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Automation") {
     return <FeatureGate session={session} feature="automation" label="Automation"><AutomationView /></FeatureGate>;
+  }
+
+  if (activeViewName === "Apps") {
+    return <AppsView />;
   }
 
   if (activeViewName === "Settings") {

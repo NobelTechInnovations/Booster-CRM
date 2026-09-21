@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
 import Link from "next/link";
@@ -48,11 +48,13 @@ import {
   getSession,
   listChannels,
   getChannelDashboard,
+  getNavigation,
   listMyCompanies,
   createBrand,
   switchCompany,
 } from "@/lib/api";
 import { useCommerceStore } from "@/lib/store";
+import { navIcon } from "@/lib/nav-icons";
 import { cn } from "@/lib/utils";
 
 // ─── Navigation ───────────────────────────────────────────────────────────────
@@ -111,6 +113,27 @@ const NAV_GROUPS = [
   { label: "Settings", icon: Settings, href: "/panel/settings", single: true },
 ];
 
+// The sidebar the server built for this workspace and this person: the apps
+// they have installed, filtered to the items their role can actually open.
+// NAV_GROUPS below is now only a fallback — used on first paint before the
+// nav request lands, and if that request ever fails, so a network blip can
+// never leave someone staring at a panel with no way to navigate it.
+function useNavGroups() {
+  const { navigation } = useCommerceStore();
+
+  return useMemo(() => {
+    if (!navigation?.length) return NAV_GROUPS;
+
+    // The API sends icon NAMES; the components they refer to live in
+    // lib/nav-icons.js.
+    return navigation.map((group) => ({
+      ...group,
+      icon: navIcon(group.icon),
+      children: group.children?.map((child) => ({ ...child, icon: navIcon(child.icon) })),
+    }));
+  }, [navigation]);
+}
+
 // A bare `pathname.startsWith(base)` treats "/panel/ads" as a prefix of
 // "/panel/ads-manager" — a real string prefix, but not a real path match —
 // which made the Ads & ROAS link (and its parent Finance group) light up
@@ -130,7 +153,8 @@ function isGroupActive(group, pathname) {
 function SubNavBar({ pathname }) {
   const searchParams = useSearchParams();
   const currentSearch = searchParams?.toString() || "";
-  const group = NAV_GROUPS.find((g) => !g.single && isGroupActive(g, pathname));
+  const navGroups = useNavGroups();
+  const group = navGroups.find((g) => !g.single && isGroupActive(g, pathname));
   if (!group) return null;
   return (
     <div className="border-b border-[var(--line)] bg-[var(--panel)]">
@@ -292,6 +316,7 @@ function BrandSwitcher({ session, variant = "sidebar" }) {
 // ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 function Sidebar({ open, setOpen, session, onLogout }) {
+  const navGroups = useNavGroups();
   const pathname = usePathname();
   const { company } = useCommerceStore();
   const userLabel = session?.user?.name || session?.user?.email || session?.company?.name || company || "User";
@@ -349,7 +374,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
 
         {/* Nav items */}
         <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 pb-3">
-          {NAV_GROUPS.map((group) => {
+          {navGroups.map((group) => {
             const active = isGroupActive(group, pathname);
             const href = group.single ? group.href : (group.href || group.children?.[0]?.href);
             return (
@@ -476,6 +501,7 @@ export default function PanelLayout({ children }) {
     connectedChannels, setConnectedChannels,
     setDashboardData, setChannelsError, setIsLoadingChannels,
     setIsLoadingDashboard,
+    setNavigation, setNavPermissions,
     period,
   } = useCommerceStore();
 
@@ -493,6 +519,19 @@ export default function PanelLayout({ children }) {
     finally { setIsLoadingDashboard(false); }
   }
 
+  // Installed apps ∩ this person's permissions, decided server-side. A
+  // failure here is deliberately swallowed: useNavGroups falls back to the
+  // built-in list, so the panel stays usable rather than losing its menu.
+  async function refreshNavigation() {
+    try {
+      const result = await getNavigation();
+      setNavigation(result.nav || []);
+      setNavPermissions(result.permissions || []);
+    } catch (_error) {
+      // keep the fallback nav
+    }
+  }
+
   function logout() { clearSession(); router.push("/login"); }
 
   useEffect(() => {
@@ -501,7 +540,7 @@ export default function PanelLayout({ children }) {
     setSession(saved); setCheckingSession(false);
   }, [router, setSession, setCheckingSession]);
 
-  useEffect(() => { if (session?.token) { refreshChannels(); refreshDashboardData(); } }, [session?.token]); // eslint-disable-line
+  useEffect(() => { if (session?.token) { refreshChannels(); refreshDashboardData(); refreshNavigation(); } }, [session?.token]); // eslint-disable-line
   useEffect(() => { if (session?.token) refreshDashboardData(); }, [period]); // eslint-disable-line
 
   const [followUpCustomer, setFollowUpCustomer] = useState(null);
