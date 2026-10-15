@@ -354,6 +354,149 @@ function normalizeAmazonProduct({ companyId, channelId, shop, listing }) {
   };
 }
 
+// ─── Oyklane ─────────────────────────────────────────────────────────────────
+// Field names follow https://oyklane.com/developers. Amounts arrive in major
+// units (rupees). Only the order shape is fully documented there, so product
+// and customer mapping accepts the obvious alternates for each field.
+
+const OYKLANE_FULFILLMENT = { fulfilled: "fulfilled", shipped: "fulfilled", delivered: "fulfilled", partial: "partial", partially_fulfilled: "partial", cancelled: "cancelled" };
+
+function normalizeOyklaneOrder({ companyId, channelId, shop, order }) {
+  const customer        = order.customer || {};
+  const shippingAddress = order.shipping_address || {};
+  const paymentStatus   = String(order.payment_status || "").toLowerCase();
+  const fulfillment     = String(order.fulfillment_status || "").toLowerCase();
+  const isCOD           = /cod|cash/i.test(String(order.payment_method || ""));
+  const totalPrice      = toNumber(order.total);
+  const isCancelled     = fulfillment === "cancelled" || paymentStatus === "cancelled" || Boolean(order.cancelled_at);
+  const createdAt       = toDate(order.created_at || order.placed_at);
+
+  return {
+    companyId, channelId, provider: "oyklane", shop,
+    externalId:         String(order.id),
+    name:               order.number ? `#${order.number}` : String(order.id),
+    orderNumber:        order.number,
+    email:              order.email || customer.email,
+    phone:              order.phone || shippingAddress.phone,
+    customerExternalId: customer.id ? String(customer.id) : order.email || undefined,
+    customerName:       customer.name || shippingAddress.name || order.email || "Oyklane customer",
+    financialStatus:    paymentStatus === "paid" ? "paid" : paymentStatus === "refunded" ? "refunded" : isCancelled ? "voided" : "pending",
+    fulfillmentStatus:  OYKLANE_FULFILLMENT[fulfillment] || "unfulfilled",
+    note:               order.note,
+    tags:               [order.payment_method, order.gstin ? "GST" : null].filter(Boolean),
+    currency:           order.currency || "INR",
+    totalPrice,
+    subtotalPrice:      toNumber(order.subtotal),
+    totalTax:           toNumber(order.tax),
+    totalShipping:      toNumber(order.shipping),
+    totalDiscounts:     toNumber(order.discount),
+    paymentGatewayNames: [order.payment_method].filter(Boolean),
+    isCOD,
+    codAmount:          isCOD && paymentStatus !== "paid" ? totalPrice : 0,
+    shippingAddress: {
+      name:     shippingAddress.name,
+      address1: shippingAddress.address1,
+      address2: shippingAddress.address2,
+      city:     shippingAddress.city,
+      province: shippingAddress.province,
+      country:  shippingAddress.country,
+      zip:      shippingAddress.zip,
+      phone:    shippingAddress.phone,
+    },
+    lineItems: (order.line_items || []).map((item) => ({
+      externalId:        item.id ? String(item.id) : undefined,
+      productExternalId: item.product_id ? String(item.product_id) : undefined,
+      variantExternalId: item.variant_id ? String(item.variant_id) : undefined,
+      title:             item.title,
+      variantTitle:      item.variant_title,
+      sku:               item.sku,
+      quantity:          toNumber(item.quantity),
+      price:             toNumber(item.price),
+      requiresShipping:  true,
+    })),
+    trackingNumber:   order.tracking_number,
+    trackingCompany:  order.courier,
+    omsStatus:        "pending",
+    shopifyCreatedAt: createdAt,
+    processedAt:      createdAt,
+    cancelledAt:      isCancelled ? toDate(order.cancelled_at || order.updated_at) || createdAt : undefined,
+    raw:              order,
+  };
+}
+
+function normalizeOyklaneProduct({ companyId, channelId, shop, product }) {
+  const variants = (product.variants || []).map((variant) => ({
+    externalId:        String(variant.id),
+    title:             variant.title || product.title,
+    sku:               variant.sku || "",
+    price:             toNumber(variant.price),
+    inventoryQuantity: toNumber(variant.quantity ?? variant.inventory_quantity ?? variant.stock),
+  }));
+  const image = (product.images || [])[0];
+  return {
+    companyId, channelId, provider: "oyklane", shop,
+    externalId:     String(product.id),
+    title:          product.title,
+    handle:         product.handle || product.slug,
+    status:         product.status,
+    vendor:         product.vendor || product.brand,
+    productType:    product.product_type || product.category,
+    tags:           Array.isArray(product.tags) ? product.tags : String(product.tags || "").split(",").map((t) => t.trim()).filter(Boolean),
+    imageUrl:       typeof image === "string" ? image : image?.url || image?.src,
+    totalInventory: variants.reduce((sum, v) => sum + toNumber(v.inventoryQuantity), 0),
+    variants,
+    shopifyCreatedAt: toDate(product.created_at),
+    shopifyUpdatedAt: toDate(product.updated_at) || new Date(),
+    publishedAt:      toDate(product.published_at || product.created_at),
+    raw:              product,
+  };
+}
+
+function normalizeOyklaneCustomer({ companyId, channelId, shop, customer }) {
+  const address = customer.default_address || customer.address || {};
+  return {
+    companyId, channelId, provider: "oyklane", shop,
+    externalId:  String(customer.id),
+    email:       customer.email,
+    phone:       customer.phone,
+    name:        customer.name || customer.email || "Oyklane customer",
+    ordersCount: toNumber(customer.orders_count),
+    totalSpent:  toNumber(customer.total_spent),
+    currency:    customer.currency || "INR",
+    defaultAddress: {
+      address1: address.address1,
+      address2: address.address2,
+      city:     address.city,
+      province: address.province,
+      country:  address.country,
+      zip:      address.zip,
+    },
+    shopifyCreatedAt: toDate(customer.created_at),
+    shopifyUpdatedAt: toDate(customer.updated_at),
+    raw: customer,
+  };
+}
+
+export async function saveSyncedOyklaneData({ companyId, channelId, shop, orders = [], products = [], customers = [] }) {
+  const normOrders = orders.map((order) => normalizeOyklaneOrder({ companyId, channelId, shop, order }));
+  const normProds  = products.map((product) => normalizeOyklaneProduct({ companyId, channelId, shop, product })).filter((p) => p.externalId && p.title);
+  const normCusts  = customers.map((customer) => normalizeOyklaneCustomer({ companyId, channelId, shop, customer }));
+
+  if (isMongoConnected()) {
+    await Promise.all([
+      bulkUpsert(SyncedOrder, normOrders, orderFilter, { preserveOnUpdate: ["omsStatus"] }),
+      bulkUpsert(SyncedProduct, normProds, productFilter),
+      customerBulkUpsert(normCusts, customerFilter),
+    ]);
+  } else {
+    for (const o of normOrders) memory.orders.set(`${companyId}:${channelId}:${o.externalId}`, clone(o));
+    for (const p of normProds)  memory.products.set(`${companyId}:${channelId}:${p.externalId}`, clone(p));
+    for (const c of normCusts)  memory.customers.set(`${companyId}:${channelId}:${c.externalId}`, clone(c));
+  }
+
+  return { orders: normOrders, products: normProds, customers: normCusts };
+}
+
 // ─── Bulk Upsert ─────────────────────────────────────────────────────────────
 
 function recordFilter(r) {
@@ -510,7 +653,9 @@ function buildStatusHistoryEntry(stage, note) {
 export async function upsertSingleOrder({ companyId, channelId, provider, shop, order }) {
   const normalized = provider === "shopify"
     ? normalizeOrder({ companyId, channelId, provider, shop, order })
-    : normalizeAmazonOrder({ companyId, channelId, shop, order });
+    : provider === "oyklane"
+      ? normalizeOyklaneOrder({ companyId, channelId, shop, order })
+      : normalizeAmazonOrder({ companyId, channelId, shop, order });
 
   // omsStatus is owned by our own fulfillment flow (shipped/cancelled/etc) — never
   // let a webhook re-sync stomp on it after the first insert.

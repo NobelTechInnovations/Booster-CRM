@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const channelSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
 
     // "sales" = Shopify, Amazon, WooCommerce etc.
     // "shipping" = Velocity, Shiprocket, Shipmozo etc.
@@ -26,7 +26,7 @@ const channelSchema = new mongoose.Schema(
       type: String,
       enum: [
         // Sales channels
-        "shopify", "amazon", "woocommerce", "flipkart", "meesho", "myntra", "ajio", "etsy",
+        "shopify", "amazon", "oyklane", "woocommerce", "flipkart", "meesho", "myntra", "ajio", "etsy",
         // Shipping providers
         "velocity", "shiprocket", "shipmozo", "shipway", "ithink", "nimbuspost", "pickrr", "delhivery",
         // Ads / Social / WhatsApp providers (same Meta platform, distinguished by channelType + shop)

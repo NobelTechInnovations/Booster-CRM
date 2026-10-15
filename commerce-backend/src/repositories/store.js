@@ -437,6 +437,7 @@ export async function createCompanyOwner({ companyName, name, email, passwordHas
     const company = await Company.create({
       name: normalizedCompanyName,
       slug,
+      onboarding: { completed: false },
     });
 
     // One identity per email, reused across every workspace they own. When
@@ -472,6 +473,7 @@ export async function createCompanyOwner({ companyName, name, email, passwordHas
     slug,
     ownerUserId: null,
     status: "active",
+    onboarding: { completed: false },
     createdAt: now(),
     updatedAt: now(),
   };

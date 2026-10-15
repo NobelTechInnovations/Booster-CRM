@@ -78,6 +78,28 @@ const companySchema = new mongoose.Schema(
       dailySummaryEmail: { type: Boolean, default: false },
       lowStockThreshold: { type: Number, default: 5 },
     },
+    // First-run app selection, the Odoo/Zoho "what are you here to do?" step.
+    //
+    // `completed` is what tells a brand-new workspace apart from one that
+    // predates the app system entirely. That distinction has to be explicit:
+    // "this workspace has no app records" used to be read as "give it
+    // everything" (so existing customers kept working), which meant a coaching
+    // centre signing up was handed Orders and Fulfilment it will never use.
+    // Existing workspaces are grandfathered by scripts/migrate-grandfather-apps.js,
+    // which writes their real app records and marks them completed — after
+    // which an absent record can only mean "hasn't chosen yet".
+    onboarding: {
+      // No default on purpose: absent means a workspace from before onboarding
+      // existed (grandfathered with every commerce app). Only signup writes false.
+      completed: { type: Boolean },
+      // Which preset they picked (see BUSINESS_TYPES in config/app-registry.js).
+      // Kept for reporting and for suggesting apps later — never used to gate
+      // anything, since what a workspace can actually open is decided purely
+      // by its installed apps.
+      businessType: { type: String, default: "" },
+      completedAt: Date,
+    },
+
     // Set by a platform admin (app/admin), never by the company itself —
     // absent entirely on every company that existed before this field was
     // added, and companyHasFeature() (utils/feature-gate.js) treats an

@@ -2,7 +2,7 @@ import mongoose from "mongoose";
 
 const automationRuleSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     name: { type: String, required: true, trim: true },
     // A plain string, not an enum — order_placed/order_fulfilled/order_delivered/
     // order_cancelled/refund_processed/cod_payment_reminder/low_stock/

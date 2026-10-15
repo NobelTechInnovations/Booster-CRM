@@ -1,7 +1,8 @@
 import { getOrderById, listPendingOrders, listFulfilledOrders, updateOrderOmsStatus, createLocalOrder, updateDraftOrder, deleteDraftOrder, finalizeOrder } from "../../repositories/order.repo.js";
 import { getWarehouseByExternalId, listWarehouses } from "../../repositories/warehouse.repo.js";
 import { getShippingProvider } from "../shipping/shipping-registry.js";
-import { getShopifyChannelByShop } from "../../repositories/channel.repo.js";
+import { getShopifyChannelByShop, getChannelForSync } from "../../repositories/channel.repo.js";
+import { markOyklaneOrderFulfilled } from "../channels/oyklane.service.js";
 import { updateShipmentsByAwb, updateShipmentById, getShipmentByAwb, listShipmentsByIds, markLabelsDownloaded } from "../../repositories/shipment.repo.js";
 import { PDFDocument } from "pdf-lib";
 import { deductAssetsForOrder } from "../../repositories/asset.repo.js";
@@ -139,6 +140,14 @@ export async function markOrderShippedManually({ companyId, orderId, trackingNum
     } catch (err) {
       shopifyPushError = err.message;
       console.warn(`[Fulfillment] Shopify auto-fulfillment update failed for ${order.name}:`, err.message);
+    }
+  } else if (order.provider === "oyklane") {
+    try {
+      const channel = await getChannelForSync({ channelId: order.channelId, companyId });
+      await markOyklaneOrderFulfilled({ channel, orderId: order.externalId, awbCode: trackingNumber.trim(), courierName: trackingCompany });
+      updatedOrder = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
+    } catch (err) {
+      shopifyPushError = err.message;
     }
   } else {
     updatedOrder = await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
@@ -286,6 +295,15 @@ export async function shipOrder({ companyId, orderId, providerName, warehouseId,
     } catch (err) {
       shopifyPushError = err.message;
       console.warn(`[Fulfillment] Shopify auto-fulfillment update failed for ${order.name}:`, err.message);
+    }
+  } else if (order.provider === "oyklane") {
+    try {
+      const channel = await getChannelForSync({ channelId: order.channelId, companyId });
+      await markOyklaneOrderFulfilled({ channel, orderId: order.externalId, awbCode: shipment.awbCode, courierName: shipment.courierName || providerName });
+      await updateOrderOmsStatus({ companyId, shopifyOrderId: order.externalId, update: { fulfillmentStatus: "fulfilled" } });
+      updatedOrder.fulfillmentStatus = "fulfilled";
+    } catch (err) {
+      shopifyPushError = err.message;
     }
   } else {
     // Non-Shopify orders (local/manual, Amazon import) have no external

@@ -538,7 +538,20 @@ export default function PanelLayout({ children }) {
     const saved = getSession();
     if (!saved?.token) { router.replace("/login"); return; }
     setSession(saved); setCheckingSession(false);
-  }, [router, setSession, setCheckingSession]);
+
+    // A brand-new workspace hasn't picked its apps yet — send it to the
+    // wizard instead of an empty panel.
+    //
+    // Checked as an explicit `=== false` rather than falsy on purpose. A
+    // session cached before this field existed has `onboarding` undefined,
+    // and treating that as "not onboarded" would bounce an existing
+    // customer with a stale login straight into a setup wizard for a
+    // workspace they have been running for months.
+    const onboarded = saved?.company?.onboarding?.completed;
+    if (onboarded === false && !pathname?.startsWith("/panel/onboarding")) {
+      router.replace("/panel/onboarding");
+    }
+  }, [router, setSession, setCheckingSession, pathname]);
 
   useEffect(() => { if (session?.token) { refreshChannels(); refreshDashboardData(); refreshNavigation(); } }, [session?.token]); // eslint-disable-line
   useEffect(() => { if (session?.token) refreshDashboardData(); }, [period]); // eslint-disable-line

@@ -319,6 +319,70 @@ export async function getConnectedShopifyChannel(companyId) {
   return clone([...memory.channels.values()].find((ch) => String(ch.companyId) === String(companyId) && ch.provider === "shopify" && ch.status === "connected") || null);
 }
 
+// ─── Oyklane Channel ─────────────────────────────────────────────────────────
+
+// API-key channel: `apiKey` is the store's oyk_… key, `apiSecret` the
+// webhook endpoint secret (whsec_…) used to verify incoming deliveries.
+export async function upsertOyklaneChannel({ companyId, userId, shop, name, apiKey, webhookSecret, external }) {
+  const fields = {
+    channelType: "sales",
+    provider: "oyklane",
+    companyId,
+    shop,
+    name: name || "Oyklane",
+    status: "connected",
+    scopes: ["api_key"],
+    external,
+    connectedBy: userId,
+    disconnectedAt: null,
+  };
+  const credentials = { apiKey, ...(webhookSecret ? { apiSecret: webhookSecret } : {}) };
+
+  if (isMongoConnected()) {
+    const existingChannel = await Channel.findOne({ companyId, provider: "oyklane", shop }).select("_id").lean();
+    await assertNewChannelWithinLimit({ companyId, existingChannel, channelType: "sales", limitKey: "maxChannels", label: "connected sales channels" });
+
+    const set = { ...fields, "credentials.apiKey": credentials.apiKey };
+    if (credentials.apiSecret) set["credentials.apiSecret"] = credentials.apiSecret;
+    return Channel.findOneAndUpdate(
+      { companyId, provider: "oyklane", shop },
+      { $set: set, $setOnInsert: { sync: { products: "idle", orders: "idle", inventory: "idle", customers: "idle" } } },
+      { returnDocument: "after", upsert: true },
+    ).lean();
+  }
+
+  const existing = [...memory.channels.values()].find(
+    (ch) => String(ch.companyId) === String(companyId) && ch.provider === "oyklane" && ch.shop === shop,
+  );
+  await assertNewChannelWithinLimit({ companyId, existingChannel: existing, channelType: "sales", limitKey: "maxChannels", label: "connected sales channels" });
+
+  const channel = {
+    ...existing,
+    ...fields,
+    _id: existing?._id || id(),
+    credentials: { ...(existing?.credentials || {}), ...credentials },
+    sync: existing?.sync || { products: "idle", orders: "idle", inventory: "idle", customers: "idle" },
+    createdAt: existing?.createdAt || now(),
+    updatedAt: now(),
+  };
+  memory.channels.set(channel._id, channel);
+  return clone(channel);
+}
+
+// Webhook deliveries are addressed by channel id alone (no auth token), so
+// this is the one lookup that isn't scoped by a caller's companyId — the
+// signature check against the secret returned here is what authenticates it.
+export async function getOyklaneChannelForWebhook(channelId) {
+  if (!mongoose.Types.ObjectId.isValid(String(channelId))) return null;
+  if (isMongoConnected()) {
+    return Channel.findOne({ _id: channelId, provider: "oyklane", status: "connected" })
+      .select("+credentials.apiKey +credentials.apiSecret")
+      .lean();
+  }
+  const channel = memory.channels.get(channelId);
+  return channel?.provider === "oyklane" && channel.status === "connected" ? clone(channel) : null;
+}
+
 // ─── Amazon Channel ──────────────────────────────────────────────────────────
 
 export async function upsertAmazonChannel({ companyId, userId, sellingPartnerId, marketplaceId, refreshToken, accessToken }) {

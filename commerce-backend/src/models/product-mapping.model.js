@@ -2,12 +2,12 @@ import mongoose from "mongoose";
 
 const productMappingSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     masterName: { type: String, required: true, trim: true },
     mappings: [
       {
         provider: { type: String, enum: ["shopify", "amazon"], required: true },
-        channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel" },
+        channelId: { type: mongoose.Schema.Types.Mixed, ref: "Channel" },
         productId: String,
         productTitle: String,
         sku: String,

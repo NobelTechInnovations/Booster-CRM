@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { env } from "../../config/env.js";
-import { requireAuth } from "../../middleware/auth.js";
+import { requireAuth, requirePermission } from "../../middleware/auth.js";
+import { adjustOyklaneInventory, connectOyklane, syncOyklaneData } from "./oyklane.service.js";
 import {
   disconnectChannel,
   getChannelForSync,
@@ -102,6 +103,7 @@ const supportedChannels = [
   { provider: "shopify", name: "Shopify", status: "available", phase: "Phase 3" },
   { provider: "woocommerce", name: "WooCommerce", status: "planned", phase: "Phase 3" },
   { provider: "amazon", name: "Amazon", status: "available", phase: "Phase 3" },
+  { provider: "oyklane", name: "Oyklane", status: "available", phase: "Phase 3" },
   { provider: "velocity", name: "Velocity Shipping", status: "available", phase: "Phase 10" },
   { provider: "flipkart", name: "Flipkart", status: "planned", phase: "Phase 3" },
   { provider: "meesho", name: "Meesho", status: "planned", phase: "Later" },
@@ -753,6 +755,45 @@ channelRoutes.get(
   }),
 );
 
+// ─── Oyklane ─────────────────────────────────────────────────────────────────
+
+channelRoutes.post(
+  "/oyklane/connect",
+  requireAuth,
+  requirePermission("channels:manage"),
+  asyncHandler(async (req, res) => {
+    const channel = await connectOyklane({
+      companyId: req.auth.companyId,
+      userId: req.auth.sub,
+      apiKey: req.body?.apiKey,
+      webhookSecret: req.body?.webhookSecret,
+    });
+    const channelId = String(channel._id || channel.id);
+
+    // First import right away so the panel isn't empty; a failure here
+    // leaves the channel connected and shows up in its sync status.
+    await syncOyklaneData({ channelId, companyId: req.auth.companyId }).catch(() => {});
+
+    res.json({
+      message: "Oyklane connected",
+      webhookUrl: `${env.shopify.appUrl.replace(/\/$/, "")}/api/webhooks/oyklane/${channelId}`,
+      channel: withoutCredentials(channel),
+    });
+  }),
+);
+
+channelRoutes.post(
+  "/:channelId/oyklane/inventory",
+  requireAuth,
+  requirePermission("inventory:manage"),
+  asyncHandler(async (req, res) => {
+    const channel = await getChannelForSync({ channelId: req.params.channelId, companyId: req.auth.companyId });
+    if (!channel || channel.provider !== "oyklane") throw new HttpError(404, "Oyklane channel not found");
+    await adjustOyklaneInventory({ channel, variantId: req.body?.variantId, quantity: req.body?.quantity, mode: req.body?.mode === "add" ? "add" : "set", reason: "booster_panel" });
+    res.json({ message: "Stock updated on Oyklane" });
+  }),
+);
+
 channelRoutes.post(
   "/:channelId/sync",
   requireAuth,
@@ -769,6 +810,11 @@ channelRoutes.post(
     let channel;
     if (channelForSync.provider === "shopify") {
       channel = await syncShopifyData({
+        channelId: req.params.channelId,
+        companyId: req.auth.companyId,
+      });
+    } else if (channelForSync.provider === "oyklane") {
+      channel = await syncOyklaneData({
         channelId: req.params.channelId,
         companyId: req.auth.companyId,
       });

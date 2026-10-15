@@ -1,3 +1,4 @@
+import "./models/plugins/mixed-id.plugin.js";
 import cors from "cors";
 import express from "express";
 import helmet from "helmet";
@@ -12,6 +13,7 @@ import { userRoutes } from "./modules/users/user.routes.js";
 import { shippingRoutes } from "./modules/shipping/shipping.routes.js";
 import { shopifyWebhookRoutes } from "./modules/webhooks/shopify-webhook.routes.js";
 import { webhookInboxRoutes } from "./modules/webhooks/webhook-inbox.routes.js";
+import { oyklaneWebhookRoutes } from "./modules/webhooks/oyklane-webhook.routes.js";
 import { fulfillmentRoutes } from "./modules/fulfillment/fulfillment.routes.js";
 import { financeRoutes } from "./modules/finance/finance.routes.js";
 import { adsRoutes } from "./modules/ads/ads.routes.js";
@@ -33,6 +35,7 @@ import { migrationRoutes } from "./modules/migration/migration.routes.js";
 
 export function createApp() {
   const app = express();
+  app.set("trust proxy", 1);
 
   app.use(
     cors({
@@ -78,6 +81,7 @@ export function createApp() {
   app.use("/api/channels", channelRoutes);
   app.use("/api/shipping", shippingRoutes);
   app.use("/api/webhooks/shopify", shopifyWebhookRoutes);
+  app.use("/api/webhooks/oyklane", oyklaneWebhookRoutes);
   app.use("/api/webhooks", webhookInboxRoutes);
   app.use("/api/fulfillment", fulfillmentRoutes);
   app.use("/api/finance", financeRoutes);

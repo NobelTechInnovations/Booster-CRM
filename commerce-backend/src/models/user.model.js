@@ -12,7 +12,7 @@ import mongoose from "mongoose";
 // only falls back here for rows the account backfill hasn't reached yet.
 const userSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
 
     // The person this membership belongs to. Nullable during the migration
     // window; every row gets one once scripts/migrate-accounts.js has run.

@@ -1,6 +1,7 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { asyncHandler } from "../../utils/async-handler.js";
+import { simpleRateLimit } from "../../utils/simple-rate-limit.js";
 import { HttpError } from "../../utils/http-error.js";
 import { signPlatformAdminToken, requirePlatformAdmin } from "../../middleware/platform-admin-auth.js";
 import {
@@ -37,8 +38,11 @@ function requireField(value, label) {
 // signup: the first admin comes from scripts/seed-platform-admin.js, every
 // admin after that only via an already-authenticated admin. ────────────────
 
+const adminLoginLimiter = simpleRateLimit({ windowMs: 15 * 60 * 1000, max: 10 });
+
 platformAdminRoutes.post(
   "/auth/login",
+  adminLoginLimiter,
   asyncHandler(async (req, res) => {
     const { email, password } = req.body;
     requireField(email, "Email");

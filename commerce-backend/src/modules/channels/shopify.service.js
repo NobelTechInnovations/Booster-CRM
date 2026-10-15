@@ -1,3 +1,4 @@
+import { updateOyklaneRecord } from "./oyklane.service.js";
 import crypto from "node:crypto";
 import { URLSearchParams } from "node:url";
 import { env } from "../../config/env.js";
@@ -407,6 +408,12 @@ export async function updateShopifyRecord({ companyId, resource, recordId, paylo
   }
 
   const { record, channel } = context;
+
+  if (channel.provider === "oyklane") {
+    const oyklaneChannel = await getChannelForSync({ channelId: channel._id, companyId });
+    return updateOyklaneRecord({ channel: oyklaneChannel, resource, record, payload });
+  }
+
   const accessToken = channel.credentials?.accessToken;
 
   if (!accessToken) {

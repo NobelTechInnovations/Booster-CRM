@@ -36,7 +36,7 @@ export const shopifyWebhookRoutes = Router();
 // different bytes than what Shopify actually signed (key order, spacing),
 // which would make a correctly-signed webhook fail verification.
 function verifyWebhookHmac(req, secret) {
-  if (!secret) return true; // Skip if no secret configured at all (dev)
+  if (!secret) return env.nodeEnv !== "production"; // unsigned only allowed in dev
 
   const hmacHeader = req.headers["x-shopify-hmac-sha256"];
   if (!hmacHeader) return false;

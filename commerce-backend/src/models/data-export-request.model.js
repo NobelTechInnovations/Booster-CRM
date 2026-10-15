@@ -7,7 +7,7 @@ import mongoose from "mongoose";
 // shared with the admin's own ad-hoc per-company backup.
 const dataExportRequestSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     status: { type: String, enum: ["pending", "approved", "rejected"], default: "pending", index: true },
     requestedByUserId: { type: mongoose.Schema.Types.Mixed },
     requestedAt: { type: Date, default: Date.now },

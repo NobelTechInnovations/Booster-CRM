@@ -1,3 +1,4 @@
+import "./models/plugins/mixed-id.plugin.js";
 import { createApp } from "./app.js";
 import { connectDatabase } from "./config/database.js";
 import { env } from "./config/env.js";

@@ -34,8 +34,11 @@ import { runSupportTicketAutoCloseJob } from "../../jobs/support-ticket-auto-clo
 export const cronRoutes = Router();
 
 function requireCronAuth(req, res, next) {
+  if (!env.cronSecret && env.nodeEnv === "production") {
+    return res.status(503).json({ error: "CRON_SECRET is not configured" });
+  }
   if (!env.cronSecret) {
-    // Not configured yet — allow through so these endpoints work before
+    // Not configured yet (dev only) — allow through so these endpoints work before
     // CRON_SECRET is set up, but make it loud in the logs since an
     // unauthenticated trigger endpoint left open long-term is a real risk.
     console.warn("[Cron] CRON_SECRET is not set — /api/cron/* endpoints are currently unauthenticated.");

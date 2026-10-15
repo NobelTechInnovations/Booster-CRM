@@ -73,6 +73,7 @@ import {
   clearSession,
   createAmazonConnection,
   createAmazonPrivateConnection,
+  connectOyklaneChannel,
   createShopifyConnection,
   saveShopifySetup,
   SHOPIFY_OAUTH_REDIRECT_URI,
@@ -873,10 +874,66 @@ function AmazonConnectForm({ compact = false }) {
   );
 }
 
+function OyklaneConnectForm() {
+  const [form, setForm] = useState({ apiKey: "", webhookSecret: "" });
+  const [connectError, setConnectError] = useState("");
+  const [isConnecting, setIsConnecting] = useState(false);
+  const [webhookUrl, setWebhookUrl] = useState("");
+
+  async function handleConnect(event) {
+    event.preventDefault();
+    setConnectError("");
+    setIsConnecting(true);
+    try {
+      const result = await connectOyklaneChannel(form);
+      setWebhookUrl(result.webhookUrl || "");
+    } catch (error) {
+      setConnectError(error.message);
+    } finally {
+      setIsConnecting(false);
+    }
+  }
+
+  const inputClass = "h-9 w-full rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] px-3 text-xs outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-100 placeholder:text-slate-400";
+
+  if (webhookUrl) {
+    return (
+      <div className="space-y-2.5 text-xs">
+        <p className="font-semibold text-emerald-700">Oyklane connected — orders, products and customers are imported.</p>
+        <p className="text-slate-600">For live updates, add this URL in Oyklane ▸ Settings ▸ API &amp; webhooks and select the order, product and customer events:</p>
+        <input readOnly className={inputClass} value={webhookUrl} onFocus={(e) => e.target.select()} />
+        <Button type="button" className="w-full h-9" onClick={() => { window.location.href = "/panel?view=Channels&provider=oyklane&status=connected"; }}>
+          Done
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <form onSubmit={handleConnect} className="space-y-2.5">
+      <div className="grid gap-2">
+        <input className={inputClass} type="password" autoComplete="off" placeholder="API key (oyk_…)" value={form.apiKey} onChange={(e) => setForm((f) => ({ ...f, apiKey: e.target.value }))} />
+        <input className={inputClass} type="password" autoComplete="off" placeholder="Webhook signing secret (whsec_…, optional)" value={form.webhookSecret} onChange={(e) => setForm((f) => ({ ...f, webhookSecret: e.target.value }))} />
+      </div>
+      <p className="text-[11px] text-slate-500">Create a key in Oyklane ▸ Settings ▸ API &amp; webhooks with read/write products, inventory, orders and read customers.</p>
+      <Button type="submit" className="w-full h-10 font-semibold" disabled={isConnecting || !form.apiKey.trim()}>
+        <PlugZap size={16} />
+        {isConnecting ? "Connecting…" : "Connect Oyklane"}
+      </Button>
+      {connectError ? (
+        <p className="flex items-center gap-1.5 rounded-md bg-rose-50 px-2.5 py-2 text-xs font-medium text-rose-700">
+          <span>⚠</span>{connectError}
+        </p>
+      ) : null}
+    </form>
+  );
+}
+
 // Provider brand colours (bg, text, ring)
 const PROVIDER_COLORS = {
   shopify: { bg: "bg-emerald-600", ring: "ring-emerald-200", label: "S" },
   amazon: { bg: "bg-amber-500", ring: "ring-amber-200", label: "A" },
+  oyklane: { bg: "bg-sky-600", ring: "ring-sky-200", label: "O" },
   woocommerce: { bg: "bg-violet-600", ring: "ring-violet-200", label: "W" },
   flipkart: { bg: "bg-blue-600", ring: "ring-blue-200", label: "F" },
   meesho: { bg: "bg-pink-600", ring: "ring-pink-200", label: "M" },
@@ -1048,6 +1105,8 @@ function ChannelCard({ channel, connectedChannel, onSyncChannel, onDisconnectCha
           <ShopifyConnectForm compact />
         ) : isAmazon ? (
           <AmazonConnectForm compact />
+        ) : channel.provider === "oyklane" ? (
+          <OyklaneConnectForm />
         ) : (
           <button
             disabled
