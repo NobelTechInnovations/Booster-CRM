@@ -1,7 +1,9 @@
 import { isMongoConnected } from "../config/database.js";
 import { OrgApp } from "../models/org-app.model.js";
 import { memory, id, clone, now } from "./memory-store.js";
-import { APPS, COMMERCE_APP_SLUGS, NAV_GROUP_ORDER, getApp, listApps } from "../config/app-registry.js";
+import { APPS, BUSINESS_TYPES, COMMERCE_APP_SLUGS, NAV_GROUP_ORDER, getApp, listApps } from "../config/app-registry.js";
+import { getCompany } from "./company.repo.js";
+import { companyHasFeature } from "../utils/feature-gate.js";
 
 function memoryOrgApps() {
   memory.orgApps = memory.orgApps || new Map();
@@ -17,22 +19,28 @@ async function rawInstallRows(companyId) {
   );
 }
 
+// A workspace from before the app system has no rows and no onboarding flag.
+// It keeps every commerce app — that's what it has always had. Only a
+// workspace created by signup (onboarding.completed === false) starts empty.
+async function isLegacyWorkspace(companyId) {
+  const company = await getCompany(companyId);
+  return company?.onboarding?.completed !== false;
+}
+
 // The set of app slugs a workspace can currently use.
 //
-// A workspace with no rows at all gets every non-core app — the same
-// "nothing configured means full access" convention companyHasFeature()
-// already uses for plans. That is the entire backward-compatibility story:
-// every workspace that existed before apps did keeps seeing exactly what it
-// saw yesterday, with no migration required to make that true.
+// No rows means either a legacy workspace (gets core + every commerce app) or
+// a new one that hasn't been through onboarding yet (gets core only).
 export async function listInstalledSlugs(companyId) {
   const rows = await rawInstallRows(companyId);
 
-  if (!rows.length) {
+  if (!rows.length && (await isLegacyWorkspace(companyId))) {
     return new Set(["core", ...COMMERCE_APP_SLUGS]);
   }
 
   const slugs = new Set(rows.map((row) => row.appSlug));
-  // Core is never optional, whatever the rows say.
+  // Core is never optional, whatever the rows say — a workspace always needs
+  // a dashboard, a team screen and settings to administer itself back.
   slugs.add("core");
   return slugs;
 }
@@ -49,6 +57,7 @@ export async function listAppsForCompany(companyId) {
   const installed = await listInstalledSlugs(companyId);
   const rows = await rawInstallRows(companyId);
   const rowBySlug = new Map(rows.map((row) => [row.appSlug, row]));
+  const company = await getCompany(companyId);
 
   return listApps().map((app) => {
     const row = rowBySlug.get(app.slug);
@@ -63,6 +72,10 @@ export async function listAppsForCompany(companyId) {
       installedAt: row?.installedAt || null,
       settings: row?.settings || {},
       permissions: app.permissions || [],
+      // Paid app the current plan doesn't cover — the marketplace shows an
+      // upgrade prompt rather than an Install button that would just fail.
+      locked: Boolean(app.requiresFeature) && !companyHasFeature(company, app.requiresFeature),
+      requiresFeature: app.requiresFeature || null,
     };
   });
 }
@@ -73,11 +86,17 @@ export async function installApp({ companyId, slug, actorUserId }) {
   const app = getApp(slug);
   if (!app) return { error: "Unknown app" };
 
-  // Materialize the implicit default before changing anything. Without this,
-  // a workspace that had never installed anything (and therefore implicitly
-  // had everything) would drop to exactly one app the moment it installed
-  // its first one — the fallback would stop applying the instant a row exists.
-  await materializeDefaults(companyId);
+  // Paid apps are gated by the plan the workspace is actually on. Checked
+  // here rather than only in the UI, so installing one by hitting the API
+  // directly isn't a way around paying for it.
+  if (app.requiresFeature) {
+    const company = await getCompany(companyId);
+    if (!companyHasFeature(company, app.requiresFeature)) {
+      return { error: `${app.name} isn't included in your current plan — upgrade to add it.`, upgrade: true };
+    }
+  }
+
+  await materializeLegacyDefaults(companyId);
 
   if (isMongoConnected()) {
     const row = await OrgApp.findOneAndUpdate(
@@ -117,7 +136,7 @@ export async function uninstallApp({ companyId, slug }) {
   if (!app) return { error: "Unknown app" };
   if (app.required) return { error: `${app.name} can't be removed — the workspace needs it to function.` };
 
-  await materializeDefaults(companyId);
+  await materializeLegacyDefaults(companyId);
 
   if (isMongoConnected()) {
     await OrgApp.findOneAndUpdate(
@@ -165,12 +184,12 @@ export async function updateAppSettings({ companyId, slug, settings }) {
   return { error: "App not installed" };
 }
 
-// Turns the implicit "no rows means everything" default into real rows, so
-// that the first explicit install/uninstall doesn't read as removing
-// everything else. Idempotent and safe to call on every write path.
-export async function materializeDefaults(companyId) {
+// Turns a legacy workspace's implicit "every commerce app" into real rows, so
+// its first explicit install/uninstall doesn't read as removing everything
+// else. No-op for workspaces that already have rows or came through signup.
+async function materializeLegacyDefaults(companyId) {
   const rows = await rawInstallRows(companyId);
-  if (rows.length) return;
+  if (rows.length || !(await isLegacyWorkspace(companyId))) return;
 
   const slugs = ["core", ...COMMERCE_APP_SLUGS];
 
@@ -188,16 +207,7 @@ export async function materializeDefaults(companyId) {
   }
 
   for (const slug of slugs) {
-    const row = {
-      _id: id(),
-      companyId,
-      appSlug: slug,
-      status: "installed",
-      settings: {},
-      installedAt: now(),
-      createdAt: now(),
-      updatedAt: now(),
-    };
+    const row = { _id: id(), companyId, appSlug: slug, status: "installed", settings: {}, installedAt: now(), createdAt: now(), updatedAt: now() };
     memoryOrgApps().set(row._id, row);
   }
 }
@@ -257,4 +267,59 @@ export async function buildNavigation({ companyId, permissions = [] }) {
     .map((entry) => ({ ...entry, order: entry.order < 0 ? NAV_GROUP_ORDER.length : entry.order }))
     .sort((a, b) => a.order - b.order)
     .map(({ order, ...rest }) => rest);
+}
+
+// ─── Onboarding ──────────────────────────────────────────────────────────────
+
+// The first-run app selection. Installs the chosen apps and marks the
+// workspace onboarded, which is what stops it being sent back to the wizard.
+//
+// Unknown slugs are skipped rather than failing the whole thing: the preset
+// bundles in config/app-registry.js name apps that don't exist yet (People,
+// Tasks), so an institute can pick its preset today and simply gets the apps
+// that are built — and starts getting the rest automatically as they ship.
+// Paid apps the workspace's plan doesn't include are skipped for the same
+// reason: a blocked upsell shouldn't strand someone on the signup screen.
+export async function completeOnboarding({ companyId, businessType, slugs = [], actorUserId }) {
+  const requested = Array.isArray(slugs) ? slugs : [];
+  const installed = [];
+  const skipped = [];
+
+  for (const slug of requested) {
+    if (!getApp(slug)) {
+      skipped.push({ slug, reason: "not-built-yet" });
+      continue;
+    }
+    const result = await installApp({ companyId, slug, actorUserId });
+    if (result.error) skipped.push({ slug, reason: result.upgrade ? "needs-upgrade" : "error" });
+    else installed.push(slug);
+  }
+
+  if (isMongoConnected()) {
+    const { Company } = await import("../models/company.model.js");
+    await Company.findByIdAndUpdate(companyId, {
+      $set: {
+        "onboarding.completed": true,
+        "onboarding.businessType": String(businessType || "custom"),
+        "onboarding.completedAt": new Date(),
+      },
+    });
+  } else {
+    const company = memory.companies?.get(String(companyId));
+    if (company) {
+      company.onboarding = { completed: true, businessType: String(businessType || "custom"), completedAt: now() };
+    }
+  }
+
+  return { installed, skipped };
+}
+
+// Presets, with each bundle narrowed to the apps that actually exist right
+// now — so the wizard never offers something it can't deliver.
+export function listBusinessTypes() {
+  return BUSINESS_TYPES.map((type) => ({
+    ...type,
+    apps: type.apps.filter((slug) => getApp(slug)),
+    comingSoon: type.apps.filter((slug) => !getApp(slug)),
+  }));
 }

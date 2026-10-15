@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 // can be shared across several SKUs.
 const assetSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
 
     name: { type: String, required: true, trim: true }, // e.g. "250g Jar", "Sticker – Guntur Red Chilli"
     category: { type: String, enum: ["jar", "sticker", "other"], default: "other", index: true },

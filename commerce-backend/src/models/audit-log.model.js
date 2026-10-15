@@ -15,7 +15,7 @@ import mongoose from "mongoose";
 // goes blank when someone leaves is not an audit trail.
 const auditLogSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
 
     // Null for anything the system did on its own — a cron job, a webhook
     // from Shopify, an automation rule firing.

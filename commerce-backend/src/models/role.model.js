@@ -15,7 +15,7 @@ import mongoose from "mongoose";
 // requirePermission() call sites had to change.
 const roleSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     name: { type: String, required: true, trim: true },
     description: { type: String, default: "", trim: true },
 

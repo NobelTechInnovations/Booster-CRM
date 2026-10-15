@@ -2,10 +2,10 @@ import mongoose from "mongoose";
 
 const syncedOrderSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     // Optional: historical/manually-imported orders (see "historical" provider values
     // below) aren't tied to a live-connected Channel document, so this can be blank.
-    channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", index: true },
+    channelId: { type: mongoose.Schema.Types.Mixed, ref: "Channel", index: true },
     provider: {
       type: String,
       enum: ["shopify", "amazon", "local", "website", "flipkart", "shopdeck"],

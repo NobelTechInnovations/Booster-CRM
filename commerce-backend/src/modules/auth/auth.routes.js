@@ -1,8 +1,10 @@
 import { Router } from "express";
 import bcrypt from "bcryptjs";
 import { asyncHandler } from "../../utils/async-handler.js";
+import { simpleRateLimit } from "../../utils/simple-rate-limit.js";
 import { signAuthToken, requireAuth } from "../../middleware/auth.js";
 import { HttpError } from "../../utils/http-error.js";
+import { env } from "../../config/env.js";
 import {
   createCompanyOwner,
   findUserByEmailWithPassword,
@@ -84,8 +86,14 @@ authRoutes.post(
   }),
 );
 
+// Slows password guessing: per IP and per email, so rotating either alone doesn't help.
+const loginLimiter = simpleRateLimit({ windowMs: 15 * 60 * 1000, max: 20 });
+const loginEmailLimiter = simpleRateLimit({ windowMs: 15 * 60 * 1000, max: 10, keyFn: (req) => `login:${String(req.body?.email || "").trim().toLowerCase()}` });
+
 authRoutes.post(
   "/login",
+  loginLimiter,
+  loginEmailLimiter,
   asyncHandler(async (req, res) => {
     const { email, password } = req.body;
 
@@ -156,6 +164,10 @@ authRoutes.post(
 authRoutes.post(
   "/dev-login",
   asyncHandler(async (req, res) => {
+    // Signs a token for any email with no password — a full account takeover
+    // if reachable on a real deployment. Local in-memory development only.
+    if (env.nodeEnv === "production" || getStoreMode() !== "memory") throw new HttpError(404, "Not found");
+
     const email = String(req.body.email || "owner@sukirti.test").toLowerCase();
     const name = String(req.body.name || "Sukirti Owner");
 

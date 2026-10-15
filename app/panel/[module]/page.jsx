@@ -15,6 +15,7 @@ import { LeadsView } from "@/components/leads-view";
 import { SupportTicketsView } from "@/components/support-tickets-view";
 import { AdsManagerView } from "@/components/ads-manager-view";
 import { AppsView } from "@/components/apps-view";
+import { OnboardingView } from "@/components/onboarding-view";
 import { GuideView } from "@/components/guide-view";
 import { InventoryView } from "@/components/inventory-view";
 import { AssetsView } from "@/components/assets-view";
@@ -110,6 +111,7 @@ export default function ModulePage({ params }) {
     "automation": "Automation",
     "reports": "Reports",
     "apps": "Apps",
+    "onboarding": "Onboarding",
     "settings": "Settings"
   };
 
@@ -185,6 +187,10 @@ export default function ModulePage({ params }) {
 
   if (activeViewName === "Automation") {
     return <FeatureGate session={session} feature="automation" label="Automation"><AutomationView /></FeatureGate>;
+  }
+
+  if (activeViewName === "Onboarding") {
+    return <OnboardingView />;
   }
 
   if (activeViewName === "Apps") {

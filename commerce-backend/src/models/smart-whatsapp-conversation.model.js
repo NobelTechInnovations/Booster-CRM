@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 // under.
 const smartWhatsappConversationSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     waId: { type: String, required: true },
     customerName: { type: String, default: "" },
     lastMessageAt: Date,

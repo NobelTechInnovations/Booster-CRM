@@ -92,7 +92,7 @@ export async function createCompanyOwner({ companyName, name, email, passwordHas
     let suffix = 1;
     while (await Company.findOne({ slug }).lean()) { suffix += 1; slug = `${slugBase}-${suffix}`; }
 
-    const company = await Company.create({ name: normalizedCompanyName, slug });
+    const company = await Company.create({ name: normalizedCompanyName, slug, onboarding: { completed: false } });
     const user = await User.create({ companyId: company._id, name, email: normalizedEmail, passwordHash, role: "Owner" });
     company.ownerUserId = user._id;
     await company.save();
@@ -103,7 +103,7 @@ export async function createCompanyOwner({ companyName, name, email, passwordHas
   let suffix = 1;
   while ([...memory.companies.values()].some((c) => c.slug === slug)) { suffix += 1; slug = `${slugBase}-${suffix}`; }
 
-  const company = { _id: id(), name: normalizedCompanyName, slug, ownerUserId: null, status: "active", createdAt: now(), updatedAt: now() };
+  const company = { _id: id(), name: normalizedCompanyName, slug, ownerUserId: null, status: "active", onboarding: { completed: false }, createdAt: now(), updatedAt: now() };
   memory.companies.set(company._id, company);
 
   const user = { _id: id(), companyId: company._id, email: normalizedEmail, name, role: "Owner", passwordHash, status: "active", createdAt: now(), updatedAt: now() };

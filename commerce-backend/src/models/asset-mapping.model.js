@@ -6,7 +6,7 @@ import mongoose from "mongoose";
 // product re-syncs untouched.
 const assetMappingSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     sku: { type: String, required: true, trim: true },
 
     productTitle: String, // denormalized for display

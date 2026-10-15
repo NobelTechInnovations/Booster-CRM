@@ -66,6 +66,14 @@ function publicOrderSummary(order) {
   };
 }
 
+// Enough for the customer to recognise their own address, not enough for
+// someone who only knows a phone number to learn where that person lives.
+function maskStreet(line) {
+  const text = String(line || "").trim();
+  if (!text) return "";
+  return text.length <= 4 ? "••••" : `${text.slice(0, 4)}••••`;
+}
+
 function publicOrderDetail(order) {
   return {
     ...publicOrderSummary(order),
@@ -79,8 +87,8 @@ function publicOrderDetail(order) {
     shippingAddress: order.shippingAddress
       ? {
           name: order.shippingAddress.name || order.customerName || "",
-          address1: order.shippingAddress.address1 || "",
-          address2: order.shippingAddress.address2 || "",
+          address1: maskStreet(order.shippingAddress.address1),
+          address2: maskStreet(order.shippingAddress.address2),
           city: order.shippingAddress.city || "",
           province: order.shippingAddress.province || "",
           country: order.shippingAddress.country || "",

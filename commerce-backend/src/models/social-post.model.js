@@ -6,8 +6,8 @@ import mongoose from "mongoose";
 // arrive as a string or an ObjectId depending on the write path.
 const socialPostSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
-    channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
+    channelId: { type: mongoose.Schema.Types.Mixed, ref: "Channel", required: true, index: true },
     platform: { type: String, enum: ["instagram", "facebook"], required: true, index: true },
 
     // Graph API's own post/media id — globally unique per Meta's docs, but

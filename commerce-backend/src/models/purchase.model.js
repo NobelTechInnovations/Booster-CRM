@@ -18,7 +18,7 @@ const purchaseItemSchema = new mongoose.Schema(
 
 const purchaseSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
 
     vendorId: { type: mongoose.Schema.Types.Mixed, required: true, index: true },
     vendorName: { type: String, trim: true },

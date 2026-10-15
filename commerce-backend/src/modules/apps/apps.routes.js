@@ -4,11 +4,14 @@ import { asyncHandler } from "../../utils/async-handler.js";
 import { HttpError } from "../../utils/http-error.js";
 import {
   buildNavigation,
+  completeOnboarding,
   installApp,
   listAppsForCompany,
+  listBusinessTypes,
   uninstallApp,
   updateAppSettings,
 } from "../../repositories/app.repo.js";
+import { getCompany } from "../../repositories/company.repo.js";
 import {
   createRole,
   deleteRole,
@@ -39,6 +42,47 @@ appsRoutes.get(
   }),
 );
 
+// ─── Onboarding ──────────────────────────────────────────────────────────────
+
+// What the first-run wizard renders: the business-type presets, and whether
+// this workspace has already been through it.
+appsRoutes.get(
+  "/onboarding",
+  asyncHandler(async (req, res) => {
+    const company = await getCompany(req.auth.companyId);
+    res.json({
+      completed: company?.onboarding?.completed !== false,
+      businessType: company?.onboarding?.businessType || "",
+      businessTypes: listBusinessTypes(),
+      apps: await listAppsForCompany(req.auth.companyId),
+    });
+  }),
+);
+
+appsRoutes.post(
+  "/onboarding",
+  requirePermission("apps:manage"),
+  asyncHandler(async (req, res) => {
+    const result = await completeOnboarding({
+      companyId: req.auth.companyId,
+      businessType: req.body?.businessType,
+      slugs: req.body?.apps,
+      actorUserId: req.auth.sub,
+    });
+
+    await logAudit({
+      ...auditActor(req),
+      action: "workspace.onboarded",
+      entity: "Company",
+      entityId: String(req.auth.companyId),
+      summary: `Set up the workspace as "${req.body?.businessType}" with ${result.installed.length} app(s)`,
+      after: { businessType: req.body?.businessType, apps: result.installed },
+    });
+
+    res.json({ message: "Workspace ready", ...result });
+  }),
+);
+
 // ─── Catalogue & installation ────────────────────────────────────────────────
 
 appsRoutes.get(
@@ -58,7 +102,7 @@ appsRoutes.post(
       slug: req.params.slug,
       actorUserId: req.auth.sub,
     });
-    if (result.error) throw new HttpError(400, result.error);
+    if (result.error) throw new HttpError(result.upgrade ? 403 : 400, result.error);
 
     await logAudit({
       ...auditActor(req),

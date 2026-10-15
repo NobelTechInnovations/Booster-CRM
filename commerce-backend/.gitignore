@@ -1,3 +1,6 @@
 node_modules
 .env
 npm-debug.log*
+# Any env variant (e.g. .env.backup-prod-uri) holds real credentials.
+.env.*
+!.env.example

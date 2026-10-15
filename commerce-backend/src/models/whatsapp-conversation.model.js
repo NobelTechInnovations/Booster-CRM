@@ -5,7 +5,7 @@ import mongoose from "mongoose";
 // in this codebase uses it — see mixedIdFilter() in whatsapp.repo.js.
 const whatsappConversationSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
 
     // WhatsApp's own id for the customer — their phone number in
     // international format with no leading "+" (e.g. "919876543210"),

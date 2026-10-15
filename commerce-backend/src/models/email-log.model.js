@@ -9,7 +9,7 @@ import mongoose from "mongoose";
 // this exact order and skips if so).
 const emailLogSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     templateId: { type: mongoose.Schema.Types.ObjectId, ref: "EmailTemplate" },
     ruleId: { type: mongoose.Schema.Types.ObjectId, ref: "AutomationRule", index: true },
     // Present for every order-lifecycle trigger (order_placed, order_fulfilled,

@@ -8,7 +8,7 @@ import mongoose from "mongoose";
 // (smart-whatsapp.service.js's handleWebhook) and by polling on connect.
 const smartWhatsappSessionSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, unique: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, unique: true, index: true },
     status: {
       type: String,
       enum: ["disconnected", "connecting", "qr", "open", "close", "logged_out"],

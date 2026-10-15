@@ -42,6 +42,56 @@ export const APP_CATEGORIES = {
   marketing: "Marketing",
 };
 
+// The first question a new workspace is asked, and the app bundle each
+// answer starts them on. Same idea as Odoo's "what do you want to manage?"
+// — a starting point, not a cage: every app stays installable afterwards
+// from the Apps page.
+//
+// Presets may name apps that don't exist yet (People and Tasks are Phase 3
+// and 4). Unknown slugs are skipped rather than erroring, so these entries
+// start working by themselves the day those apps ship, with no edit here.
+export const BUSINESS_TYPES = [
+  {
+    slug: "ecommerce",
+    name: "Online store",
+    description: "You sell products online through Shopify, Amazon or your own site.",
+    icon: "ShoppingCart",
+    apps: ["orders", "customers", "leads", "products", "channels", "finance", "ads", "marketing", "support", "reports", "automation"],
+  },
+  {
+    slug: "institute",
+    name: "Institute or coaching centre",
+    description: "You run centres and need to manage staff, their work and reporting.",
+    icon: "Users",
+    apps: ["people", "tasks", "support", "reports"],
+  },
+  {
+    slug: "services",
+    name: "Agency or services",
+    description: "You deliver work for clients and track it through to invoicing.",
+    icon: "Workflow",
+    apps: ["people", "tasks", "customers", "leads", "finance", "support", "reports"],
+  },
+  {
+    slug: "retail",
+    name: "Retail or offline business",
+    description: "You sell in person and want stock, customers and books in one place.",
+    icon: "Package",
+    apps: ["products", "customers", "finance", "support", "reports"],
+  },
+  {
+    slug: "custom",
+    name: "Start from scratch",
+    description: "Begin with nothing and add exactly the apps you want.",
+    icon: "LayoutGrid",
+    apps: [],
+  },
+];
+
+export function getBusinessType(slug) {
+  return BUSINESS_TYPES.find((type) => type.slug === String(slug || "")) || null;
+}
+
 export const APPS = [
   {
     slug: "core",
@@ -186,6 +236,11 @@ export const APPS = [
     description: "Social posting and comments, WhatsApp Business messaging and AI replies.",
     category: "marketing",
     icon: "Camera",
+    // Paid. Deliberately reuses the plan feature keys that already exist and
+    // are already enforced by requireFeature() — rather than inventing a
+    // second, parallel notion of "paid app" that would then have to be kept
+    // in sync with the plans an admin actually sells.
+    requiresFeature: "social",
     permissions: [
       { key: "social:manage", label: "Manage social" },
       { key: "whatsapp:manage", label: "Manage WhatsApp" },
@@ -203,6 +258,7 @@ export const APPS = [
     description: "Trigger-based email and WhatsApp rules with editable templates.",
     category: "operations",
     icon: "Workflow",
+    requiresFeature: "automation",
     permissions: [{ key: "automation:manage", label: "Manage automation rules" }],
     nav: [
       { group: "Company Manage", groupIcon: "Building2", label: "Automation", icon: "Workflow", href: "/panel/automation", permission: "automation:manage" },

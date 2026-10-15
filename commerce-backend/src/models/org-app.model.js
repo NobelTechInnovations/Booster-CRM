@@ -15,7 +15,7 @@ import mongoose from "mongoose";
 // lets this ship without touching a single existing customer.
 const orgAppSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
 
     // Matches a slug in config/app-registry.js. Not a ref: the catalogue is
     // code, so there is no App collection to point at.

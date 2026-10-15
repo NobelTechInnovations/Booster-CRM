@@ -2,8 +2,8 @@ import mongoose from "mongoose";
 
 const adInsightSchema = new mongoose.Schema(
   {
-    companyId: { type: mongoose.Schema.Types.ObjectId, ref: "Company", required: true, index: true },
-    channelId: { type: mongoose.Schema.Types.ObjectId, ref: "Channel", required: true, index: true },
+    companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
+    channelId: { type: mongoose.Schema.Types.Mixed, ref: "Channel", required: true, index: true },
     // A single Meta channel can have its *selected* ad account switched at
     // any time (Settings → Ads → account picker) — channelId alone doesn't
     // change when that happens, so rows from every account ever synced on
