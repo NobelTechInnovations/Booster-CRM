@@ -789,7 +789,7 @@ channelRoutes.post(
   requireAuth,
   requirePermission("channels:manage"),
   asyncHandler(async (req, res) => {
-    const resources = (Array.isArray(req.body?.resources) ? req.body.resources : ["products"]).filter((r) => ["products", "customers"].includes(r));
+    const resources = (Array.isArray(req.body?.resources) ? req.body.resources : ["products"]).filter((r) => ["products", "categories", "collections", "customers", "discounts", "orders"].includes(r));
     const result = await transferChannelData({
       companyId: req.auth.companyId,
       sourceChannelId: req.body?.sourceChannelId,

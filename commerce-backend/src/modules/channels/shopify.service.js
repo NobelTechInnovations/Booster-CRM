@@ -229,6 +229,30 @@ async function fetchPaginatedShopifyResource(shop, accessToken, { path, key, par
   return records;
 }
 
+// Collections with their member product ids (custom and smart alike).
+export async function fetchShopifyCollections(shop, accessToken) {
+  const [custom, smart] = await Promise.all([
+    fetchPaginatedShopifyResource(shop, accessToken, { path: "/custom_collections.json", key: "custom_collections" }),
+    fetchPaginatedShopifyResource(shop, accessToken, { path: "/smart_collections.json", key: "smart_collections" }),
+  ]);
+  const collections = [...custom, ...smart];
+  for (const collection of collections) {
+    const products = await fetchPaginatedShopifyResource(shop, accessToken, { path: `/collections/${collection.id}/products.json`, key: "products", params: { fields: "id" }, maxPages: 10 });
+    collection.productIds = products.map((product) => String(product.id));
+  }
+  return collections;
+}
+
+// Price rules with their codes. Needs the read_price_rules / read_discounts
+// scope; stores connected without it get Shopify's 403 surfaced as-is.
+export async function fetchShopifyDiscounts(shop, accessToken) {
+  const rules = await fetchPaginatedShopifyResource(shop, accessToken, { path: "/price_rules.json", key: "price_rules" });
+  for (const rule of rules) {
+    rule.codes = await fetchPaginatedShopifyResource(shop, accessToken, { path: `/price_rules/${rule.id}/discount_codes.json`, key: "discount_codes", maxPages: 5 });
+  }
+  return rules;
+}
+
 export async function fetchShopifyOrders(shop, accessToken) {
   return fetchPaginatedShopifyResource(shop, accessToken, {
     path: "/orders.json",
