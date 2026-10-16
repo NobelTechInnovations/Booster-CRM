@@ -38,13 +38,19 @@ function toOyklaneProduct(product) {
     status,
     vendor: product.vendor || undefined,
     productType: product.productType || undefined,
+    category: product.productType || undefined,
+    handle: product.handle || undefined,
     tags: (product.tags || []).join(", "),
+    copyImages: true,
+    externalId: `${product.provider}:${product.externalId}`,
     images: urls.map((url, position) => ({ url, altText: product.title, position })),
     variants: (product.variants || []).map((variant) => {
       const source = rawVariants.get(String(variant.externalId)) || {};
       const values = [source.option1, source.option2, source.option3].filter((v) => v && v !== "Default Title");
       return {
         title: values.join(" / ") || "Default",
+        options: values.length ? values : undefined,
+        weight: source.grams || undefined,
         sku: variant.sku || undefined,
         price: Number(variant.price) || 0,
         comparePrice: source.compare_at_price ? Number(source.compare_at_price) : undefined,
@@ -87,6 +93,15 @@ export async function transferChannelData({ companyId, sourceChannelId, targetCh
     if (source.provider !== "shopify" || !sourceToken) throw new HttpError(400, `${what} can only be copied from a connected Shopify store.`);
   };
 
+  if (resources.includes("categories")) {
+    const types = await SyncedProduct.distinct("productType", { companyId, channelId: source._id });
+    result.categories = await runBatch({
+      items: types.filter(Boolean).map((name) => ({ name })),
+      label: (c) => c.name,
+      send: (c) => writer.create(target, "/categories", { name: c.name, externalId: `${source.provider}:type:${norm(c.name)}` }),
+    });
+  }
+
   if (resources.includes("products")) {
     const filter = { companyId, channelId: source._id, status: { $nin: ["deleted", "archived"] } };
     if (Array.isArray(productIds) && productIds.length) filter._id = { $in: productIds };
@@ -104,15 +119,6 @@ export async function transferChannelData({ companyId, sourceChannelId, targetCh
     });
   }
 
-  if (resources.includes("categories")) {
-    const types = await SyncedProduct.distinct("productType", { companyId, channelId: source._id });
-    result.categories = await runBatch({
-      items: types.filter(Boolean).map((name) => ({ name })),
-      label: (c) => c.name,
-      send: (c) => writer.create(target, "/categories", { name: c.name, externalId: `${source.provider}:type:${norm(c.name)}` }),
-    });
-  }
-
   if (resources.includes("customers")) {
     const [items, existing] = await Promise.all([
       SyncedCustomer.find({ companyId, channelId: source._id }).lean(),
@@ -124,8 +130,9 @@ export async function transferChannelData({ companyId, sourceChannelId, targetCh
       isDone: (c) => seen.has(norm(c.email)) || seen.has(norm(c.phone)),
       label: (c) => c.name || c.email,
       send: async (c) => {
-        const created = await writer.customer(target, toOyklaneCustomer(c));
-        if (created?.id) await writer.save({ ...base, customers: [created] });
+        const response = await writer.create(target, "/customers", toOyklaneCustomer(c));
+        if (response?.data?.id) await writer.save({ ...base, customers: [response.data] });
+        return response;
       },
     });
   }
@@ -162,7 +169,7 @@ export async function transferChannelData({ companyId, sourceChannelId, targetCh
     result.orders = await runBatch({
       items: orders,
       label: (o) => o.name,
-      send: (o) => writer.create(target, "/orders", toOyklaneOrder(o)),
+      send: (o) => writer.create(target, "/orders/import", toOyklaneOrder(o)),
     });
   }
 
@@ -185,7 +192,11 @@ function toOyklaneDiscount(rule, code) {
   };
 }
 
-// Imported as history: Oyklane is asked not to charge or notify.
+const PAYMENT_STATUS = { pending: "pending", authorized: "pending", partially_paid: "pending", paid: "paid", partially_refunded: "partially_refunded", refunded: "refunded", voided: "unpaid" };
+const FULFILLMENT_STATUS = { fulfilled: "fulfilled", partial: "partial", cancelled: "cancelled", unfulfilled: "unfulfilled" };
+
+// POST /orders/import keeps the original date/number and has no side effects
+// on Oyklane (no payment, stock, emails, webhooks or commission).
 function toOyklaneOrder(order) {
   const address = order.shippingAddress || {};
   return {
@@ -195,8 +206,8 @@ function toOyklaneOrder(order) {
     currency: order.currency || "INR",
     createdAt: order.shopifyCreatedAt,
     paymentMethod: order.isCOD ? "cod" : "prepaid",
-    paymentStatus: order.financialStatus || "pending",
-    fulfillmentStatus: order.fulfillmentStatus || "unfulfilled",
+    paymentStatus: PAYMENT_STATUS[order.financialStatus] || "pending",
+    fulfillmentStatus: order.cancelledAt ? "cancelled" : FULFILLMENT_STATUS[order.fulfillmentStatus] || "unfulfilled",
     subtotal: Number(order.subtotalPrice) || 0,
     shipping: Number(order.totalShipping) || 0,
     tax: Number(order.totalTax) || 0,
@@ -213,6 +224,10 @@ function toOyklaneOrder(order) {
       variantSku: item.sku || undefined,
     })),
     trackingNumber: order.trackingNumber || order.awbCode || undefined,
+    trackingUrl: order.trackingUrl || undefined,
+    cancelledAt: order.cancelledAt || undefined,
+    note: order.note || undefined,
+    source: order.provider === "shopify" ? "Shopify" : order.provider,
     courier: order.trackingCompany || order.shippingProvider || undefined,
     externalId: `${order.provider}:${order.externalId}`,
   };
@@ -227,8 +242,9 @@ async function runBatch({ items, isDone = () => false, label, send }) {
 
   for (const item of pending.slice(0, MAX_PER_RUN)) {
     try {
-      await send(item);
-      stats.created += 1;
+      const response = await send(item);
+      if (response?.created === false) stats.skipped += 1;
+      else stats.created += 1;
     } catch (error) {
       if ([404, 405].includes(error.statusCode)) {
         stats.failed.push({ title: "All", error: "Not supported by the target channel's API yet." });
