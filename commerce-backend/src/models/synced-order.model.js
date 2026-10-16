@@ -8,7 +8,7 @@ const syncedOrderSchema = new mongoose.Schema(
     channelId: { type: mongoose.Schema.Types.Mixed, ref: "Channel", index: true },
     provider: {
       type: String,
-      enum: ["shopify", "amazon", "local", "website", "flipkart", "shopdeck"],
+      enum: ["shopify", "amazon", "oyklane", "local", "website", "flipkart", "shopdeck"],
       required: true,
       index: true,
     },

@@ -3,6 +3,7 @@ import { Channel } from "../models/channel.model.js";
 import { memory } from "../repositories/memory-store.js";
 import { syncShopifyData } from "../modules/channels/shopify.service.js";
 import { syncOyklaneData } from "../modules/channels/oyklane.service.js";
+import { primaryChannels } from "../repositories/channel.repo.js";
 
 /**
  * Fallback periodic sync for connected Shopify channels.
@@ -19,6 +20,11 @@ export async function runShopifySyncJob() {
     } else {
       shopifyChannels = [...memory.channels.values()].filter((ch) => ch.provider === "shopify" && ch.status === "connected");
     }
+
+    // Per company, so a duplicate record doesn't sync the same store twice.
+    const byCompany = new Map();
+    for (const channel of shopifyChannels) byCompany.set(String(channel.companyId), [...(byCompany.get(String(channel.companyId)) || []), channel]);
+    shopifyChannels = [...byCompany.values()].flatMap(primaryChannels);
 
     for (const channel of shopifyChannels) {
       try {

@@ -6,7 +6,7 @@ const productMappingSchema = new mongoose.Schema(
     masterName: { type: String, required: true, trim: true },
     mappings: [
       {
-        provider: { type: String, enum: ["shopify", "amazon"], required: true },
+        provider: { type: String, enum: ["shopify", "amazon", "oyklane"], required: true },
         channelId: { type: mongoose.Schema.Types.Mixed, ref: "Channel" },
         productId: String,
         productTitle: String,

@@ -35,12 +35,30 @@ function withoutCredentials(channel) {
 
 export { withoutCredentials };
 
+// One record per (provider, store). Stores reconnected while companyId was
+// briefly cast to ObjectId got a second record (the unique index sees the
+// string and ObjectId copies as different), so pick one: connected first,
+// then most recently updated. Data on the other record stays untouched.
+const STATUS_RANK = { connected: 0, syncing: 1, inactive: 2, disconnected: 3 };
+export function primaryChannels(channels) {
+  const best = new Map();
+  for (const channel of channels) {
+    const key = `${channel.provider}:${channel.shop || channel._id}`;
+    const current = best.get(key);
+    const rank = (ch) => STATUS_RANK[ch.status] ?? 4;
+    if (!current || rank(channel) < rank(current) || (rank(channel) === rank(current) && new Date(channel.updatedAt) > new Date(current.updatedAt))) {
+      best.set(key, channel);
+    }
+  }
+  return channels.filter((channel) => [...best.values()].includes(channel));
+}
+
 export async function listChannels(companyId, { channelType } = {}) {
   const filter = { companyId, ...(channelType ? { channelType } : {}) };
 
   if (isMongoConnected()) {
     const channels = await Channel.find(filter).sort({ updatedAt: -1 }).lean();
-    return channels.map(withoutCredentials);
+    return primaryChannels(channels).map(withoutCredentials);
   }
 
   return [...memory.channels.values()]
