@@ -19,7 +19,7 @@ const syncedCustomerSchema = new mongoose.Schema(
   {
     companyId: { type: mongoose.Schema.Types.Mixed, ref: "Company", required: true, index: true },
     channelId: { type: mongoose.Schema.Types.Mixed, ref: "Channel", required: true, index: true },
-    provider: { type: String, enum: ["shopify", "amazon"], required: true, index: true },
+    provider: { type: String, enum: ["shopify", "amazon", "oyklane"], required: true, index: true },
     shop: { type: String, required: true, index: true },
     externalId: { type: String, required: true },
     email: String,

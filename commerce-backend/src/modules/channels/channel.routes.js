@@ -2,6 +2,7 @@ import { Router } from "express";
 import { env } from "../../config/env.js";
 import { requireAuth, requirePermission } from "../../middleware/auth.js";
 import { adjustOyklaneInventory, connectOyklane, syncOyklaneData } from "./oyklane.service.js";
+import { transferChannelData } from "./channel-transfer.service.js";
 import {
   disconnectChannel,
   getChannelForSync,
@@ -779,6 +780,24 @@ channelRoutes.post(
       webhookUrl: `${env.shopify.appUrl.replace(/\/$/, "")}/api/webhooks/oyklane/${channelId}`,
       channel: withoutCredentials(channel),
     });
+  }),
+);
+
+// Copy products / customers from one channel into another (e.g. Shopify → Oyklane).
+channelRoutes.post(
+  "/transfer",
+  requireAuth,
+  requirePermission("channels:manage"),
+  asyncHandler(async (req, res) => {
+    const resources = (Array.isArray(req.body?.resources) ? req.body.resources : ["products"]).filter((r) => ["products", "customers"].includes(r));
+    const result = await transferChannelData({
+      companyId: req.auth.companyId,
+      sourceChannelId: req.body?.sourceChannelId,
+      targetChannelId: req.body?.targetChannelId,
+      resources,
+      productIds: req.body?.productIds,
+    });
+    res.json({ message: "Transfer finished", result });
   }),
 );
 

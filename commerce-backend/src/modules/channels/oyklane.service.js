@@ -203,6 +203,22 @@ export async function markOyklaneOrderFulfilled({ channel, orderId, courierName,
   });
 }
 
+// ─── Creates (used by channel transfer) ──────────────────────────────────────
+
+export async function listOyklaneProducts(channel) {
+  return fetchAll(requireApiKey(channel), "/products");
+}
+
+export async function createOyklaneProduct(channel, product) {
+  const { data } = await oyklaneFetch(requireApiKey(channel), "/products", { method: "POST", body: product });
+  return data;
+}
+
+export async function createOyklaneCustomer(channel, customer) {
+  const { data } = await oyklaneFetch(requireApiKey(channel), "/customers", { method: "POST", body: customer });
+  return data;
+}
+
 // ─── Webhooks ────────────────────────────────────────────────────────────────
 
 // x-oyklane-signature = "sha256=" + hex HMAC-SHA256 of "{timestamp}.{raw body}"
