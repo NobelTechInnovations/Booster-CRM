@@ -4,7 +4,9 @@ import { isMongoConnected } from "../../config/database.js";
 import { getChannelForSync } from "../../repositories/channel.repo.js";
 import { saveSyncedOyklaneData } from "../../repositories/order.repo.js";
 import { HttpError } from "../../utils/http-error.js";
-import { createOyklaneCustomer, createOyklaneProduct, listOyklaneProducts } from "./oyklane.service.js";
+import { createOyklaneCustomer, createOyklaneProduct, createOyklaneResource, listOyklaneProducts } from "./oyklane.service.js";
+import { fetchShopifyCollections, fetchShopifyDiscounts } from "./shopify.service.js";
+import { SyncedOrder } from "../../models/synced-order.model.js";
 
 // Copies catalogue and customers already synced from one channel (e.g. a
 // Shopify store) into another (Oyklane). Read-only on the source: it works
@@ -15,7 +17,7 @@ import { createOyklaneCustomer, createOyklaneProduct, listOyklaneProducts } from
 // only sends what's new — and a batch cut short by MAX_PER_RUN continues.
 
 const MAX_PER_RUN = 150;
-const TARGET_WRITERS = { oyklane: { product: createOyklaneProduct, customer: createOyklaneCustomer, listProducts: listOyklaneProducts, save: saveSyncedOyklaneData } };
+const TARGET_WRITERS = { oyklane: { product: createOyklaneProduct, customer: createOyklaneCustomer, listProducts: listOyklaneProducts, create: createOyklaneResource, save: saveSyncedOyklaneData } };
 
 const norm = (value) => String(value || "").trim().toLowerCase();
 
@@ -60,6 +62,7 @@ function toOyklaneCustomer(customer) {
     email: customer.email || undefined,
     phone: customer.phone || undefined,
     tags: customer.tags || [],
+    externalId: `${customer.provider}:${customer.externalId}`,
     address: address.address1 ? { address1: address.address1, address2: address.address2, city: address.city, province: address.province, zip: address.zip, country: address.country } : undefined,
   };
 }
@@ -77,8 +80,12 @@ export async function transferChannelData({ companyId, sourceChannelId, targetCh
   if (!writer) throw new HttpError(400, `Copying into ${target.provider} isn't supported yet — Oyklane is the supported target.`);
   if (target.status !== "connected") throw new HttpError(400, "The target channel isn't connected");
 
-  const result = {};
   const base = { companyId, channelId: target._id, shop: target.shop };
+  const result = {};
+  const sourceToken = source.credentials?.accessToken;
+  const requireShopify = (what) => {
+    if (source.provider !== "shopify" || !sourceToken) throw new HttpError(400, `${what} can only be copied from a connected Shopify store.`);
+  };
 
   if (resources.includes("products")) {
     const filter = { companyId, channelId: source._id, status: { $nin: ["deleted", "archived"] } };
@@ -86,20 +93,24 @@ export async function transferChannelData({ companyId, sourceChannelId, targetCh
     const [items, existing] = await Promise.all([SyncedProduct.find(filter).lean(), writer.listProducts(target)]);
     const seenTitles = new Set(existing.map((p) => norm(p.title)));
     const seenSkus = new Set(existing.flatMap((p) => (p.variants || []).map((v) => norm(v.sku))).filter(Boolean));
-
-    const pending = items.filter((p) => !seenTitles.has(norm(p.title)) && !(p.variants || []).some((v) => v.sku && seenSkus.has(norm(v.sku))));
-    result.products = { total: items.length, skipped: items.length - pending.length, created: 0, failed: [], remaining: Math.max(0, pending.length - MAX_PER_RUN) };
-
-    for (const product of pending.slice(0, MAX_PER_RUN)) {
-      try {
-        const created = await writer.product(target, toOyklaneProduct(product));
+    result.products = await runBatch({
+      items,
+      isDone: (p) => seenTitles.has(norm(p.title)) || (p.variants || []).some((v) => v.sku && seenSkus.has(norm(v.sku))),
+      label: (p) => p.title,
+      send: async (p) => {
+        const created = await writer.product(target, toOyklaneProduct(p));
         if (created?.id) await writer.save({ ...base, products: [created] });
-        result.products.created += 1;
-      } catch (error) {
-        result.products.failed.push({ title: product.title, error: error.message });
-        if (error.statusCode === 403 || /API key/.test(error.message)) break;
-      }
-    }
+      },
+    });
+  }
+
+  if (resources.includes("categories")) {
+    const types = await SyncedProduct.distinct("productType", { companyId, channelId: source._id });
+    result.categories = await runBatch({
+      items: types.filter(Boolean).map((name) => ({ name })),
+      label: (c) => c.name,
+      send: (c) => writer.create(target, "/categories", { name: c.name, externalId: `${source.provider}:type:${norm(c.name)}` }),
+    });
   }
 
   if (resources.includes("customers")) {
@@ -108,26 +119,125 @@ export async function transferChannelData({ companyId, sourceChannelId, targetCh
       SyncedCustomer.find({ companyId, channelId: target._id }).select("email phone").lean(),
     ]);
     const seen = new Set(existing.flatMap((c) => [norm(c.email), norm(c.phone)]).filter(Boolean));
-    const pending = items.filter((c) => (c.email || c.phone) && !seen.has(norm(c.email)) && !seen.has(norm(c.phone)));
-    result.customers = { total: items.length, skipped: items.length - pending.length, created: 0, failed: [], remaining: Math.max(0, pending.length - MAX_PER_RUN) };
-
-    for (const customer of pending.slice(0, MAX_PER_RUN)) {
-      try {
-        const created = await writer.customer(target, toOyklaneCustomer(customer));
+    result.customers = await runBatch({
+      items: items.filter((c) => c.email || c.phone),
+      isDone: (c) => seen.has(norm(c.email)) || seen.has(norm(c.phone)),
+      label: (c) => c.name || c.email,
+      send: async (c) => {
+        const created = await writer.customer(target, toOyklaneCustomer(c));
         if (created?.id) await writer.save({ ...base, customers: [created] });
-        result.customers.created += 1;
-      } catch (error) {
-        // Oyklane's API may not expose customer creation yet — stop at once
-        // rather than repeating the same failure for every customer.
-        if ([404, 405].includes(error.statusCode)) {
-          result.customers.failed.push({ title: "All customers", error: "Oyklane doesn't accept customer creation via API yet." });
-          break;
-        }
-        result.customers.failed.push({ title: customer.name || customer.email, error: error.message });
-        if (error.statusCode === 403 || /API key/.test(error.message)) break;
-      }
-    }
+      },
+    });
+  }
+
+  if (resources.includes("collections")) {
+    requireShopify("Collections");
+    const collections = await fetchShopifyCollections(source.shop, sourceToken);
+    result.collections = await runBatch({
+      items: collections,
+      label: (c) => c.title,
+      send: (c) => writer.create(target, "/collections", {
+        title: c.title,
+        description: c.body_html || "",
+        image: c.image?.src || undefined,
+        productExternalIds: (c.productIds || []).map((id) => `shopify:${id}`),
+        externalId: `shopify:${c.id}`,
+      }),
+    });
+  }
+
+  if (resources.includes("discounts")) {
+    requireShopify("Discounts");
+    const rules = await fetchShopifyDiscounts(source.shop, sourceToken);
+    const codes = rules.flatMap((rule) => (rule.codes?.length ? rule.codes : [{ code: rule.title }]).map((code) => ({ rule, code })));
+    result.discounts = await runBatch({
+      items: codes,
+      label: ({ code }) => code.code,
+      send: ({ rule, code }) => writer.create(target, "/discounts", toOyklaneDiscount(rule, code)),
+    });
+  }
+
+  if (resources.includes("orders")) {
+    const orders = await SyncedOrder.find({ companyId, channelId: source._id, isTestOrder: { $ne: true } }).sort({ shopifyCreatedAt: 1 }).lean();
+    result.orders = await runBatch({
+      items: orders,
+      label: (o) => o.name,
+      send: (o) => writer.create(target, "/orders", toOyklaneOrder(o)),
+    });
   }
 
   return result;
+}
+
+function toOyklaneDiscount(rule, code) {
+  const freeShipping = rule.target_type === "shipping_line";
+  return {
+    code: code.code,
+    type: freeShipping ? "free_shipping" : rule.value_type === "percentage" ? "percentage" : "fixed_amount",
+    value: Math.abs(Number(rule.value) || 0),
+    minSubtotal: rule.prerequisite_subtotal_range?.greater_than_or_equal_to ? Number(rule.prerequisite_subtotal_range.greater_than_or_equal_to) : undefined,
+    startsAt: rule.starts_at,
+    endsAt: rule.ends_at || undefined,
+    usageLimit: rule.usage_limit || undefined,
+    oncePerCustomer: Boolean(rule.once_per_customer),
+    status: !rule.ends_at || new Date(rule.ends_at) > new Date() ? "active" : "disabled",
+    externalId: `shopify:${rule.id}:${code.id || code.code}`,
+  };
+}
+
+// Imported as history: Oyklane is asked not to charge or notify.
+function toOyklaneOrder(order) {
+  const address = order.shippingAddress || {};
+  return {
+    number: order.orderNumber || undefined,
+    email: order.email || undefined,
+    phone: order.phone || undefined,
+    currency: order.currency || "INR",
+    createdAt: order.shopifyCreatedAt,
+    paymentMethod: order.isCOD ? "cod" : "prepaid",
+    paymentStatus: order.financialStatus || "pending",
+    fulfillmentStatus: order.fulfillmentStatus || "unfulfilled",
+    subtotal: Number(order.subtotalPrice) || 0,
+    shipping: Number(order.totalShipping) || 0,
+    tax: Number(order.totalTax) || 0,
+    discount: Number(order.totalDiscounts) || 0,
+    total: Number(order.totalPrice) || 0,
+    customer: { name: order.customerName, email: order.email, phone: order.phone },
+    shippingAddress: { name: address.name, address1: address.address1, address2: address.address2, city: address.city, province: address.province, zip: address.zip, country: address.country, phone: address.phone },
+    lineItems: (order.lineItems || []).map((item) => ({
+      title: item.title,
+      sku: item.sku || undefined,
+      quantity: Number(item.quantity) || 1,
+      price: Number(item.price) || 0,
+      productExternalId: item.productExternalId ? `shopify:${item.productExternalId}` : undefined,
+      variantSku: item.sku || undefined,
+    })),
+    trackingNumber: order.trackingNumber || order.awbCode || undefined,
+    courier: order.trackingCompany || order.shippingProvider || undefined,
+    externalId: `${order.provider}:${order.externalId}`,
+  };
+}
+
+// Sends up to MAX_PER_RUN pending items. Stops on the first 404/405 (the
+// target doesn't have that endpoint yet) or a key/permission error, instead
+// of repeating the same failure for every item.
+async function runBatch({ items, isDone = () => false, label, send }) {
+  const pending = items.filter((item) => !isDone(item));
+  const stats = { total: items.length, skipped: items.length - pending.length, created: 0, failed: [], remaining: Math.max(0, pending.length - MAX_PER_RUN) };
+
+  for (const item of pending.slice(0, MAX_PER_RUN)) {
+    try {
+      await send(item);
+      stats.created += 1;
+    } catch (error) {
+      if ([404, 405].includes(error.statusCode)) {
+        stats.failed.push({ title: "All", error: "Not supported by the target channel's API yet." });
+        stats.remaining = pending.length;
+        break;
+      }
+      stats.failed.push({ title: label(item), error: error.message });
+      if (error.statusCode === 403 || /API key/.test(error.message)) break;
+    }
+  }
+  return stats;
 }

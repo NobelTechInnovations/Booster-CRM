@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { AlertTriangle, ArrowRight, CheckCircle2, ChevronDown, KeyRound, Loader2, Megaphone, PlugZap, RefreshCcw, Store, UploadCloud } from "lucide-react";
 import { listChannels, createShopifyConnection, saveShopifySetup, updateChannelAppCredentials, copyStoreData, pushMigratedCustomersToShopify, enableMarketingForPushedCustomers } from "@/lib/api";
 import { Button } from "@/components/ui/button";
+import { ChannelTransferPanel } from "@/components/channel-transfer-panel";
 
 // Self-contained indeterminate progress bar — shown under whichever button
 // below is mid-flight. These migration/push/marketing actions are plain
@@ -50,6 +51,7 @@ function ProgressBar({ label }) {
 //     explicit confirmation since it also writes to the real store.
 export function StoreMigrationTab() {
   const [channels, setChannels] = useState([]);
+  const [allChannels, setAllChannels] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -88,6 +90,7 @@ export function StoreMigrationTab() {
     setError("");
     try {
       const res = await listChannels();
+      setAllChannels(res.channels || []);
       setChannels((res.channels || []).filter((c) => c.provider === "shopify"));
     } catch (err) {
       setError(err.message);
@@ -227,6 +230,8 @@ export function StoreMigrationTab() {
       {error ? (
         <div className="rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">{error}</div>
       ) : null}
+
+      <ChannelTransferPanel channels={allChannels} />
 
       {/* Connected Shopify stores */}
       <div className="rounded-2xl border border-[var(--line)] bg-white p-5 shadow-xs">
