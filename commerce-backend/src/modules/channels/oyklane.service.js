@@ -214,11 +214,11 @@ export async function createOyklaneProduct(channel, product) {
   return data;
 }
 
-// Generic create for resources Oyklane may add later (categories,
-// collections, discounts, order import). A 404 means "not supported yet".
+// Categories, collections, discounts, customers and order import.
+// Returns { data, created }: created === false means Oyklane matched an
+// existing record (by externalId, email, code…) instead of making a new one.
 export async function createOyklaneResource(channel, path, body) {
-  const { data } = await oyklaneFetch(requireApiKey(channel), path, { method: "POST", body });
-  return data;
+  return oyklaneFetch(requireApiKey(channel), path, { method: "POST", body });
 }
 
 export async function createOyklaneCustomer(channel, customer) {
