@@ -47,7 +47,6 @@ import {
   CartesianGrid,
   Cell,
   ComposedChart,
-  Legend,
   Line,
   ReferenceLine,
   ResponsiveContainer,
@@ -61,6 +60,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TableSkeleton, KpiRowSkeleton, ListRowsSkeleton, Skeleton } from "@/components/ui/skeleton";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { MonthlyOverviewChart } from "@/components/monthly-overview-chart";
+import { ChartLegend, ChartTooltipContent, ChartViewport } from "@/components/ui/chart-presentation";
 import {
   connectMetaAds,
   createExpense,
@@ -227,12 +227,12 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc 
     >
       <div className={cn("absolute inset-x-0 top-0 h-[3px] rounded-t-xl", tileAccent[tone] || tileAccent.slate)} />
       <div className="flex items-start justify-between gap-3">
-        <div>
+        <div className="min-w-0">
           <p className="flex items-center gap-1.5 text-[13px] font-medium text-[var(--muted)]">
             {label}
             <InfoTooltip text={calc} />
           </p>
-          <p className="mt-2 text-[26px]  leading-none tracking-tight text-slate-950">{value}</p>
+          <p className="mt-2 break-words text-[26px] font-semibold leading-tight tracking-tight tabular-nums text-slate-950">{value}</p>
         </div>
         <div className={cn("grid h-10 w-10 shrink-0 place-items-center rounded-lg", tileIconTone[tone] || tileIconTone.slate)}>
           <Icon size={18} />
@@ -250,14 +250,10 @@ function KpiTile({ label, value, sub, tone = "slate", icon: Icon, onClick, calc 
 function ChartTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border border-[var(--line)] bg-white p-3 text-sm shadow-lg">
-      <p className="mb-2 font-semibold">{label}</p>
-      {payload.map((entry) => (
-        <p key={entry.dataKey} style={{ color: entry.color }}>
-          {entry.name}: {typeof entry.value === "number" && entry.dataKey !== "orders" ? formatCompact(entry.value) : entry.value}
-        </p>
-      ))}
-    </div>
+    <ChartTooltipContent label={label} entries={payload.map((entry) => ({
+      key: entry.dataKey, name: entry.name, color: entry.color,
+      value: typeof entry.value === "number" && entry.dataKey !== "orders" ? formatCompact(entry.value) : entry.value,
+    }))} />
   );
 }
 
@@ -352,22 +348,6 @@ const fieldClass =
 function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isLoading, onNavigate }) {
   const currency = analytics?.totals?.currency || "INR";
 
-  // Only the very first load ever shows a skeleton — once real numbers
-  // have arrived, switching date ranges just quietly refreshes the same
-  // cards in place rather than blanking the page back to placeholders.
-  if (isLoading && !summary) {
-    return (
-      <div className="space-y-4">
-        <KpiRowSkeleton count={5} />
-        <KpiRowSkeleton count={5} />
-        <KpiRowSkeleton count={4} />
-        <div className="rounded-xl border border-[var(--line)] bg-white p-4">
-          <Skeleton className="h-80 w-full" />
-        </div>
-      </div>
-    );
-  }
-
   const [showRefunds, setShowRefunds] = useState(false);
   const [refundOrders, setRefundOrders] = useState(null);
   const [refundsLoading, setRefundsLoading] = useState(false);
@@ -396,6 +376,22 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
     listShippingCosts(range).then((res) => setShippingOrders(res.orders || [])).finally(() => setShippingLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showShipping, range.from, range.to]);
+
+  // Only the very first load ever shows a skeleton — once real numbers
+  // have arrived, switching date ranges just quietly refreshes the same
+  // cards in place rather than blanking the page back to placeholders.
+  if (isLoading && !summary) {
+    return (
+      <div className="space-y-4">
+        <KpiRowSkeleton count={5} />
+        <KpiRowSkeleton count={5} />
+        <KpiRowSkeleton count={4} />
+        <div className="rounded-xl border border-[var(--line)] bg-white p-4">
+          <Skeleton className="h-80 w-full" />
+        </div>
+      </div>
+    );
+  }
 
   function toggleRefunds() {
     setShowRefunds((v) => !v);
@@ -657,26 +653,30 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
           </div>
         </CardHeader>
         <CardContent>
-          <div className="h-80">
+          <div className="mb-5"><ChartLegend items={[
+            { label: "Revenue", color: "#4361ee", type: "line" },
+            { label: "Expenses", color: "#e11d48", type: "dashed" },
+            { label: "Ad spend (incl. GST)", color: "#0891b2", type: "dotted" },
+          ]} /></div>
+          <ChartViewport label="Revenue, expenses and ad spend in rupees. Scroll horizontally on small screens.">
             <ResponsiveContainer width="100%" height="100%">
               <ComposedChart data={trend || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
                 <defs>
                   <linearGradient id="financeSalesGradient" x1="0" x2="0" y1="0" y2="1">
-                    <stop offset="5%" stopColor="#3730a3" stopOpacity={0.3} />
+                    <stop offset="5%" stopColor="#4361ee" stopOpacity={0.14} />
                     <stop offset="95%" stopColor="#3730a3" stopOpacity={0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid stroke="#e5eaf1" vertical={false} />
-                <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
+                <CartesianGrid stroke="#e8edf4" strokeDasharray="3 4" vertical={false} />
+                <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={12} minTickGap={28} tick={{ fontSize: 11, fill: "#64748b" }} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={112} tick={{ fontSize: 11, fill: "#64748b" }} />
                 <Tooltip content={<ChartTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#3730a3" fill="url(#financeSalesGradient)" strokeWidth={3} />
-                <Line type="monotone" dataKey="expenses" name="Expenses" stroke="#e11d48" strokeWidth={2} dot={false} />
-                <Line type="monotone" dataKey="adSpend" name="Ad Spend (incl. GST)" stroke="#0891b2" strokeWidth={2} dot={false} />
+                <Area type="monotone" dataKey="revenue" name="Revenue" stroke="#4361ee" fill="url(#financeSalesGradient)" strokeWidth={2.5} />
+                <Line type="monotone" dataKey="expenses" name="Expenses" stroke="#e11d48" strokeWidth={2} strokeDasharray="5 4" dot={false} />
+                <Line type="monotone" dataKey="adSpend" name="Ad Spend (incl. GST)" stroke="#0891b2" strokeWidth={2} strokeDasharray="2 3" dot={false} />
               </ComposedChart>
             </ResponsiveContainer>
-          </div>
+          </ChartViewport>
         </CardContent>
       </Card>
 
@@ -725,12 +725,13 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
             />
           </div>
 
-          <div className="mt-5 h-80">
+          <div className="mt-5">
+          <ChartViewport label="Unit economics: revenue, costs and subtotals in rupees. Scroll horizontally to view all stages." className="min-w-[880px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={economics?.waterfall || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
-                <CartesianGrid stroke="#e5eaf1" vertical={false} />
+                <CartesianGrid stroke="#e8edf4" strokeDasharray="3 4" vertical={false} />
                 <XAxis dataKey="stage" tickLine={false} axisLine={false} interval={0} tick={{ fontSize: 11 }} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={112} tick={{ fontSize: 11, fill: "#64748b" }} />
                 <ReferenceLine y={0} stroke="#cbd5e1" />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="value" name="Amount" radius={[4, 4, 4, 4]} maxBarSize={48}>
@@ -743,6 +744,7 @@ function OverviewTab({ range, groupBy, summary, analytics, trend, economics, isL
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
+          </ChartViewport>
           </div>
           <p className="mt-2 text-xs text-[var(--muted)]">
             Revenue → COGS → Gross Profit → Shipping → CM1 → Marketing → CM2 → Other Opex → EBITDA. Indigo bars are running subtotals; green/red bars are the revenue and cost lines that produce them.
@@ -771,22 +773,22 @@ function SalesAnalyticsTab({ analytics, groupBy }) {
       <Card>
         <CardHeader>
           <div>
-            <CardTitle>Orders & Revenue</CardTitle>
-            <p className="mt-1 text-sm text-[var(--muted)]">Filtered sales pulse for the selected range.</p>
+            <CardTitle>Sales Revenue</CardTitle>
+            <p className="mt-1 text-sm text-[var(--muted)]">Revenue in rupees for the selected range, grouped by {groupBy}.</p>
           </div>
         </CardHeader>
         <CardContent>
-          <div className="h-72">
+          <ChartViewport label="Sales revenue in rupees. Scroll horizontally on small screens." className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={analytics?.trend || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
-                <CartesianGrid stroke="#e5eaf1" vertical={false} />
-                <XAxis dataKey="period" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
+                <CartesianGrid stroke="#e8edf4" strokeDasharray="3 4" vertical={false} />
+                <XAxis dataKey="period" tickLine={false} axisLine={false} tickMargin={12} minTickGap={28} tick={{ fontSize: 11, fill: "#64748b" }} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={112} tick={{ fontSize: 11, fill: "#64748b" }} />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="revenue" name="Revenue" fill="#3730a3" radius={[4, 4, 0, 0]} maxBarSize={28} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </ChartViewport>
         </CardContent>
       </Card>
 
@@ -2015,18 +2017,22 @@ function AdsTab({ adsChannel, adsSummary, isLoading, onRefresh, range }) {
           <CardTitle>Spend vs Attributed Revenue</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-72">
+          <div className="mb-5"><ChartLegend items={[
+            { label: "Spend", color: "#b45309" },
+            { label: "Attributed revenue", color: "#16a34a", type: "line" },
+          ]} /></div>
+          <ChartViewport label="Ad spend and attributed revenue in rupees. Scroll horizontally on small screens." className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={adsSummary?.trend || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
-                <CartesianGrid stroke="#e5eaf1" vertical={false} />
-                <XAxis dataKey="date" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={104} />
+                <CartesianGrid stroke="#e8edf4" strokeDasharray="3 4" vertical={false} />
+                <XAxis dataKey="date" tickLine={false} axisLine={false} tickMargin={12} minTickGap={28} tick={{ fontSize: 11, fill: "#64748b" }} />
+                <YAxis tickFormatter={formatCompact} tickLine={false} axisLine={false} width={112} tick={{ fontSize: 11, fill: "#64748b" }} />
                 <Tooltip content={<ChartTooltip />} />
                 <Bar dataKey="spend" name="Spend" fill="#b45309" radius={[4, 4, 0, 0]} maxBarSize={22} />
                 <Line type="monotone" dataKey="revenue" name="Revenue" stroke="#16a34a" strokeWidth={3} dot={false} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
+          </ChartViewport>
         </CardContent>
       </Card>
 
@@ -2208,11 +2214,11 @@ export function FinanceView({ defaultTab = "overview" }) {
   }, [range.from, range.to, groupBy]);
 
   return (
-    <div className="mx-auto max-w-[1920px] px-4 py-4 lg:px-8">
+    <div className="mx-auto max-w-[1600px] px-4 py-6 lg:px-8 lg:py-8">
       <section className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
         <div>
           <Badge tone="indigo">Finance</Badge>
-          <h1 className="mt-3 text-2xl  tracking-tight text-slate-950 md:text-[24px]">Finance & Ad Spend</h1>
+          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950 md:text-[28px]">Finance & Ad Spend</h1>
           <p className="mt-2 max-w-3xl text-sm leading-6 text-[var(--muted)]">
             Sales, expenses, vendor & raw-material purchases, and Meta ad spend with ROAS — all in one place.
           </p>

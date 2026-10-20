@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { InfoTooltip } from "@/components/ui/info-tooltip";
 import { Skeleton } from "@/components/ui/skeleton";
+import { ChartLegend, ChartTooltipContent, ChartViewport } from "@/components/ui/chart-presentation";
 import { getFinanceTrend } from "@/lib/api";
 
 const MONTH_LABELS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
@@ -23,14 +24,10 @@ function formatFullCurrency(value) {
 function MonthlyTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null;
   return (
-    <div className="rounded-md border border-[var(--line)] bg-white p-3 text-sm shadow-lg">
-      <p className="mb-2 font-semibold">{label}</p>
-      {payload.map((entry) => (
-        <p key={entry.dataKey} style={{ color: entry.color }}>
-          {entry.name}: {formatFullCurrency(entry.value)}
-        </p>
-      ))}
-    </div>
+    <ChartTooltipContent label={label} entries={payload.map((entry) => ({
+      key: entry.dataKey, name: entry.name, color: entry.color,
+      value: formatFullCurrency(entry.value),
+    }))} />
   );
 }
 
@@ -96,9 +93,10 @@ export function MonthlyOverviewChart({ minYear }) {
             Monthly Overview
             <InfoTooltip text="Sales, expense (non-marketing), and marketing spend for each month of the selected year, January through the most recent month. Switch years to compare against a previous year — nothing else to filter." />
           </CardTitle>
-          <p className="mt-1 text-sm text-[var(--muted)]">January through {year === currentYear ? "this month" : "December"}, {year}.</p>
+          <p className="mt-1 text-xs leading-5 text-[var(--muted)]">Compare sales with non-marketing expenses and marketing spend. January through {year === currentYear ? "this month" : "December"}, {year}.</p>
         </div>
         <select
+          aria-label="Monthly overview year"
           value={year}
           onChange={(e) => setYear(Number(e.target.value))}
           className="h-9 shrink-0 rounded-lg border border-[var(--line)] bg-white px-3 text-sm font-semibold text-slate-700 outline-none focus:border-indigo-500"
@@ -120,20 +118,53 @@ export function MonthlyOverviewChart({ minYear }) {
             </div>
           </div>
         ) : (
-          <div className="h-80">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={rows || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
-                <CartesianGrid stroke="#e5eaf1" vertical={false} />
-                <XAxis dataKey="month" tickLine={false} axisLine={false} />
-                <YAxis tickFormatter={formatAxisCurrency} tickLine={false} axisLine={false} width={56} />
-                <Tooltip content={<MonthlyTooltip />} />
-                <Legend wrapperStyle={{ fontSize: 12 }} />
-                <Bar dataKey="sales" name="Sales" fill="#3730a3" radius={[4, 4, 0, 0]} maxBarSize={22} />
-                <Bar dataKey="expense" name="Expense" fill="#e11d48" radius={[4, 4, 0, 0]} maxBarSize={22} />
-                <Bar dataKey="marketing" name="Marketing Spend" fill="#0891b2" radius={[4, 4, 0, 0]} maxBarSize={22} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          <>
+            <div className="mb-5">
+              <ChartLegend items={[
+                { label: "Sales", color: "#4361ee" },
+                { label: "Non-marketing expenses", color: "#e11d48" },
+                { label: "Marketing spend", color: "#0891b2" },
+              ]} />
+            </div>
+            <ChartViewport label={`Monthly sales and expenses chart for ${year}. Scroll horizontally on small screens.`}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={rows || []} margin={{ left: 0, right: 10, top: 8, bottom: 0 }}>
+                  <CartesianGrid stroke="#e8edf4" strokeDasharray="3 4" vertical={false} />
+                  <XAxis dataKey="month" tickLine={false} axisLine={false} tickMargin={12} tick={{ fontSize: 11, fill: "#64748b" }} />
+                  <YAxis tickFormatter={formatAxisCurrency} tickLine={false} axisLine={false} width={64} tick={{ fontSize: 11, fill: "#64748b" }} />
+                  <Tooltip content={<MonthlyTooltip />} cursor={{ fill: "#f1f5f9", radius: 4 }} />
+                  <Bar dataKey="sales" name="Sales" fill="#4361ee" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                  <Bar dataKey="expense" name="Non-marketing expenses" fill="#e11d48" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                  <Bar dataKey="marketing" name="Marketing Spend" fill="#0891b2" radius={[4, 4, 0, 0]} maxBarSize={22} />
+                </BarChart>
+              </ResponsiveContainer>
+            </ChartViewport>
+            <details className="mt-4 border-t border-slate-100 pt-3">
+              <summary className="w-fit cursor-pointer text-xs font-medium text-indigo-700">View monthly values</summary>
+              <div className="thin-scrollbar mt-3 overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <caption className="sr-only">Monthly overview for {year}, amounts in Indian rupees</caption>
+                  <thead className="border-b border-slate-200 bg-slate-50 text-slate-500">
+                    <tr>
+                      {["Month", "Sales", "Non-marketing expenses", "Marketing spend"].map((heading, index) => (
+                        <th key={heading} scope="col" className={`whitespace-nowrap px-3 py-2 font-medium ${index ? "text-right" : ""}`}>{heading}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {(rows || []).map((row) => (
+                      <tr key={row.month}>
+                        <th scope="row" className="px-3 py-2 font-medium text-slate-700">{row.month}</th>
+                        {["sales", "expense", "marketing"].map((key) => (
+                          <td key={key} className="whitespace-nowrap px-3 py-2 text-right tabular-nums text-slate-600">{formatFullCurrency(row[key])}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </>
         )}
       </CardContent>
     </Card>

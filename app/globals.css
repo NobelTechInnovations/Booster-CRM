@@ -123,6 +123,19 @@ img, video { max-width: 100%; }
   margin-bottom: 12px;
 }
 
+/* Keep the operational panel's hierarchy distinct from the marketing site. */
+.panel-shell .section-label {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  margin-bottom: 14px;
+}
+
+.panel-shell .recharts-wrapper {
+  font-variant-numeric: tabular-nums;
+}
+
 /* ── Scroll reveal (marketing pages) ──────────────────────────────────────
    Paired with components/reveal.jsx (IntersectionObserver). Starts hidden
    only once JS confirms it can reveal it — see that component's own note
