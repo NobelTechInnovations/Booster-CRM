@@ -178,6 +178,7 @@ function SubNavBar({ pathname }) {
             <Link
               key={child.href}
               href={child.href}
+              aria-current={active ? "page" : undefined}
               className={cn(
                 "flex shrink-0 items-center gap-1.5 border-b-2 px-4 py-2.5 text-[13px] font-medium whitespace-nowrap transition-colors",
                 active
@@ -346,7 +347,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
             settings), with "Powered by Wokbook" underneath as a small
             attribution; falls back to plain Wokbook branding when no
             logo is set, unchanged from before. */}
-        <div className="flex h-[52px] shrink-0 items-center justify-between border-b border-[var(--line)] px-4">
+        <div className="flex h-16 shrink-0 items-center justify-between border-b border-[var(--line)] px-5">
           {session?.company?.logoUrl ? (
             <div className="flex min-w-0 items-center gap-2.5">
               <img src={session.company.logoUrl} alt={session.company.name} className="h-8 w-8 shrink-0 rounded-lg object-contain" />
@@ -360,10 +361,10 @@ function Sidebar({ open, setOpen, session, onLogout }) {
               <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-indigo-600 text-white">
                 <Layers3 size={15} />
               </div>
-              <span className="text-[15px]  tracking-tight text-slate-900">Wokbook</span>
+              <span className="text-[17px] font-semibold tracking-tight text-slate-900">Wokbook</span>
             </div>
           )}
-          <button className="rounded-md p-1 text-slate-400 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)}>
+          <button aria-label="Close menu" className="rounded-md p-1 text-slate-400 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(false)}>
             <X size={16} />
           </button>
         </div>
@@ -373,7 +374,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
             topbar's, so it's deliberately not rendered in the sidebar. */}
 
         {/* Nav items */}
-        <nav className="thin-scrollbar flex-1 overflow-y-auto px-3 pb-3">
+        <nav aria-label="Main navigation" className="thin-scrollbar flex-1 overflow-y-auto px-3 py-5">
           {navGroups.map((group) => {
             const active = isGroupActive(group, pathname);
             const href = group.single ? group.href : (group.href || group.children?.[0]?.href);
@@ -381,11 +382,12 @@ function Sidebar({ open, setOpen, session, onLogout }) {
               <Link
                 key={group.label}
                 href={href}
+                aria-current={active ? "page" : undefined}
                 onClick={() => setOpen(false)}
                 className={cn(
-                  "mb-0.5 flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-colors",
+                  "mb-1 flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] font-medium transition-colors",
                   active
-                    ? "bg-indigo-50 text-indigo-700"
+                    ? "bg-indigo-50 font-semibold text-indigo-700 ring-1 ring-inset ring-indigo-100"
                     : "text-slate-500 hover:bg-slate-100 hover:text-slate-900",
                 )}
               >
@@ -446,7 +448,7 @@ function Sidebar({ open, setOpen, session, onLogout }) {
 // with nothing to get lost in.
 function Topbar({ setOpen, session }) {
   return (
-    <header className="sticky top-0 z-20 flex h-[52px] shrink-0 items-center gap-3 border-b border-[var(--line)] bg-[var(--panel)] px-4 lg:px-4">
+    <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-[var(--line)] bg-white/95 px-4 backdrop-blur-sm lg:px-8">
       <button className="rounded-md p-1.5 text-slate-600 hover:bg-slate-100 lg:hidden" onClick={() => setOpen(true)} aria-label="Open menu">
         <Menu size={20} />
       </button>
@@ -465,7 +467,7 @@ function Topbar({ setOpen, session }) {
           Live
         </span>
 
-        <button className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] text-slate-500 hover:bg-slate-100">
+        <button aria-label="Notifications" className="grid h-8 w-8 place-items-center rounded-lg border border-[var(--line)] bg-[var(--panel-soft)] text-slate-500 hover:bg-slate-100">
           <Bell size={14} />
         </button>
 
@@ -574,13 +576,13 @@ export default function PanelLayout({ children }) {
 
   return (
     /* Desktop: sidebar (220px) + main. Mobile: stacked (sidebar is overlay). */
-    <div className="min-h-screen bg-[var(--background)] lg:flex">
+    <div className="panel-shell min-h-screen bg-[var(--background)] lg:flex">
       {/* Sidebar spacer — keeps content from sliding under the fixed sidebar */}
       <div className="hidden w-[220px] shrink-0 lg:block" aria-hidden />
 
       <Sidebar open={open} setOpen={setOpen} session={session} onLogout={logout} />
 
-      <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-white">
+      <main className="flex min-h-screen min-w-0 flex-1 flex-col bg-[var(--background)]">
         <Topbar setOpen={setOpen} session={session} />
         <Suspense fallback={null}>
           <SubNavBar pathname={pathname} />

@@ -12,10 +12,9 @@ import { cn } from "@/lib/utils";
 // about to appear", which is exactly what got reported. This is a real,
 // immediately-visible popover instead: a dark card that appears the instant
 // you hover or focus the icon, with an arrow pointing back at it. It's
-// positioned as a sibling INSIDE the same relatively-positioned wrapper as
-// the icon (not the card), so it isn't clipped by anything the icon's own
-// container does — the caller (KpiTile) also had to drop its
-// `overflow-hidden` for this to have room to actually show.
+// anchored beside the icon on desktop and to the viewport bottom on phones
+// so long explanations stay inside the screen. Hidden tooltips use display:
+// none so they cannot widen the page while inactive.
 export function InfoTooltip({ text, className }) {
   if (!text) return null;
   return (
@@ -31,10 +30,10 @@ export function InfoTooltip({ text, className }) {
       </button>
       <span
         role="tooltip"
-        className="pointer-events-none absolute left-1/2 top-full z-50 mt-2 w-60 -translate-x-1/2 rounded-lg bg-slate-900 px-3 py-2 text-[11.5px] font-medium normal-case leading-snug tracking-normal text-white opacity-0 shadow-xl transition-opacity duration-150 group-hover/tip:opacity-100 group-focus-within/tip:opacity-100"
+        className="pointer-events-none fixed inset-x-4 bottom-4 z-50 hidden rounded-lg bg-slate-900 px-3 py-2 text-[11.5px] font-medium normal-case leading-snug tracking-normal text-white shadow-xl group-hover/tip:block group-focus-within/tip:block sm:absolute sm:inset-x-auto sm:bottom-auto sm:left-1/2 sm:top-full sm:mt-2 sm:w-60 sm:-translate-x-1/2"
       >
         {text}
-        <span className="absolute -top-1 left-1/2 h-2 w-2 -translate-x-1/2 rotate-45 bg-slate-900" />
+        <span className="absolute -top-1 left-1/2 hidden h-2 w-2 -translate-x-1/2 rotate-45 bg-slate-900 sm:block" />
       </span>
     </span>
   );
